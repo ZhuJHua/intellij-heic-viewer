@@ -221,6 +221,12 @@ tasks {
         }
     }
 
+    // verifyPluginSignature reads signPlugin's output (build/distributions/*-signed.zip) but the IntelliJ Platform Gradle
+    // Plugin does not declare the dependency, so Gradle 9 rejects `./gradlew signPlugin verifyPluginSignature`.
+    verifyPluginSignature {
+        dependsOn(signPlugin)
+    }
+
     test {
         useJUnitPlatform()
         // The decoder uses java.lang.foreign; the IDE itself runs with the same flag.
