@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+.kotlin/
+
+# Machine-specific settings (local IDE paths etc.), see README.md
+local.properties
+
+# IntelliJ Platform Gradle Plugin (sandboxes, caches)
+.intellijPlatform/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# macOS
+.DS_Store

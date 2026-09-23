@@ -1,0 +1,57 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the problem, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: |
+        How to trigger the problem. If it concerns a particular image, please attach it (only if you are allowed to
+        share it) or describe it: which device or tool created it, dimensions, bit depth.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        Lines from idea.log (Help | Show Log in Finder) that mention HEIC or cn.yooss.heic, including stack traces.
+
+        *This will be automatically formatted into code, so there is no need for backticks.*
+      render: shell
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: ide
+    attributes:
+      label: IDE and version
+      description: From Help | About (or the About dialog), including the build number.
+      placeholder: Android Studio Quail 4 | 2026.1.4 Patch 1, build AI-261.26222.65.2614.16379836
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 26.0, Apple silicon
+    validations:
+      required: true
