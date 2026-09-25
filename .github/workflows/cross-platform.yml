@@ -99,12 +99,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       # The downloaded IDE archive (about 1.5 GB), per OS/architecture, platform override and gradle.properties.
+      # (setup-gradle may move the Gradle user home, e.g. to D:\a\.gradle on Windows x64.)
       - name: Cache IDE
         uses: actions/cache@v6
         with:
           path: |
-            ~/.gradle/caches/modules-2/files-2.1/com.google.android.studio
-            ~/.gradle/caches/modules-2/files-2.1/idea
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/com.google.android.studio
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/idea
           key: ide-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('gradle.properties') }}
 
       # testJdk25 rather than `test`, which the IntelliJ Platform Gradle Plugin only runs on the IDE's architectures.
@@ -113,9 +114,13 @@ jobs:
           ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
+      # Which native JNA directories the IDE provides (JNA can only be used in tests on the runner's architecture).
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}
-        run: find ~/.gradle/caches -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
+        run: |
+          home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          if command -v cygpath > /dev/null; then home="$(cygpath -u "$home")"; fi
+          find "$home/caches" -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
 
       - name: Upload test reports
         if: ${{ always() }}
