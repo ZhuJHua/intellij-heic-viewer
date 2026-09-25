@@ -5,6 +5,8 @@ import com.sun.jna.NativeLibrary;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
@@ -19,8 +21,10 @@ import java.util.Set;
  * <ul>
  *   <li>Only JNA's untyped layer: {@link NativeLibrary} from {@link #open}, {@code NativeLibrary.getFunction(name)},
  *   {@code Function.invokeLong/invokeInt/invokeDouble/invokeVoid/invokePointer(Object[])} with arguments of JDK types
- *   ({@code Long}, {@code Integer}, {@code Double}, {@code byte[]}, {@code int[]}, {@code long[]}, {@code String},
- *   {@code WString}) and {@link com.sun.jna.Pointer}, plus {@link Native#malloc}/{@link Native#free}.</li>
+ *   ({@code Long}, {@code Integer}, {@code Double}, {@code byte[]}, {@code char[]}, {@code int[]}, {@code long[]}) and
+ *   {@link com.sun.jna.Pointer}, plus {@link Native#malloc}/{@link Native#free}. Strings are passed as NUL-terminated
+ *   arrays ({@link #utf8z}, {@link #utf16z}): JNA copies {@code String}/{@code WString} arguments into a
+ *   {@code Memory}, which registers with JNA's Cleaner and may start its thread from plugin code (see below).</li>
  *   <li>No {@code Library} interface of the plugin ({@code Native.load}), no {@code Structure}, {@code Union},
  *   {@code ByReference}, {@code Callback} or {@code NativeMapped} subclass in the plugin, no {@code Memory}: JNA keeps
  *   static caches keyed by those classes whose values point back at them, and the entries never clear. Structures are
@@ -74,6 +78,17 @@ public final class JnaLibraries {
         if (!before.contains(started)) detach(started);
       }
     }
+  }
+
+  /** {@code value} as a NUL-terminated UTF-8 {@code const char*} argument. */
+  public static byte @NotNull [] utf8z(@NotNull String value) {
+    byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+    return Arrays.copyOf(bytes, bytes.length + 1);
+  }
+
+  /** {@code value} as a NUL-terminated UTF-16 {@code const wchar_t*} argument (Windows {@code LPCWSTR}). */
+  public static char @NotNull [] utf16z(@NotNull String value) {
+    return Arrays.copyOf(value.toCharArray(), value.length() + 1);
   }
 
   /**

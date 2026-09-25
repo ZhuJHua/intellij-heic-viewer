@@ -7,15 +7,14 @@ import javax.imageio.ImageReader;
 import javax.imageio.spi.IIORegistry;
 import javax.imageio.spi.ImageReaderSpi;
 import javax.imageio.spi.ServiceRegistry;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.net.MalformedURLException;
+import java.io.IOException;
 import java.net.URL;
-import java.net.URLConnection;
-import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -23,6 +22,7 @@ import java.util.Locale;
 import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 /**
  * Registers the single {@link HeicImageReaderSpi} instance in the process-wide {@link IIORegistry} and removes it
@@ -188,50 +188,49 @@ public final class HeicSupport {
    * The instance is created with the public no-argument constructor; it records its registry when registered.
    */
   private static HeicImageReaderSpi registerThroughImageIO() {
+    Path directory = null;
     Thread thread = Thread.currentThread();
     ClassLoader previous = thread.getContextClassLoader();
-    thread.setContextClassLoader(new OnlyOurProvider(HeicImageReaderSpi.class.getClassLoader()));
     try {
+      // A real file (read through a plain file: URL) rather than an in-memory URL handler: URL.of(URI, handler) needs
+      // Java 20 and the URL(URL, String, URLStreamHandler) constructor is deprecated since then.
+      directory = Files.createTempDirectory("heic-viewer-spi");
+      Path serviceFile = directory.resolve(OnlyOurProvider.SERVICE_FILE);
+      Files.createDirectories(serviceFile.getParent());
+      Files.write(serviceFile, (HeicImageReaderSpi.class.getName() + "\n").getBytes(StandardCharsets.UTF_8));
+      thread.setContextClassLoader(new OnlyOurProvider(HeicImageReaderSpi.class.getClassLoader(), serviceFile.toUri().toURL()));
       ImageIO.scanForPlugins();
+    }
+    catch (IOException e) {
+      LOG.warn("Cannot write the service file for ImageIO.scanForPlugins()", e);
+      return null;
     }
     finally {
       thread.setContextClassLoader(previous);
+      deleteRecursively(directory);
     }
     HeicImageReaderSpi copy = providerSeenByImageIO();
     return copy == registered ? null : copy;
   }
 
+  private static void deleteRecursively(Path directory) {
+    if (directory == null) return;
+    try (Stream<Path> files = Files.walk(directory)) {
+      files.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+    }
+    catch (IOException | RuntimeException e) {
+      LOG.debug("Cannot delete " + directory, e);
+    }
+  }
+
   /** Loads classes from the plugin; its only resource is a service file naming {@link HeicImageReaderSpi}. */
   private static final class OnlyOurProvider extends ClassLoader {
-    private static final String SERVICE_FILE = "META-INF/services/" + ImageReaderSpi.class.getName();
+    static final String SERVICE_FILE = "META-INF/services/" + ImageReaderSpi.class.getName();
     private final URL serviceFile;
 
-    OnlyOurProvider(ClassLoader parent) {
+    OnlyOurProvider(ClassLoader parent, URL serviceFile) {
       super(parent);
-      byte[] content = (HeicImageReaderSpi.class.getName() + "\n").getBytes(StandardCharsets.UTF_8);
-      URLStreamHandler inMemory = new URLStreamHandler() {
-        @Override
-        protected URLConnection openConnection(URL url) {
-          return new URLConnection(url) {
-            @Override
-            public void connect() {
-              connected = true;
-            }
-
-            @Override
-            public InputStream getInputStream() {
-              return new ByteArrayInputStream(content);
-            }
-          };
-        }
-      };
-      try {
-        // new URL(context, spec, handler): URL.of(URI, handler) needs Java 20.
-        serviceFile = new URL(null, "heic-viewer:/" + SERVICE_FILE, inMemory);
-      }
-      catch (MalformedURLException e) {
-        throw new IllegalStateException(e);
-      }
+      this.serviceFile = serviceFile;
     }
 
     @Override

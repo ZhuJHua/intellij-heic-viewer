@@ -3,6 +3,7 @@ package cn.yooss.heic;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,6 +52,17 @@ class DecodeLimitsTest {
     assertEquals(1_000_000L, DecodeLimits.ofMegapixels(-5).maxPixels());
     assertEquals(512_000_000L, DecodeLimits.ofMegapixels(100_000).maxPixels());
     assertEquals(DecodeLimits.DEFAULT, DecodeLimits.ofMegapixels(64));
+  }
+
+  /** Hand-written (not a record, see the class comment): value semantics as a record would have them. */
+  @Test
+  void valueSemantics() {
+    assertEquals(new DecodeLimits(10_000, 300), new DecodeLimits(10_000, 300));
+    assertEquals(new DecodeLimits(10_000, 300).hashCode(), new DecodeLimits(10_000, 300).hashCode());
+    assertNotEquals(new DecodeLimits(10_000, 300), new DecodeLimits(10_001, 300));
+    assertNotEquals(new DecodeLimits(10_000, 300), new DecodeLimits(10_000, 301));
+    assertNotEquals(new DecodeLimits(10_000, 300), "DecodeLimits[maxPixels=10000, maxSide=300]");
+    assertEquals("DecodeLimits[maxPixels=10000, maxSide=300]", new DecodeLimits(10_000, 300).toString());
   }
 
   @Test

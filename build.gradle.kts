@@ -232,6 +232,7 @@ tasks {
     test {
         // JDK 25: the runtime of IDEs 2026.1.3+ (Android Studio Quail 3+).
         javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+        systemProperty("heic.test.javaVersion", 25)
     }
 }
 
@@ -255,8 +256,16 @@ class JnaNativeArgs(@get:Input val nativeDir: Provider<String>) : CommandLineArg
         ?: emptyList()
 }
 
+/** Tells BytecodeLevelTest which jar to scan: the plugin jar that goes into the distribution. */
+class PluginJarArg(@get:InputFile @get:PathSensitive(PathSensitivity.NONE) val jar: Provider<RegularFile>) : CommandLineArgumentProvider {
+    override fun asArguments(): Iterable<String> = listOf("-Dheic.test.pluginJar=${jar.get().asFile.absolutePath}")
+}
+
+val pluginJar: Provider<RegularFile> = tasks.named<AbstractArchiveTask>("composedJar").flatMap { it.archiveFile }
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    jvmArgumentProviders.add(PluginJarArg(pluginJar))
     // What the IDE launcher passes as well: java.lang for JnaLibraries (clears the inherited access control context of
     // a JNA Cleaner thread started by plugin code, see PluginClassLoaderLeakTest).
     jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
@@ -276,6 +285,7 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = files(tasks.test.map { it.classpath })
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    systemProperty("heic.test.javaVersion", javaVersion)
     shouldRunAfter(tasks.test)
 }
 // JBR 21: IDEs 2024.2 - 2025.3 and 2026.1 - 2026.1.2, Android Studio Ladybug - Quail 2.
@@ -284,9 +294,9 @@ val testJdk21 = registerTestOn("testJdk21", 21)
 val testJdk17 = registerTestOn("testJdk17", 17)
 testJdk17.configure {
     // The platform jars of the IDE compiled against (2026.1) are Java 21 bytecode and cannot be loaded on JDK 17, except
-    // util-8.jar (Java 8 bytecode: JNA, Logger, ...). The JDK 17 run gets a minimal class path: the plugin's classes,
-    // JUnit and util-8.jar. Tests that need other platform classes are tagged "platform" and run on JDK 21 and 25.
-    classpath = sourceSets.test.get().output + sourceSets.main.get().output +
+    // util-8.jar (Java 8 bytecode: JNA, Logger, ...). The JDK 17 run gets a minimal class path: the plugin jar, JUnit
+    // and util-8.jar. Tests that need other platform classes are tagged "platform" and run on JDK 21 and 25.
+    classpath = sourceSets.test.get().output + files(pluginJar) +
         configurations.testRuntimeClasspath.get().filter { it.name.matches(Regex("(junit-|opentest4j|apiguardian).*")) } +
         files(platformDir.map { it.resolve("lib/util-8.jar") })
     useJUnitPlatform { excludeTags("platform") }
