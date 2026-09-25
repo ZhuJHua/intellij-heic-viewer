@@ -13,8 +13,8 @@ import java.nio.charset.StandardCharsets;
  * macOS writes), from that curve to sRGB, whenever it converts the colors itself: 10-bit images and grids (which
  * {@link SingleImageGrid} makes of single images). Shadows and midtones then come out brighter (a level of 7 becomes
  * 17, 72 becomes 86) than in every other viewer. With {@code transfer_characteristics} 13 (sRGB) it converts nothing.
- * Measured on Windows 11 arm64 in CI (branch {@code dev/0.2-colour}); macOS ImageIO and libheif decode 1, 2, 6, 14 and
- * 15 exactly like 13.
+ * Measured on Windows 11 arm64 in CI ({@code WicColorTest}); macOS ImageIO and libheif decode 1, 2, 6, 14 and 15
+ * exactly like 13.
  * <p>
  * The rewrite changes those two bytes of every {@code nclx} box in the item properties to 13, in a copy of the file.
  * Other values (PQ, HLG, linear, ...) are left alone.

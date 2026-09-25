@@ -22,8 +22,8 @@ import java.util.Set;
  * and the decoder offers nothing else: {@code IWICBitmapSourceTransform} returns only {@code 32bppBGR} (and
  * {@code 8bppAlpha}) for every requested format, and {@code IWICPlanarBitmapSourceTransform} is not implemented. Derived
  * {@code grid} images (the layout of iPhone photos) and 10-bit images take another path in the decoder, which honors
- * the {@code nclx} matrix and range. Measured on Windows 11 arm64 in CI against the files' own YCbCr samples (branch
- * {@code dev/0.2-colour}, {@code ci/colour}).
+ * the {@code nclx} matrix and range. Measured on Windows 11 arm64 in CI against the files' own YCbCr samples (GitHub
+ * Actions runs 36174285956 to 36181400095 of the project; {@code WicColorTest} reports the colors in every Windows job).
  * <p>
  * <b>The rewrite</b>, only when the primary item is an 8-bit {@code hvc1} image with chroma and the file uses nothing
  * this class does not understand (otherwise {@link #wrap} returns {@code null} and the file is decoded as it is):

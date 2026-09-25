@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Extension and the HEVC Video Extension, e.g. the windows-11-arm runner) each fixture is decoded twice: as WIC decodes
  * it ({@link SingleImageGrid} off) and as the plugin decodes it (on); only the second must match. The pixel values
  * and differences go to {@code build/reports/color/wic-colors.txt} (and the test output), which is the evidence
- * for the workaround; the CI job "Windows colors" prints it. On macOS the same comparisons check the fixtures and
+ * for the workaround; the "Windows color report" step of the Windows jobs in cross-platform.yml prints it. On macOS the same comparisons check the fixtures and
  * their references.
  */
 @EnabledOnOs({OS.WINDOWS, OS.MAC})
