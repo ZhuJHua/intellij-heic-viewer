@@ -18,6 +18,15 @@
  *   garbage.heic                              = plain text
  * GenBands.java produces bands.png; bands_2000x1200.heic = sips -s format heic, bands_exif6.heic = writeorient ... 6.
  * GenIcc.java produces the ICC profile and PNG of icc_wide.heic (colors in a wide-gamut space, embedded ICC profile).
+ *
+ * Color fixtures of the Windows workarounds in src/test/resources/cn/yooss/heic/win (heif-enc 1.23.5, macOS 26 sips):
+ *   heif-enc -q 90 --matrix_coefficients=1 rgb.png   -> rgb_bt709.heic   (single image, BT.709 matrix)
+ *   heif-enc -q 90 --full_range_flag=0 rgb.png       -> rgb_limited.heic (single image, BT.601 limited range)
+ *   heif-enc -q 90 -p chroma=444 rgb.png             -> rgb_444.heic     (single image, 4:4:4)
+ *   smooth.png: 320x240, smooth sine/cosine gradients in R, G and B with eight saturated patches (a downscaled 4032x3024
+ *   test image), for transfer-curve errors that the quadrant fixtures cannot show;
+ *   sips -s format heic smooth.png                   -> smooth_sips.heic (single image, nclx 2/2/6/full as macOS writes)
+ *   heif-enc -q 80 --cut-tiles 128 --transfer_characteristic=1 smooth.png -> smooth_grid_tc1.heic (grid, BT.709 curve)
  */
 import java.awt.*;
 import java.awt.image.*;

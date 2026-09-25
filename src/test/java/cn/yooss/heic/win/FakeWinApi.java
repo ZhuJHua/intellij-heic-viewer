@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -51,6 +52,12 @@ final class FakeWinApi implements WinApi {
   int coInitializeResult = Hresult.S_OK;
   List<String> hevcDecoders = new ArrayList<>(List.of("HEVCVideoExtension"));
   final Map<String, Integer> failures = new HashMap<>();
+  /** {@code CreateDecoderFromStream} fails with {@link #rejectResult} for the streams whose data this accepts. */
+  @Nullable Predicate<byte[]> rejectStream;
+  int rejectResult = Hresult.E_FAIL;
+  /** The data of every stream created, in order. */
+  final List<byte[]> streams = new ArrayList<>();
+  private final Map<Long, byte[]> streamData = new HashMap<>();
 
   // ---------------------------------------------------------------- bookkeeping
   final Map<Long, Obj> objects = new HashMap<>();
@@ -158,7 +165,10 @@ final class FakeWinApi implements WinApi {
   public long shCreateMemStream(byte @NotNull [] data) {
     Integer f = failure("SHCreateMemStream");
     if (f != null) return 0;
-    return create(new Obj(Kind.STREAM));
+    long stream = create(new Obj(Kind.STREAM));
+    streams.add(data.clone());
+    streamData.put(stream, data.clone());
+    return stream;
   }
 
   // ---------------------------------------------------------------- factory
@@ -168,6 +178,7 @@ final class FakeWinApi implements WinApi {
     get(stream, Kind.STREAM);
     Integer f = failure("CreateDecoderFromStream");
     if (f != null) return f;
+    if (rejectStream != null && rejectStream.test(streamData.get(stream))) return rejectResult;
     decoder[0] = create(new Obj(Kind.DECODER));
     return Hresult.S_OK;
   }

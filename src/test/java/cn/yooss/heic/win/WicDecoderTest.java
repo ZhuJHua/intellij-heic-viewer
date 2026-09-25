@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -259,6 +260,53 @@ class WicDecoderTest {
     assertTrue(e.getMessage().contains("HEIF Image Extension"), e.getMessage());
     assertTrue(e.getMessage().contains("WINCODEC_ERR_COMPONENTINITIALIZEFAILURE"), e.getMessage());
     api.assertClean();
+  }
+
+  /** HEIF data goes to WIC with the color workarounds: a rewritten copy for a single 8-bit image (macOS: both). */
+  @Test
+  void colorFixesRewriteTheData() throws IOException {
+    byte[] heic = cn.yooss.heic.Fixtures.bytes("rgb_sips.heic"); // single 8-bit image, nclx (2, 2, 6, 1)
+    FakeWinApi api = fake();
+    new WicDecoder(api, true).decode(heic, 0, true, 7);
+    assertEquals(1, api.streams.size());
+    byte[] expected = SingleImageGrid.wrap(NclxTransfer.asSrgb(heic));
+    assertNotNull(expected);
+    assertArrayEquals(expected, api.streams.get(0));
+    api.assertClean();
+
+    FakeWinApi off = fake();
+    new WicDecoder(off, false).decode(heic, 0, true, 7);
+    assertArrayEquals(heic, off.streams.get(0), "switched off: the file as it is");
+    FakeWinApi grid = fake();
+    byte[] gridHeic = cn.yooss.heic.Fixtures.bytes("grid_libheif.heic"); // grid, nclx (1, 13, 6, 1): nothing to fix
+    new WicDecoder(grid, true).decode(gridHeic, 0, true, 7);
+    assertArrayEquals(gridHeic, grid.streams.get(0));
+    FakeWinApi png = fake();
+    new WicDecoder(png, true).decode(heic, 0, false, 7);
+    assertArrayEquals(heic, png.streams.get(0), "only HEIF decodes are rewritten");
+    new WicDecoder(png, true).readInfo(heic, true);
+    assertArrayEquals(heic, png.streams.get(1), "readInfo reads the file as it is");
+  }
+
+  /** If WIC does not take the rewritten data, the file is decoded as it is; its failure is the one reported. */
+  @Test
+  void rejectedRewriteFallsBackToTheFile() throws IOException {
+    byte[] heic = cn.yooss.heic.Fixtures.bytes("rgb_libheif.heic");
+    FakeWinApi api = fake();
+    api.rejectStream = data -> !java.util.Arrays.equals(data, heic);
+    assertArrayEquals(api.pixels, rgb(new WicDecoder(api, true).decode(heic, 0, true, 7)));
+    assertEquals(2, api.streams.size());
+    assertArrayEquals(heic, api.streams.get(1));
+    assertEquals(2, api.coInitializeCalls);
+    api.assertClean();
+
+    FakeWinApi missing = fake();
+    missing.rejectStream = data -> true;
+    missing.rejectResult = Hresult.WINCODEC_ERR_COMPONENTINITIALIZEFAILURE;
+    WicException e = assertThrows(WicException.class, () -> new WicDecoder(missing, true).decode(heic, 0, true, 7));
+    assertEquals(Hresult.WINCODEC_ERR_COMPONENTINITIALIZEFAILURE, e.hresult());
+    assertArrayEquals(heic, missing.streams.get(missing.streams.size() - 1), "the failure of the file itself");
+    missing.assertClean();
   }
 
   @Test

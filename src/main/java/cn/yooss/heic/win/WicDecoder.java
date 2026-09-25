@@ -36,8 +36,12 @@ import java.util.Locale;
  *   {@link BufferedImage}; the alpha plane is merged in.</li>
  *   <li>An embedded ICC profile ({@code IWICColorContext} of type profile, e.g. Display P3 of iPhone photos) is
  *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.
- *   The YCbCr to RGB conversion is the decoder's: HEIF Image Extension 1.2.36 converts some single (non-grid) images
- *   that signal BT.601 with BT.709 coefficients (grid images are right); the plugin keeps what Windows decodes.</li>
+ *   The YCbCr to RGB conversion is the decoder's, with two workarounds for HEIF Image Extension 1.2.36, applied to a
+ *   copy of the data: a primary image that is a single 8-bit HEVC image is converted with the BT.709 matrix whatever
+ *   the file signals (BT.601 red becomes (255, 25, 0)), so such files are decoded as a 1x1 grid of that image
+ *   ({@link SingleImageGrid}), which the decoder converts right; and the BT.709-like and unspecified transfer curves
+ *   that the decoder converts to sRGB, unlike every other viewer, are presented as sRGB ({@link NclxTransfer}). If
+ *   the decoder rejects the rewritten data, the file is decoded as it is.</li>
  * </ol>
  * Every COM object and native buffer is released in {@link Session#close()}, in reverse order, on every path. All
  * failures are {@link IOException}s ({@link WicException} with the {@code HRESULT} for failed calls).
@@ -53,11 +57,42 @@ public final class WicDecoder {
   static final int WICColorContextExifColorSpace = 2;
   /** {@code System.Photo.Orientation} photo metadata policy: the EXIF-style orientation still to be applied. */
   static final String ORIENTATION_POLICY = "System.Photo.Orientation";
+  /**
+   * System property: {@code false} switches the color workarounds ({@link SingleImageGrid}, {@link NclxTransfer}) off,
+   * so that HEIF files are decoded exactly as WIC decodes them.
+   */
+  public static final String COLOR_FIXES_PROPERTY = "heic.viewer.windows.colorFixes";
 
   private final WinApi api;
+  private final boolean colorFixes;
 
   public WicDecoder(@NotNull WinApi api) {
+    this(api, !"false".equalsIgnoreCase(System.getProperty(COLOR_FIXES_PROPERTY, "true").trim()));
+  }
+
+  /** @param colorFixes whether the color workarounds are applied ({@link #COLOR_FIXES_PROPERTY}) */
+  WicDecoder(@NotNull WinApi api, boolean colorFixes) {
     this.api = api;
+    this.colorFixes = colorFixes;
+  }
+
+  /** Whether the color workarounds are applied ({@link #COLOR_FIXES_PROPERTY}). */
+  public boolean colorFixes() {
+    return colorFixes;
+  }
+
+  /**
+   * The data WIC gets for a HEIF file: a rewritten copy with the color workarounds, or {@code data} itself if none
+   * applies (or they are switched off).
+   */
+  byte @NotNull [] forDecoder(byte @NotNull [] data) {
+    if (!colorFixes) return data;
+    byte[] result = data;
+    byte[] srgb = NclxTransfer.asSrgb(result);
+    if (srgb != null) result = srgb;
+    byte[] grid = SingleImageGrid.wrap(result);
+    if (grid != null) result = grid;
+    return result;
   }
 
   public @NotNull WinApi api() {
@@ -125,6 +160,20 @@ public final class WicDecoder {
   public @NotNull BufferedImage decode(byte @NotNull [] data, int maxPixelSize, boolean requireHeif, int stripPixels)
     throws IOException {
     if (maxPixelSize < 0) throw new IllegalArgumentException("maxPixelSize must be >= 0: " + maxPixelSize);
+    byte[] fixed = requireHeif ? forDecoder(data) : data;
+    if (fixed != data) {
+      try {
+        return decodeOnce(fixed, maxPixelSize, requireHeif, stripPixels);
+      }
+      catch (IOException e) {
+        // the decoder does not take the rewritten data: decode the file as it is (and report that failure, if any)
+      }
+    }
+    return decodeOnce(data, maxPixelSize, requireHeif, stripPixels);
+  }
+
+  private @NotNull BufferedImage decodeOnce(byte[] data, int maxPixelSize, boolean requireHeif, int stripPixels)
+    throws IOException {
     try (Session session = new Session(api)) {
       Opened opened = session.open(data, requireHeif);
       BufferedImage image = session.render(opened, maxPixelSize, stripPixels);
