@@ -271,6 +271,7 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       }
 
       @Override
+      @SuppressWarnings("deprecation") // abstract in 2024.1 - 2026.2, deprecated since removeNotificationsForProvider exists
       public void updateNotifications(@NotNull EditorNotificationProvider provider) {
       }
 
@@ -348,6 +349,7 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       }
 
       @Override
+      @SuppressWarnings("deprecation") // abstract in 2024.1 - 2026.2, deprecated since removeNotificationsForProvider exists
       public void updateNotifications(@NotNull EditorNotificationProvider provider) {
         removed.add(provider);
       }
