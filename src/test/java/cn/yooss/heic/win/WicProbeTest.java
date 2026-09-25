@@ -6,6 +6,8 @@ import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.HeifInput;
+import cn.yooss.heic.backend.HeifRemedies;
+import cn.yooss.heic.backend.HeifRemedy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -16,6 +18,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -95,8 +98,12 @@ class WicProbeTest {
     api.hevcDecoders = List.of();
     HeifBackendStatus status = probe(api);
     assertEquals(HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING, status.reason(), status.toString());
-    assertEquals("https://apps.microsoft.com/detail/9PMMSR1CGPWG", status.installUrl());
+    assertEquals("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG", status.installUrl());
     assertEquals("winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements", status.installCommand());
+    HeifRemedy remedy = HeifRemedies.forStatus(status);
+    assertNotNull(remedy);
+    assertEquals(HeifRemedy.Action.openUrl("remedy.action.open.store", status.installUrl()), remedy.actions().get(0));
+    assertEquals(status.installCommand(), remedy.command());
     assertTrue(status.isUserInstallable());
     assertTrue(status.detail().contains("0x88982F8B (WINCODEC_ERR_COMPONENTINITIALIZEFAILURE)"), status.detail());
     assertTrue(status.detail().contains("HEVC decoders: none"), status.detail());
@@ -124,7 +131,7 @@ class WicProbeTest {
     api.hevcDecoders = List.of();
     HeifBackendStatus status = probe(api);
     assertEquals(HeifBackendStatus.Reason.WINDOWS_HEVC_EXTENSION_MISSING, status.reason(), status.toString());
-    assertEquals("https://apps.microsoft.com/detail/9NMZLZ57R3T7", status.installUrl());
+    assertEquals("ms-windows-store://pdp/?ProductId=9NMZLZ57R3T7", status.installUrl());
     assertNull(status.installCommand(), "a paid product: no command that could install it");
     assertTrue(status.detail().contains("MF_E_TOPO_CODEC_NOT_FOUND"), status.detail());
   }

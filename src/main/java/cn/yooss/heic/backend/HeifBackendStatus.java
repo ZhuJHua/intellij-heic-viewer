@@ -18,9 +18,9 @@ import java.util.Objects;
 public final class HeifBackendStatus {
   /** Why a backend cannot decode. Each constant has the bundle key {@code backend.status.<NAME>} (EN + zh_CN). */
   public enum Reason {
-    /** Windows: the "HEIF Image Extensions" (Microsoft Store) are not installed, so WIC has no HEIF decoder. */
+    /** Windows: the "HEIF Image Extension" (Microsoft Store) is not installed, so WIC has no HEIF decoder. */
     WINDOWS_HEIF_EXTENSION_MISSING(true),
-    /** Windows: the HEIF container can be read, but the "HEVC Video Extensions" (the HEVC codec) are missing. */
+    /** Windows: the HEIF container can be read, but the HEVC codec ("HEVC Video Extensions", Microsoft Store) is missing. */
     WINDOWS_HEVC_EXTENSION_MISSING(true),
     /** Linux: {@code libheif.so.1} cannot be loaded. */
     LINUX_LIBHEIF_MISSING(true),
@@ -28,8 +28,6 @@ public final class HeifBackendStatus {
     LINUX_HEVC_PLUGIN_MISSING(true),
     /** This operating system (or processor architecture) has no supported system decoder. */
     UNSUPPORTED_OS(false),
-    /** The backend for this operating system is a placeholder that is not implemented yet. */
-    NOT_IMPLEMENTED(false),
     /** The probe failed unexpectedly (see {@link #detail()}). */
     ERROR(false);
 

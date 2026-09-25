@@ -1,10 +1,17 @@
 package cn.yooss.heic.linux;
 
+import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifBackendStatus.Reason;
+import cn.yooss.heic.backend.HeifRemedies;
+import cn.yooss.heic.backend.HeifRemedy;
 import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 
 import static cn.yooss.heic.linux.OsReleaseSamples.parse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -107,9 +114,47 @@ class LibheifRemedyTest {
     }
   }
 
+  /**
+   * What the banner and the notifications make of the Linux backend's statuses on every sample distribution: the
+   * command is accepted by the UI (a single line, at most 500 characters) and offered first, the README section is the
+   * documentation link; without a command (Flatpak, unknown distributions), the README section comes first.
+   */
+  @Test
+  void everyCommandBecomesTheRemedyOfTheBanner() throws ReflectiveOperationException {
+    int commands = 0;
+    for (Field field : OsReleaseSamples.class.getDeclaredFields()) {
+      if (!Modifier.isStatic(field.getModifiers()) || field.getType() != String.class) continue;
+      field.setAccessible(true);
+      for (boolean flatpak : new boolean[]{false, true}) {
+        LinuxDistribution distribution = LinuxDistribution.parse((String) field.get(null), flatpak, false);
+        for (Reason reason : new Reason[]{Reason.LINUX_LIBHEIF_MISSING, Reason.LINUX_HEVC_PLUGIN_MISSING}) {
+          String command = LibheifRemedy.installCommand(reason, distribution);
+          HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(reason, "test")
+                                                       .withInstallCommand(command).withInstallUrl(LibheifRemedy.HELP_URL));
+          assertNotNull(remedy);
+          String name = field.getName() + (flatpak ? " (Flatpak)" : "") + " " + reason;
+          assertEquals(command, remedy.command(), name);
+          HeifRemedy.Action first = remedy.actions().get(0);
+          if (command != null) {
+            commands++;
+            assertTrue(HeifRemedies.isAllowedCommand(command), name + ": " + command);
+            assertEquals(HeifRemedy.Action.copyCommand(command), first, name);
+            assertEquals(HeifRemedy.Action.learnMore(LibheifRemedy.HELP_URL), remedy.action(HeifRemedy.ActionType.LEARN_MORE), name);
+          }
+          else {
+            assertEquals(HeifRemedy.Action.openUrl("remedy.action.open.install.page", LibheifRemedy.HELP_URL), first, name);
+          }
+          assertEquals(HeifRemedy.ActionType.CHECK_AGAIN, remedy.actions().get(1).type(), name);
+        }
+      }
+    }
+    assertTrue(commands > 40, "commands checked: " + commands);
+  }
+
   @Test
   void helpUrlPointsAtTheReadme() {
-    assertTrue(LibheifRemedy.HELP_URL.startsWith("https://github.com/ZhuJHua/intellij-heic-viewer/"), LibheifRemedy.HELP_URL);
+    assertTrue(LibheifRemedy.HELP_URL.startsWith("https://github.com/ZhuJHua/intellij-heic-viewer#"), LibheifRemedy.HELP_URL);
     assertTrue(LibheifRemedy.HELP_URL.endsWith("#linux-libheif"), LibheifRemedy.HELP_URL);
+    assertTrue(HeifRemedies.isAllowedUrl(LibheifRemedy.HELP_URL), LibheifRemedy.HELP_URL);
   }
 }

@@ -8,6 +8,7 @@ import cn.yooss.heic.backend.HeifBackendStatus.Reason;
 import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.backend.HeifRemedies;
 import cn.yooss.heic.backend.HeifRemedy;
+import cn.yooss.heic.win.WindowsCodecs;
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.requests.SimpleDiffRequest;
 import com.intellij.ide.util.PropertiesComponent;
@@ -23,6 +24,7 @@ import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
@@ -38,7 +40,9 @@ import javax.swing.JComponent;
 import java.awt.datatransfer.DataFlavor;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -107,7 +111,7 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
 
     EditorNotificationPanel panel = banner(file, editor);
     assertNotNull("banner for a HEIC image editor", panel);
-    assertTrue(panel.getText(), panel.getText().contains("HEIF Image Extensions"));
+    assertTrue(panel.getText(), panel.getText().contains("HEIF Image Extension"));
     assertTrue(panel.getToolTipText(), panel.getToolTipText().contains("Microsoft Store"));
     HeifRemedy remedy = HeifRemedies.forStatus(HEIF_MISSING);
     assertNotNull(remedy);
@@ -150,6 +154,81 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
         }
       }
     }
+  }
+
+  /**
+   * Every unavailable reason, with what the backends really report (the Windows backend's Store app page and winget
+   * command, the Linux backend's package command and README section, or no command, as for a Flatpak IDE): the banner
+   * shows the title (with the command where copying it is the remedy) and at most three links, the missing-decoder
+   * balloon offers every action and "Don't Show Again", and where there is "Check Again", clicking it in the banner
+   * finds a decoder that was installed meanwhile: the banner goes away and the success balloon appears.
+   */
+  public void testEveryReasonWithTheRemediesOfTheBackends() throws Exception {
+    HeifBackendStatus[] statuses = {
+      HeifBackendStatus.unavailable(Reason.WINDOWS_HEIF_EXTENSION_MISSING, "test")
+        .withInstallUrl(WindowsCodecs.HEIF_STORE_APP_URL).withInstallCommand(WindowsCodecs.HEIF_WINGET_COMMAND),
+      HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test").withInstallUrl(WindowsCodecs.HEVC_STORE_APP_URL),
+      HeifBackendStatus.unavailable(Reason.LINUX_LIBHEIF_MISSING, "test")
+        .withInstallCommand("sudo apt install libheif1 libheif-plugin-libde265").withInstallUrl(HeifRemedies.LINUX_HELP_URL),
+      HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
+        .withInstallCommand("sudo apt install libheif-plugin-libde265").withInstallUrl(HeifRemedies.LINUX_HELP_URL),
+      HeifBackendStatus.unavailable(Reason.LINUX_LIBHEIF_MISSING, "test: Flatpak").withInstallUrl(HeifRemedies.LINUX_HELP_URL),
+      HeifBackendStatus.unavailable(Reason.ERROR, "test"),
+      HeifBackendStatus.unavailable(Reason.UNSUPPORTED_OS, "test"),
+    };
+    Set<Reason> covered = EnumSet.noneOf(Reason.class);
+    int index = 0;
+    for (HeifBackendStatus status : statuses) {
+      resetUi();
+      notifications.clear();
+      covered.add(status.reason());
+      HeifRemedy remedy = HeifRemedies.forStatus(status);
+      assertNotNull(remedy);
+      FakeHeifBackend backend = use(FakeHeifBackend.probed(status));
+      backend.recheckResult = HeifBackendStatus.available("test: installed");
+      VirtualFile file = heicFile("reason" + index++ + ".heic");
+      ImageFileEditor editor = createImageEditor(file);
+
+      EditorNotificationPanel panel = banner(file, editor);
+      assertNotNull(status.toString(), panel);
+      String title = HeicBundle.message(remedy.titleKey());
+      List<HeifRemedy.Action> actions = remedy.actions();
+      boolean commandFirst = actions.get(0).type() == HeifRemedy.ActionType.COPY_COMMAND;
+      assertEquals(status.toString(), commandFirst ? HeicBundle.message("remedy.banner.command", title, remedy.command()) : title,
+                   panel.getText());
+      int links = actions.size() <= HeicDecoderNotificationProvider.MAX_LINKS ? actions.size() : HeicDecoderNotificationProvider.MAX_LINKS - 1;
+      for (int i = 0; i < actions.size(); i++) {
+        HyperlinkLabel link = panel.findLabelByName(HeicBundle.message(actions.get(i).textKey()));
+        if (i < links) assertNotNull(status + ": " + actions.get(i), link);
+        else assertNull(status + ": " + actions.get(i) + " belongs under More", link);
+      }
+      assertEquals(status.toString(), links < actions.size(), panel.findLabelByName(HeicBundle.message("remedy.action.more")) != null);
+
+      DecoderPrompt.decodeUnavailable(status, getProject());
+      assertEquals(status.toString(), 1, notifications.size());
+      Notification missing = notifications.get(0);
+      List<String> balloonActions = new ArrayList<>();
+      missing.getActions().forEach(action -> balloonActions.add(action.getTemplateText()));
+      List<String> expected = new ArrayList<>();
+      for (HeifRemedy.Action action : actions) expected.add(HeicBundle.message(action.textKey()));
+      expected.add(HeicBundle.message("remedy.action.dont.show.again"));
+      assertEquals(status.toString(), expected, balloonActions);
+      if (remedy.command() != null) {
+        assertTrue(missing.getContent(), missing.getContent().contains(StringUtil.escapeXmlEntities(remedy.command())));
+      }
+
+      if (remedy.action(HeifRemedy.ActionType.CHECK_AGAIN) == null) {
+        assertEquals(Reason.UNSUPPORTED_OS, status.reason());
+        continue;
+      }
+      notifications.clear();
+      clickCheckAgain(file, editor);
+      waitFor("the result of Check Again for " + status, () -> !notifications.isEmpty() && !isRechecking());
+      assertEquals(1, backend.rechecks.get());
+      assertEquals(HeicBundle.message("remedy.check.available.title"), notifications.get(0).getTitle());
+      assertNull("no banner once the decoder is there: " + status, banner(file, editor));
+    }
+    assertEquals(EnumSet.allOf(Reason.class), covered);
   }
 
   public void testNoBannerWhenTheDecoderIsAvailableOrForOtherFiles() throws Exception {

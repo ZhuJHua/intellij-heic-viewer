@@ -1,6 +1,7 @@
 package cn.yooss.heic.linux;
 
 import cn.yooss.heic.backend.HeifBackendStatus.Reason;
+import cn.yooss.heic.backend.HeifRemedies;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -36,8 +37,8 @@ import java.util.Set;
  * </table>
  */
 final class LibheifRemedy {
-  /** README section that explains the Linux setup (opened by the prompt's "Get It" action). */
-  static final String HELP_URL = "https://github.com/ZhuJHua/intellij-heic-viewer/blob/main/README.md#linux-libheif";
+  /** README section that explains the Linux setup ("Learn More", or "Installation Instructions" without a command). */
+  static final String HELP_URL = HeifRemedies.LINUX_HELP_URL;
 
   /** Releases whose libheif has libde265 linked in (no plugin packages yet). */
   private static final Set<String> DEBIAN_CODENAMES_WITHOUT_PLUGINS = Set.of("stretch", "buster", "bullseye", "bookworm");

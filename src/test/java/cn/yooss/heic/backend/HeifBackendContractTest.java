@@ -68,6 +68,11 @@ class HeifBackendContractTest {
     if (status.installUrl() != null || status.installCommand() != null) {
       assertTrue(status.isUserInstallable(), "install hints only for installable components: " + status);
     }
+    // The banner and the notifications must accept what the backend offers (they ignore other URL schemes and
+    // multi-line commands).
+    if (status.installUrl() != null) assertTrue(HeifRemedies.isAllowedUrl(status.installUrl()), status.toString());
+    if (status.installCommand() != null) assertTrue(HeifRemedies.isAllowedCommand(status.installCommand()), status.toString());
+    if (!status.isAvailable()) assertNotNull(HeifRemedies.forStatus(status), status.toString());
   }
 
   @Test

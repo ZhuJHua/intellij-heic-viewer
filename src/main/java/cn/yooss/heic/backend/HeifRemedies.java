@@ -2,6 +2,7 @@ package cn.yooss.heic.backend;
 
 import cn.yooss.heic.backend.HeifBackendStatus.Reason;
 import cn.yooss.heic.backend.HeifRemedy.Action;
+import cn.yooss.heic.win.WindowsCodecs;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,36 +16,38 @@ import java.util.Locale;
  * The remedies of every {@link Reason}: which page to open, which command to copy, what else to offer. The texts are in
  * {@code messages/HeicBundle.properties} ({@code remedy.title.<REASON>}, {@code backend.status.<REASON>},
  * {@code remedy.action.*}) and its {@code zh_CN} translation.
+ * <table>
+ *   <caption>Remedies (the banner shows the first two actions and "More" when there are more than three)</caption>
+ *   <tr><th>Reason</th><th>Actions</th></tr>
+ *   <tr><td>{@code WINDOWS_HEIF_EXTENSION_MISSING}</td><td>Open Microsoft Store (HEIF Image Extension,
+ *   {@value WindowsCodecs#HEIF_PRODUCT_ID}), Check Again, Copy Command (winget), Open Store Page in Browser, Learn More</td></tr>
+ *   <tr><td>{@code WINDOWS_HEVC_EXTENSION_MISSING}</td><td>Open Microsoft Store (HEVC Video Extensions,
+ *   {@value WindowsCodecs#HEVC_PRODUCT_ID}), Check Again, Open Store Page in Browser, Learn More</td></tr>
+ *   <tr><td>{@code LINUX_LIBHEIF_MISSING}, {@code LINUX_HEVC_PLUGIN_MISSING}</td><td>Copy Command (the command of the
+ *   detected distribution, also shown in the banner), Check Again, Learn More ({@link #LINUX_HELP_URL}); without a
+ *   command (Flatpak, unknown distribution): Installation Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
+ *   <tr><td>{@code ERROR}</td><td>Check Again, Report a Problem</td></tr>
+ *   <tr><td>{@code UNSUPPORTED_OS}</td><td>Learn More</td></tr>
+ * </table>
+ * The Microsoft Store data (product ids, pages) is {@link WindowsCodecs}'; the Linux install commands come from the
+ * Linux backend ({@code cn.yooss.heic.linux.LibheifRemedy}, per distribution, from {@code /etc/os-release}).
  * <p>
  * A backend knows the details of the running system better than these defaults: {@link HeifBackendStatus#installUrl()}
- * (e.g. a Store link for this Windows edition) replaces the default install page and
- * {@link HeifBackendStatus#installCommand()} (e.g. the package command of the detected Linux distribution) replaces the
- * default command. Values that are not {@linkplain #isAllowedUrl allowed URLs} or {@linkplain #isAllowedCommand
- * single-line commands} are ignored, so a backend can never make the IDE open another URL scheme.
- * <p>
- * <b>Integration:</b> the constants marked {@code TODO(windows backend)} and {@code TODO(linux backend)} are placeholders
- * to be replaced by the data the backends verified (Store product ids, package names per distribution).
- * {@code HeifRemediesTest} checks every remedy (texts in both bundles, URL schemes, commands).
+ * replaces the default install page (the Store app page on Windows, the README section on Linux) and
+ * {@link HeifBackendStatus#installCommand()} (e.g. the package command of the detected Linux distribution) is offered to
+ * copy. Values that are not {@linkplain #isAllowedUrl allowed URLs} or {@linkplain #isAllowedCommand single-line
+ * commands} are ignored, so a backend can never make the IDE open another URL scheme. {@code HeifRemediesTest} checks
+ * every remedy (texts in both bundles, URL schemes, commands).
  */
 public final class HeifRemedies {
   /** The project page; the README's "Requirements" section explains what each OS needs. */
   public static final String PROJECT_URL = "https://github.com/ZhuJHua/intellij-heic-viewer";
   static final String REQUIREMENTS_URL = PROJECT_URL + "#requirements";
+  /** README section about the Microsoft Store extensions Windows needs. */
+  public static final String WINDOWS_HELP_URL = PROJECT_URL + "#windows-heif-and-hevc-extensions";
+  /** README section with the install commands of every distribution, Flatpak and custom libheif locations. */
+  public static final String LINUX_HELP_URL = PROJECT_URL + "#linux-libheif";
   static final String ISSUES_URL = PROJECT_URL + "/issues";
-
-  // TODO(windows backend): verify the product ids of the "HEIF Image Extensions" and the "HEVC Video Extensions" (paid;
-  // the free "from Device Manufacturer" edition is 9N4WGH0Z6VHQ) and whether the backend passes a better link through
-  // HeifBackendStatus.withInstallUrl (e.g. for Windows 10, arm64, LTSC/Server without the Store).
-  static final String HEIF_EXTENSION_STORE_URL = "ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG";
-  static final String HEIF_EXTENSION_WEB_URL = "https://apps.microsoft.com/detail/9pmmsr1cgpwg";
-  static final String HEVC_EXTENSION_STORE_URL = "ms-windows-store://pdp/?ProductId=9NMZLZ57R3T7";
-  static final String HEVC_EXTENSION_WEB_URL = "https://apps.microsoft.com/detail/9nmzlz57r3t7";
-
-  // TODO(linux backend): the Linux backend should detect the distribution (/etc/os-release) and pass its command through
-  // HeifBackendStatus.withInstallCommand (Fedora: RPM Fusion's libheif-freeworld, Arch: libheif, openSUSE: libheif1 +
-  // libheif-hevc?, ...). These Debian/Ubuntu commands are only the fallback.
-  static final String LIBHEIF_COMMAND = "sudo apt install libheif1 libheif-plugin-libde265";
-  static final String HEVC_PLUGIN_COMMAND = "sudo apt install libheif-plugin-libde265";
 
   private HeifRemedies() {
   }
@@ -58,30 +61,37 @@ public final class HeifRemedies {
     return build(reason, installUrl, command);
   }
 
-  /** The remedy of {@code reason} with the default install page and command only. */
+  /** The remedy of {@code reason} with the default install page and no command. */
   public static @NotNull HeifRemedy forReason(@NotNull Reason reason) {
     return build(reason, null, null);
   }
 
   /**
    * @param installUrl the backend's install page (replaces the default one), or {@code null}
-   * @param command    the backend's install command (replaces the default one), or {@code null}
+   * @param command    the backend's install command, or {@code null}
    */
   private static HeifRemedy build(Reason reason, @Nullable String installUrl, @Nullable String command) {
     List<Action> actions = new ArrayList<>();
     switch (reason) {
       case WINDOWS_HEIF_EXTENSION_MISSING:
-        return storeRemedy(reason, installUrl, command, HEIF_EXTENSION_STORE_URL, HEIF_EXTENSION_WEB_URL);
+        return storeRemedy(reason, installUrl, command, WindowsCodecs.HEIF_STORE_APP_URL, WindowsCodecs.HEIF_STORE_URL);
       case WINDOWS_HEVC_EXTENSION_MISSING:
-        return storeRemedy(reason, installUrl, command, HEVC_EXTENSION_STORE_URL, HEVC_EXTENSION_WEB_URL);
+        return storeRemedy(reason, installUrl, command, WindowsCodecs.HEVC_STORE_APP_URL, WindowsCodecs.HEVC_STORE_URL);
       case LINUX_LIBHEIF_MISSING:
       case LINUX_HEVC_PLUGIN_MISSING: {
-        String shown = command != null ? command : reason == Reason.LINUX_LIBHEIF_MISSING ? LIBHEIF_COMMAND : HEVC_PLUGIN_COMMAND;
-        actions.add(Action.copyCommand(shown));
-        actions.add(Action.checkAgain());
-        if (installUrl != null) actions.add(Action.openUrl(installPageKey(installUrl), installUrl));
-        actions.add(Action.learnMore(REQUIREMENTS_URL));
-        return new HeifRemedy(reason, shown, actions);
+        String help = installUrl != null ? installUrl : LINUX_HELP_URL;
+        if (command != null) {
+          // The package command of the detected distribution: the banner shows it, Copy Command comes first.
+          actions.add(Action.copyCommand(command));
+          actions.add(Action.checkAgain());
+          actions.add(Action.learnMore(help));
+        }
+        else {
+          // No command for this system (Flatpak, an unknown distribution): the README explains the options.
+          actions.add(Action.openUrl(installPageKey(help), help));
+          actions.add(Action.checkAgain());
+        }
+        return new HeifRemedy(reason, command, actions);
       }
       case ERROR:
         // Unexpected (on macOS practically impossible: ImageIO.framework is part of the system).
@@ -89,7 +99,6 @@ public final class HeifRemedies {
         actions.add(Action.openUrl("remedy.action.report", ISSUES_URL));
         return new HeifRemedy(reason, command, actions);
       case UNSUPPORTED_OS:
-      case NOT_IMPLEMENTED:
       default:
         if (installUrl != null) actions.add(Action.openUrl(installPageKey(installUrl), installUrl));
         actions.add(Action.learnMore(REQUIREMENTS_URL));
@@ -97,16 +106,19 @@ public final class HeifRemedies {
     }
   }
 
-  /** Windows: the Store app first, then Check Again, then the Store's web page (for systems without the Store app). */
+  /**
+   * Windows: the Store app first, then Check Again (both visible in the banner), then the winget command if the backend
+   * has one, the Store's web page (for systems without the Store app, e.g. Windows Server and LTSC) and the README.
+   */
   private static HeifRemedy storeRemedy(Reason reason, @Nullable String installUrl, @Nullable String command,
                                         String defaultStoreUrl, String webUrl) {
     List<Action> actions = new ArrayList<>();
     String primary = installUrl != null ? installUrl : defaultStoreUrl;
     actions.add(Action.openUrl(installPageKey(primary), primary));
-    if (command != null) actions.add(Action.copyCommand(command));
     actions.add(Action.checkAgain());
+    if (command != null) actions.add(Action.copyCommand(command));
     if (!webUrl.equalsIgnoreCase(primary)) actions.add(Action.openUrl("remedy.action.open.store.web", webUrl));
-    actions.add(Action.learnMore(REQUIREMENTS_URL));
+    actions.add(Action.learnMore(WINDOWS_HELP_URL));
     return new HeifRemedy(reason, command, actions);
   }
 

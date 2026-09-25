@@ -24,7 +24,7 @@ import java.util.function.Function;
 
 /**
  * The banner above a HEIC/HEIF image editor while the system decoder is unavailable: what is missing
- * ({@code remedy.title.<REASON>}, with the install command if there is one; the explanation
+ * ({@code remedy.title.<REASON>}, with the install command where copying it is the remedy; the explanation
  * {@code backend.status.<REASON>} is the tooltip) and the remedy's actions (Microsoft Store, copy command, Check Again,
  * Learn More, ...), see {@link HeifRemedies}; beyond {@value #MAX_LINKS} links, the last ones are under "More".
  * <p>
@@ -89,14 +89,17 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
   }
 
   /**
-   * The banner text: the short title and, if there is one, the command that installs the missing component. Plain text,
-   * so that the label ends with "..." when the editor is narrow; the explanation and the command are its tooltip (and
-   * the content of the balloons), the command can also be copied.
+   * The banner text: the short title and, where copying it is the remedy (the first action, i.e. the package command on
+   * Linux), the command that installs the missing component. Plain text, so that the label ends with "..." when the
+   * editor is narrow; the explanation and the command are its tooltip (and the content of the balloons). On Windows the
+   * Microsoft Store comes first, and the winget command is only in the tooltip, the balloons and "More".
    */
   static @NotNull String text(@NotNull HeifRemedy remedy) {
     String title = HeicBundle.message(remedy.titleKey());
     String command = remedy.command();
-    return command == null ? title : HeicBundle.message("remedy.banner.command", title, command);
+    boolean commandFirst = command != null && !remedy.actions().isEmpty()
+                           && remedy.actions().get(0).type() == HeifRemedy.ActionType.COPY_COMMAND;
+    return commandFirst ? HeicBundle.message("remedy.banner.command", title, command) : title;
   }
 
   private static EditorNotificationPanel.Status panelStatus(HeifBackendStatus.Reason reason) {

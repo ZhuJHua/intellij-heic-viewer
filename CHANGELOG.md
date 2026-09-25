@@ -6,15 +6,15 @@
 
 ### Added
 
-- Windows and Linux: HEIC/HEIF images are decoded by the operating system's own decoder (Windows: WIC with the *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store; Linux: libheif with its libde265 HEVC plugin). Nothing is bundled.
-- When the system decoder is missing, a banner above the HEIC image (and, for the diff and the thumbnails, a notification once per session) tells what to install, with the Microsoft Store page or the install command, *Check Again* and *Learn More*. Once the decoder is installed, *Check Again*, or simply coming back to the IDE, loads the open HEIC images without a restart.
-- Linux: the system's libheif 1.x (`libheif.so.1`, 1.12 or newer for images with transparency and 10-bit images) with its HEVC decoder is used; the notification shows the install command for Debian, Ubuntu and derivatives, Fedora (RPM Fusion), RHEL-compatible distributions (EPEL and RPM Fusion), openSUSE (Packman), Arch Linux, Alpine and NixOS. Embedded thumbnails are used for file icons, and ICC color profiles are converted to sRGB.
-- Advanced Setting *libheif library* (Linux): the location of a libheif outside the system's library path.
+- Windows 10 (1809 or newer) and 11, x64 and arm64: HEIC/HEIF images are decoded by the Windows Imaging Component with the free *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store, with transparency, orientation and ICC color profiles (e.g. Display P3).
+- Linux, x64 and arm64: HEIC/HEIF images are decoded by the system's libheif 1.x (`libheif.so.1`; 1.12 or newer for images with transparency and 10-bit images) with its HEVC decoder (libde265). Embedded thumbnails are used for file icons, and ICC color profiles are converted to sRGB.
+- When the system decoder is missing, a banner above the HEIC image (and, for the diff and the thumbnails, a notification once per session) says what to install: on Windows the Microsoft Store page of the missing extension (and a winget command for the HEIF Image Extension), on Linux the install command for the detected distribution (Debian, Ubuntu and derivatives, Fedora and RHEL-compatible distributions with RPM Fusion, openSUSE with Packman, Arch Linux, Alpine, NixOS). *Check Again*, or coming back to the IDE after installing, shows the open HEIC images without a restart.
+- Advanced Setting *libheif library* (Linux only): the location of a libheif outside the system's library path.
 
 ### Changed
 
 - Supports IntelliJ-based IDEs 2024.1 and newer (Android Studio Koala 2024.1.1 and newer; previously 2026.1.4 / Android Studio Quail 3): the macOS decoder is called through the JNA library that comes with the IDE instead of the Java FFM API, and the plugin is compiled for Java 17.
-- The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime.
+- The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime, in the background. The plugin still bundles no decoder and no native code.
 
 ## [0.1.0]
 

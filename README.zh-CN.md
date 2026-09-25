@@ -10,9 +10,9 @@
 在 Android Studio / IntelliJ 系列 IDE **自带的图片查看器**和**版本控制（VCS）差异对比**中查看 HEIC/HEIF 图片，支持 macOS、Windows 和 Linux。
 
 插件把 `.heic`、`.heif`、`.hif`、`.heics` 加入平台自带的 “Image” 文件类型，并注册一个 `javax.imageio` 读取器，通过 IDE 自带的
-JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework、Windows 的 WIC（需要 Microsoft Store 中的
-“HEIF 图像扩展”和“HEVC 视频扩展”）、Linux 的 libheif（需要它的 HEVC 解码插件 libde265）。插件不附带任何解码器或本地代码；
-缺少系统组件时，插件会提示需要安装什么。
+JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework（系统自带）、Windows 10/11 的 WIC（需要 Microsoft Store 中免费的
+“HEIF 图像扩展”和“HEVC 视频扩展”）、Linux 的 libheif 1.x（需要它的 HEVC 解码器 libde265）。插件不附带任何解码器或本地代码；
+缺少系统组件时，图片上方的横幅会说明需要安装什么，并给出 Microsoft Store 链接或当前 Linux 发行版的安装命令。
 
 ## 功能
 
@@ -30,8 +30,9 @@ JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework
 - 截断的文件显示为“Image not loaded”而不是全黑图片，也不会导致 IDE 崩溃。
 - 不需要重启即可安装、更新、卸载（0.1.0 已在 AS 2026.1.4 和 2026.2.2 Canary 1 的沙盒里验证：卸载时类加载器被回收；
   0.2.0 的单元测试在 JDK 17、21、25 上验证同样的事情）。
-- 缺少系统解码组件时（Windows 未安装扩展、Linux 未安装 libheif），会弹出通知说明需要安装什么，提供安装页面/安装命令、
-  “重新检测”（安装后无需重启即可显示 HEIC）和“不再显示”。
+- 缺少系统解码组件时（Windows 未安装扩展、Linux 未安装 libheif 或其 HEVC 解码器），HEIC 图片上方的横幅（差异对比和缩略图则是
+  每个会话最多一次的通知）会说明需要安装什么，提供 Microsoft Store 页面或安装命令、“重新检测”（安装后无需重启即可显示 HEIC）
+  和“了解详情”。
 - 不收集、不发送任何数据。
 
 ## 截图
@@ -51,16 +52,9 @@ Git 中修改过的 HEIC 文件左右对比：
   2026.1.3 起为 JBR 25）。
 - **macOS**（Apple Silicon 或 Intel）：无需安装任何东西（ImageIO.framework 是 macOS 的一部分）。在 macOS 26 / Apple Silicon 上验证；
   解码测试也在 CI 的 Intel Mac 上运行。
-- **Windows 10（1809 或更新）/ 11**（x64 或 arm64）：需要 Microsoft Store 中的两个组件，缺少时插件会给出链接：
-  - *HEIF 图像扩展*（HEIF Image Extension，[9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG)，免费，
-    Windows 10 1809+），即 Windows 图像组件（WIC）的 HEIF 解码器。也可以用 `winget install --id 9PMMSR1CGPWG --source msstore` 安装。
-  - *HEVC 视频扩展*（HEVC Video Extensions，[9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7)，0.99 美元），
-    即 HEIC 照片使用的编码。部分电脑预装了免费的 *来自设备制造商的 HEVC 视频扩展*（HEVC Video Extensions from Device
-    Manufacturer，[9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ)，由电脑厂商预装，Store 中不能购买），效果相同。
-
-  是否预装取决于 Windows 镜像（GitHub Actions 的 Windows 11 25H2 镜像两者都有，Windows Server 2025 都没有）。没有
-  Microsoft Store 的版本（Windows Server、LTSC）无法从 Store 获得 HEVC 编码；在 Windows Server 2025 上 winget 可以安装
-  HEIF 图像扩展，但装不了 HEVC 编码。
+- **Windows 10（1809 或更新）/ 11**（x64 或 arm64）：Microsoft Store 中免费的 *HEIF 图像扩展*（HEIF Image Extension）和
+  *HEVC 视频扩展*（HEVC Video Extensions）（部分电脑已预装）。缺少哪个，插件就给出哪个的链接；详见
+  [Windows: HEIF 和 HEVC 扩展](#windows-heif-和-hevc-扩展)。
 - **Linux**（x64 或 arm64）：发行版软件包中的 libheif 1.x（`libheif.so.1`）及其 HEVC 解码器（libde265），例如 Ubuntu 24.04 上
   `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的安装命令；其它发行版的命令见
   [Linux: libheif](#linux-libheif)。已用 libheif 1.12 至 1.23 测试；Ubuntu 20.04 的 libheif 1.6 能显示照片，但不能显示带透明通道或
@@ -73,11 +67,37 @@ Git 中修改过的 HEIC 文件左右对比：
   下载 `heic-viewer-<版本>.zip`，然后 <kbd>Settings</kbd>（⌘,）> <kbd>Plugins</kbd> > 齿轮图标 > <kbd>Install Plugin from Disk…</kbd>，
   选择该 zip 即可，无需重启。
 
+### Windows: HEIF 和 HEVC 扩展
+
+在 Windows 上，HEIC 图片由 Windows 图像组件（WIC）解码，需要 Microsoft Store 中的两个包：
+
+| 包 | Store ID | 价格 | 提供 |
+|---|---|---|---|
+| *HEIF 图像扩展*（HEIF Image Extension） | [9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG) | 免费 | WIC 的 HEIF 解码器（Windows 10 1809 或更新） |
+| *HEVC 视频扩展*（HEVC Video Extensions） | [9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7) | 付费（美国区 0.99 美元） | HEIC 照片使用的 HEVC 编码 |
+| *来自设备制造商的 HEVC 视频扩展*（HEVC Video Extensions from Device Manufacturer） | [9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ) | 免费，由电脑厂商预装（Store 中不能购买） | 同样的编码 |
+
+缺少其中之一时，HEIC 图片上方的横幅会说明缺少哪个，并提供“打开 Microsoft Store”和“重新检测”；“更多”中还有商店网页（适用于没有
+Store 应用的系统）、“了解详情”（本节），以及 HEIF 图像扩展的安装命令
+`winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements`（可复制）。安装后点“重新检测”，或直接切回 IDE，
+无需重启即可显示 HEIC 图片。
+
+- 是否预装取决于 Windows 镜像和电脑厂商（GitHub Actions 的 Windows 11 25H2 镜像两者都有，Windows Server 2025 都没有）。
+  在 PowerShell 中执行 `Get-AppxPackage *HEIFImageExtension*; Get-AppxPackage *HEVCVideoExtension*` 可以查看已安装的包。
+- 没有 Microsoft Store 的版本（Windows Server、LTSC）无法从 Store 获得 HEVC 编码；在 Windows Server 2025 上 winget 可以安装
+  HEIF 图像扩展，但装不了 HEVC 编码。
+- 只支持 64 位 Windows（x64 和 arm64），与 IDE 一致。
+- `idea.log` 中会记录检测结果：`HEIC decoder: Windows Imaging Component with the HEIF Image Extension through JNA 5.17.0 (amd64);
+  CreateDecoder(HEIF): 0x00000000 (S_OK); test image: decoded (64x128); HEVC decoders: ...`，或者缺少组件时的错误码。
+
+Store ID、价格和最低 Windows 版本来自 Microsoft Store 的商品目录（2026 年 9 月）和微软的
+[HEIF 编解码器文档](https://learn.microsoft.com/windows/win32/wic/heif-codec)。
+
 ### Linux: libheif
 
 在 Linux 上，HEIC 图片由系统的 libheif（`libheif.so.1`）及其 HEVC 解码器 libde265（较新的发行版中是单独的插件包）解码。
-缺少其中之一时，插件的通知会给出当前发行版（根据 `/etc/os-release` 识别）的安装命令，可点“复制命令”；安装后点“重新检测”，
-无需重启 IDE 即可显示 HEIC 文件。
+缺少其中之一时，HEIC 图片上方的横幅会给出当前发行版（根据 `/etc/os-release` 识别）的安装命令，可点“复制命令”；安装后点“重新检测”，
+或直接切回 IDE，无需重启即可显示 HEIC 图片。
 
 | 发行版 | 命令 |
 |---|---|
@@ -125,7 +145,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 - **用缩略图作为 HEIC 文件图标**（`heic.viewer.project.view.thumbnails`），默认开启。关闭后所有 HEIC 文件恢复为普通图片图标。
   修改在点击 OK/Apply 后生效：已显示的图标在设置对话框关闭后立即刷新（不需要重新打开项目）。
 - **libheif 库**（`heic.viewer.libheif.path`，仅 Linux），默认为空（使用系统的 libheif）。填写 `libheif.so.1` 或其所在目录的路径，
-  用于不在系统库路径中的 libheif（见 [Linux: libheif](#linux-libheif)）。下次启动 IDE 或点击通知中的“重新检测”后生效。
+  用于不在系统库路径中的 libheif（见 [Linux: libheif](#linux-libheif)）。下次启动 IDE 或点击横幅/通知中的“重新检测”后生效。
 
 ## 限制与已知问题
 
@@ -199,12 +219,14 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    本地代码只通过 IDE 自带的 JNA 调用（`backend.jna.JnaLibraries`）：只使用它的无类型层（`NativeLibrary`、参数为 JDK 类型的
    `Function.invoke*`、`Native.malloc`/`free`），绝不使用 `Library` 接口、`Structure`、回调或 `Memory`——JNA 对它们的缓存会一直持有
    插件的类加载器；打开本地库时也保证 JNA 的 Cleaner 线程不会继承插件的上下文。
+
    **macOS 解码**（`mac` 包）：`HeicDecoder` 的流程：`CFDataCreate` → `CGImageSourceCreateWithData(ShouldCache=false)` → 主图属性 →
    `CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform, ThumbnailMaxPixelSize, ShouldCacheImmediately)`
    → 以约 100 万像素为一条带，经 `CGImageCreateWithImageInRect` 裁剪后绘制到显式的 8 bit **sRGB** 位图上下文 →
    复制到 `BufferedImage`。每次调用都有自己的 autorelease pool，所有 CF 对象和本地缓冲区在 `finally` 中释放，线程安全。
    ImageIO 报告的类型必须属于 HEIF 家族（`public.heic`、`public.heif` 等）。`MacApi` 列出它需要的本地调用，由 `jna.JnaMacApi` 实现；
    按值传递的 `CGRect` 在 arm64 上作为 4 个 double 传递，在 x86_64 上先用 8 个占位 double 填满 `xmm0`–`xmm7`，再把 4 个分量放到栈上。
+
    **Windows 解码**（`win` 包）：`WicDecoder` 在调用线程上初始化 COM（`CoInitializeEx` 多线程套间，结束时用 `CoUninitialize`
    配对；已经处于单线程套间的线程，例如 AWT 线程，按原样使用），创建 WIC 图像工厂、内存流（`SHCreateMemStream`）和解码器
    （`CreateDecoderFromStream`，解码器报告的容器格式必须是 `GUID_ContainerFormatHeif`），取第 0 帧即主图。微软的 HEIF 解码器
@@ -246,9 +268,11 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    并在 `idea.log` 中以警告记录这一情况。
 5. **IJPL-39443 修复**（`HeicFileTypeMappingRepair`）：插件在启动/加载时同步（只读）检查：如果某扩展名当前不属于任何文件类型，才在 EDT 上
    重新关联到 Image（用户显式映射到其它类型的扩展名不会被改动）。正常启动时不向 EDT 投递任何事件（原因见第 8 条）。
-   **缺少解码器的提示**（`ui` 包）：注册读取器后在后台线程探测后端状态；界面只读取后端缓存的状态，从不在 EDT 上探测（`DecoderStatus`）。
-   解码器不可用时，在 HEIC 图片无法显示的地方告诉用户原因和对应的解决办法（`backend.HeifRemedies`：Microsoft Store 页面或安装命令、
-   “重新检测”、“了解详情”等）：
+6. **缺少解码器的提示**（`ui` 包）：注册读取器后在后台线程探测后端状态；界面只读取后端缓存的状态，从不在 EDT 上探测（`DecoderStatus`）。
+   解码器不可用时，在 HEIC 图片无法显示的地方告诉用户原因和对应的解决办法（`backend.HeifRemedies`）：Windows 上是“打开 Microsoft Store”
+   （缺少的那个包在 Store 应用中的页面，数据来自 `win.WindowsCodecs`）、“重新检测”，以及“更多”中的 winget 命令、商店网页和“了解详情”；
+   Linux 上是当前发行版的安装命令（`linux.LibheifRemedy`，横幅中直接显示）以及“复制命令”、“重新检测”、“了解详情”（没有适用于当前系统的
+   命令时改为 README 中的安装说明）；意外错误为“重新检测”和“报告问题”，不支持的系统为“了解详情”：
    - HEIC 图片编辑器上方的**横幅**（`HeicDecoderNotificationProvider`，`editorNotificationProvider`）。平台只会主动为文本编辑器收集横幅，
      所以解码器缺失时，`HeicFileOpenedListener` 会在打开 HEIC 文件时请求更新横幅；
    - 没有横幅的地方显示**通知**（通知组 “HEIC Viewer”，气泡），每个会话最多一次：打开 HEIC 文件的差异对比（`HeicDiffExtension`，
@@ -260,7 +284,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    卸载插件前会主动移除它的横幅（IntelliJ 2026.1 会把已卸载提供者的面板留在编辑器里，导致类加载器无法回收），并让它的通知过期。
    `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以强制指定状态，用于查看其它操作系统上的界面；加上
    `-Dheic.viewer.debug.backendStatus.recover=true` 后，第一次“重新检测”会切换到当前系统真正的解码器。
-6. **缩略图文件图标**（`thumbnail` 包）：
+7. **缩略图文件图标**（`thumbnail` 包）：
    - `HeicThumbnailIconProvider`（`com.intellij.fileIconProvider`，`order="first"`，动态扩展点）只对本地
      （`isInLocalFileSystem`）、非空、不超过 64 MB、扩展名为 heic/heif/hif/heics 的文件、且设置开启时工作。`getIcon` **从不解码**：
      只查 LRU 缓存（500 项，键 = URL + VFS 时间戳 + 文件长度 + 图标逻辑尺寸 + 最大屏幕缩放），未命中时把解码任务交给插件自己的
@@ -286,7 +310,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
      并清空 `IconDeferrer` 缓存）。设置监听器和 VFS 监听器都是声明式的 `applicationListeners`，由平台自动注销。
    - 切换设置（`AdvancedSettingsChangeListener`）会立即清空缓存，并对所有请求过图标的文件发布外观变化，关闭设置对话框后
      项目视图即切换为缩略图/默认图标，无需重新打开项目。HEIC 文件在磁盘上被修改时（`BulkFileListener`，只比较字符串）同样刷新。
-7. **Java 17 与免重启卸载**：插件以 `--release 17` 编译。在 JBR 17（IntelliJ 2024.1）上，有两件事会让插件卸载后类加载器仍被持有，所以都不使用：
+8. **Java 17 与免重启卸载**：插件以 `--release 17` 编译。在 JBR 17（IntelliJ 2024.1）上，有两件事会让插件卸载后类加载器仍被持有，所以都不使用：
    record（JDK 会缓存它的 `equals`/`hashCode`/`toString` 引导方法；`DecodeLimits` 等值类改为手写），以及正常启动时由插件代码向 EDT
    投递事件（见第 5 条）。`BytecodeLevelTest` 检查打包后的 jar（class 版本、没有 record、没有 `java.lang.foreign`、JNA 规则），
    `PluginClassLoaderLeakTest` 在 JDK 17、21、25 上验证：插件解码图片并关闭后，类加载器可以被回收。
@@ -405,7 +429,7 @@ src/test/fixture-generators/       测试图片的生成源码与说明
 CHANGELOG.md                       Keep a Changelog 格式；每个版本的 change notes 由它生成
 ```
 
-### 实现解码后端（Windows、Linux）
+### 实现解码后端
 
 - 继承 `backend.AbstractHeifBackend`，参见 `mac.MacHeifBackend`、`win.WicHeifBackend` 和 `linux.LibheifHeifBackend`；
   `HeifBackends` 按操作系统选择后端。Windows 后端可作参考：本地调用放在接口（`WinApi`）之后，用它的假实现（`FakeWinApi`）
@@ -414,8 +438,8 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
   并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。
 - 每种原因显示给用户的内容（横幅、通知）来自 `backend.HeifRemedies` 中它的解决办法：两个资源包中的文案 `remedy.title.<REASON>` 和
   `backend.status.<REASON>`，以及操作（安装页面或安装命令、“重新检测”、“了解详情”）。后端传入的 URL 和命令会替换 `HeifRemedies` 的默认值
-  （只接受 `https:`、`ms-windows-store:` URL 和单行命令）。请用核实过的数据替换其中以及资源包中标记为 `TODO(windows backend)` /
-  `TODO(linux backend)` 的默认值；`HeifRemediesTest` 会检查每一种解决办法。
+  （只接受 `https:`、`ms-windows-store:` URL 和不超过 500 个字符的单行命令；`HeifBackendContractTest` 会检查当前系统的后端给出的值
+  能被接受）。`HeifRemediesTest` 会检查每一种解决办法。
 - `doReadInfo` / `doDecode` / `doDecodeThumbnail`：输入检查、可用性检查和本地异常的包装由基类完成。用 `PixelPipeline` 生成图片
   （8 bit sRGB、非预乘透明通道、已应用方向、不超过 `maxPixelSize`）。
 - 遵守 `JnaLibraries` 中的 JNA 规则（不用 `Library`/`Structure`/`Memory`/回调，字符串用 `utf8z`/`utf16z` 数组传递），

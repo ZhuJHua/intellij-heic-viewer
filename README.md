@@ -8,7 +8,9 @@
 English | [简体中文](README.zh-CN.md)
 
 <!-- Plugin description -->
-Opens HEIC/HEIF images in the IDE's built-in image viewer and VCS image diff, on macOS, Windows and Linux.
+Opens HEIC/HEIF images in the IDE's built-in image viewer and VCS image diff on macOS, Windows and Linux, decoded by the
+operating system's own HEIF decoder: built into macOS, the *HEIF Image Extension* and *HEVC Video Extensions* from the
+Microsoft Store on Windows 10 and 11, and libheif with its HEVC decoder (libde265) on Linux.
 
 Files with the extensions `.heic`, `.heif`, `.hif` and `.heics` become regular images, just like PNG or JPEG:
 
@@ -22,15 +24,17 @@ Files with the extensions `.heic`, `.heif`, `.hif` and `.heics` become regular i
 - Very large images are downscaled while decoding to keep memory use bounded (64 megapixels by default).
 - Installs, updates and uninstalls without restarting the IDE.
 
-Images are decoded by the operating system's own HEIF decoder, called through the JNA library that comes with the IDE.
-The plugin bundles no decoder and no native code, and does not send any data.
+The system decoder is called through the JNA library that comes with the IDE. The plugin bundles no decoder and no
+native code, and does not send any data.
 
-- **macOS**: built in (ImageIO.framework).
-- **Windows**: needs the *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store.
-- **Linux**: needs libheif with its HEVC decoder plugin (libde265) from the distribution's packages.
+- **macOS**: nothing to install (ImageIO.framework).
+- **Windows**: the free *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store (some PCs come
+  with both).
+- **Linux**: libheif 1.x with its HEVC decoder (libde265) from the distribution's packages.
 
-If a component is missing, the plugin tells you what to install. The pixel limit and the thumbnails can be changed in
-*Settings | Advanced Settings | HEIC Viewer*.
+If a component is missing, a banner above the image says what to install, with a link to the Microsoft Store or the
+install command for your Linux distribution; *Check Again* then shows the images without restarting the IDE. The pixel
+limit and the thumbnails can be changed in *Settings | Advanced Settings | HEIC Viewer*.
 
 Limitations: only the primary image of a file is shown, colors are converted to sRGB, and HDR gain maps are ignored.
 
@@ -54,18 +58,9 @@ Side-by-side image diff of a modified HEIC file:
   (JBR 17 in 2024.1, JBR 21 in 2024.2 – 2026.1.2, JBR 25 since 2026.1.3).
 - **macOS**, Apple silicon or Intel: nothing to install (ImageIO.framework is part of macOS). Tested on macOS 26 on
   Apple silicon; the decoder tests also run on Intel Macs in CI.
-- **Windows 10 (1809 or newer) or 11**, x64 or arm64: two Microsoft Store packages, which the plugin links to when they
-  are missing:
-  - *HEIF Image Extension* ([9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG), free, Windows 10 1809+),
-    the HEIF decoder of the Windows Imaging Component. Also `winget install --id 9PMMSR1CGPWG --source msstore`.
-  - *HEVC Video Extensions* ([9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7), US$0.99), the codec of
-    HEIC photos. PCs can come with the free *HEVC Video Extensions from Device Manufacturer*
-    ([9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ), preinstalled by PC makers, not offered for purchase),
-    which works the same.
-
-  Whether they are preinstalled depends on the Windows image (the Windows 11 25H2 image of GitHub Actions has both,
-  Windows Server 2025 has neither). Editions without the Microsoft Store (Windows Server, LTSC) cannot get the HEVC
-  codec from the Store; on Windows Server 2025 winget installs the HEIF Image Extension, but not the HEVC codec.
+- **Windows 10 (1809 or newer) or 11**, x64 or arm64: the free *HEIF Image Extension* and the *HEVC Video Extensions*
+  from the Microsoft Store (some PCs come with both). The plugin links to the one that is missing; see
+  [Windows: HEIF and HEVC extensions](#windows-heif-and-hevc-extensions).
 - **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with its HEVC decoder (libde265) from the distribution's
   packages, for example `sudo apt install libheif1 libheif-plugin-libde265` on Ubuntu 24.04. The plugin shows the
   install command for the distribution when they are missing; see [Linux: libheif](#linux-libheif) for the commands of
@@ -81,12 +76,40 @@ Side-by-side image diff of a modified HEIC file:
   then <kbd>Settings</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install Plugin from Disk...</kbd>.
   No restart is needed.
 
+### Windows: HEIF and HEVC extensions
+
+On Windows, HEIC images are decoded by the Windows Imaging Component (WIC) with two packages from the Microsoft Store:
+
+| Package | Store ID | Price | Provides |
+|---|---|---|---|
+| *HEIF Image Extension* | [9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG) | free | the HEIF decoder of WIC (Windows 10 1809 or newer) |
+| *HEVC Video Extensions* | [9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7) | paid (US$0.99 in the US Store) | the HEVC codec of HEIC photos |
+| *HEVC Video Extensions from Device Manufacturer* | [9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ) | free, preinstalled by PC makers (not offered for purchase) | the same codec |
+
+If one is missing, the banner above a HEIC image names it, with *Open Microsoft Store* and *Check Again*; under *More*
+are the Store's web page (for systems without the Store app), *Learn More* (this section) and, for the HEIF Image
+Extension, `winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements` to copy. After installing,
+*Check Again*, or simply switching back to the IDE, shows the HEIC images without a restart.
+
+- Whether the packages are preinstalled depends on the Windows image and the PC maker (the Windows 11 25H2 image of
+  GitHub Actions has both, Windows Server 2025 has neither). In PowerShell,
+  `Get-AppxPackage *HEIFImageExtension*; Get-AppxPackage *HEVCVideoExtension*` lists what is installed.
+- Editions without the Microsoft Store (Windows Server, LTSC) cannot get the HEVC codec from the Store; on Windows
+  Server 2025 winget installs the HEIF Image Extension, but not the HEVC codec.
+- 64-bit Windows only (x64 and arm64), like the IDEs.
+- `idea.log` tells what was found: `HEIC decoder: Windows Imaging Component with the HEIF Image Extension through JNA
+  5.17.0 (amd64); CreateDecoder(HEIF): 0x00000000 (S_OK); test image: decoded (64x128); HEVC decoders: ...`, or the
+  error codes of the missing component.
+
+Store IDs, prices and minimum Windows versions from the Microsoft Store catalog (September 2026) and Microsoft's
+[HEIF codec documentation](https://learn.microsoft.com/windows/win32/wic/heif-codec).
+
 ### Linux: libheif
 
 On Linux, HEIC images are decoded by the system's libheif (`libheif.so.1`) with its HEVC decoder, libde265 (in newer
-releases a separate plugin package). If either is missing, the plugin's notification shows the command for the
-distribution (detected from `/etc/os-release`), with *Copy Command*; after installing, *Check Again* makes HEIC files
-load without restarting the IDE.
+releases a separate plugin package). If either is missing, the banner above a HEIC image shows the command for the
+distribution (detected from `/etc/os-release`), with *Copy Command*; after installing, *Check Again*, or simply
+switching back to the IDE, shows the HEIC images without a restart.
 
 | Distribution | Command |
 |---|---|
@@ -135,7 +158,7 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 |---|---|---|
 | Maximum decoded image size (megapixels, 1–512). Larger images are downscaled while decoding; the longer side is also limited to 16384 pixels. The image viewer always asks for full resolution and the diff decodes two images at once, so this bounds memory use. | `heic.viewer.max.megapixels` | 64 |
 | Show thumbnails as HEIC file icons. Applies as soon as the settings dialog is closed. | `heic.viewer.project.view.thumbnails` | on |
-| Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start or with *Check Again* in the notification. | `heic.viewer.libheif.path` | empty: the system's libheif |
+| Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start or with *Check Again* in the banner or notification. | `heic.viewer.libheif.path` | empty: the system's libheif |
 
 ## Limitations and known issues
 
@@ -286,7 +309,11 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 8. **Missing decoder** (`ui` package): after registering, the backend's status is probed on a pooled thread; the UI
    only ever reads the backend's cached status and never probes on the EDT (`DecoderStatus`). When the decoder is
    unavailable, the user is told where a HEIC image fails to load, with the remedy of the reason
-   (`backend.HeifRemedies`: the Microsoft Store page or the install command, *Check Again*, *Learn More*, ...):
+   (`backend.HeifRemedies`): on Windows *Open Microsoft Store* (the Store app page of the missing package, from
+   `win.WindowsCodecs`), *Check Again* and, under *More*, the winget command, the Store's web page and *Learn More*; on
+   Linux the package command of the detected distribution (`linux.LibheifRemedy`, shown in the banner) with
+   *Copy Command*, *Check Again* and *Learn More* (or, without a command for the system, the README's instructions);
+   *Check Again* and *Report a Problem* for an unexpected error, *Learn More* on an unsupported system:
    - a **banner** above HEIC image editors (`HeicDecoderNotificationProvider`, `editorNotificationProvider`). The
      platform collects banners by itself only for text editors, so `HeicFileOpenedListener` asks for it when a HEIC
      file is opened while the decoder is missing;
@@ -432,7 +459,7 @@ src/test/fixture-generators/  Sources and notes for generating the fixtures
 CHANGELOG.md                  Keep a Changelog; the change notes of each release are generated from it
 ```
 
-### Implementing a decoder backend (Windows, Linux)
+### Implementing a decoder backend
 
 - Extend `backend.AbstractHeifBackend`, like `mac.MacHeifBackend`, `win.WicHeifBackend` and
   `linux.LibheifHeifBackend`; `HeifBackends` selects the backend by OS. The Windows backend shows the pattern: the
@@ -444,9 +471,9 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 - What the user sees for a reason (banner, notifications) is its remedy in `backend.HeifRemedies`: the texts
   `remedy.title.<REASON>` and `backend.status.<REASON>` in both message bundles, and the actions (install page or
   command, *Check Again*, *Learn More*). The URL and command a backend passes replace the defaults of `HeifRemedies`
-  (only `https:` and `ms-windows-store:` URLs and single-line commands are accepted). Replace the defaults marked
-  `TODO(windows backend)` / `TODO(linux backend)` there and in the bundles with the verified data; `HeifRemediesTest`
-  checks every remedy.
+  (only `https:` and `ms-windows-store:` URLs and single-line commands of at most 500 characters are accepted;
+  `HeifBackendContractTest` checks that the backend of the OS passes acceptable ones). `HeifRemediesTest` checks every
+  remedy.
 - `doReadInfo` / `doDecode` / `doDecodeThumbnail`: the input checks, the availability check and the wrapping of native
   failures are done by the base class. Produce the images with `PixelPipeline` (8-bit sRGB, straight alpha,
   orientation applied, never larger than `maxPixelSize`).

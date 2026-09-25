@@ -3,6 +3,7 @@ package cn.yooss.heic.backend;
 import cn.yooss.heic.backend.HeifBackendStatus.Reason;
 import cn.yooss.heic.backend.HeifRemedy.Action;
 import cn.yooss.heic.backend.HeifRemedy.ActionType;
+import cn.yooss.heic.win.WindowsCodecs;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -87,7 +88,10 @@ class HeifRemediesTest {
     if (remedy.command() != null) assertTrue(HeifRemedies.isAllowedCommand(remedy.command()), remedy.toString());
   }
 
-  /** What each kind of reason offers: installable ones a way to install and Check Again; errors Check Again. */
+  /**
+   * What each kind of reason offers: installable ones a way to install first, Check Again and a documentation link;
+   * errors Check Again.
+   */
   @ParameterizedTest
   @EnumSource(Reason.class)
   void actionsFitTheReason(Reason reason) {
@@ -100,10 +104,13 @@ class HeifRemediesTest {
       assertTrue(types.contains(ActionType.CHECK_AGAIN), remedy.toString());
       ActionType first = remedy.actions().get(0).type();
       assertTrue(first == ActionType.OPEN_URL || first == ActionType.COPY_COMMAND, "installing comes first: " + remedy);
-      assertTrue(types.contains(ActionType.LEARN_MORE), remedy.toString());
+      assertTrue(remedy.actions().stream().anyMatch(a -> a.target() != null && a.target().startsWith(HeifRemedies.PROJECT_URL + "#")),
+                 "a link to the README: " + remedy);
+      int checkAgain = remedy.actions().indexOf(Action.checkAgain());
+      assertTrue(checkAgain >= 0 && checkAgain < 2, "Check Again is one of the two links the banner always shows: " + remedy);
     }
     if (reason == Reason.ERROR) assertTrue(types.contains(ActionType.CHECK_AGAIN), remedy.toString());
-    if (reason == Reason.UNSUPPORTED_OS || reason == Reason.NOT_IMPLEMENTED) {
+    if (reason == Reason.UNSUPPORTED_OS) {
       assertFalse(types.contains(ActionType.CHECK_AGAIN), "nothing to install: " + remedy);
     }
   }
@@ -116,28 +123,78 @@ class HeifRemediesTest {
       assertEquals(ActionType.OPEN_URL, store.type());
       assertEquals("remedy.action.open.store", store.textKey());
       assertTrue(store.target().startsWith("ms-windows-store://pdp/?ProductId="), store.target());
+      assertEquals(Action.checkAgain(), remedy.actions().get(1));
       Action web = remedy.actions().get(2);
       assertEquals("remedy.action.open.store.web", web.textKey());
-      assertTrue(web.target().startsWith("https://apps.microsoft.com/"), web.target());
+      assertTrue(web.target().startsWith("https://apps.microsoft.com/detail/"), web.target());
+      assertEquals(Action.learnMore(HeifRemedies.WINDOWS_HELP_URL), remedy.actions().get(3));
       assertNull(remedy.command());
     }
-    assertEquals(HeifRemedies.HEIF_EXTENSION_STORE_URL,
-                 HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(0).target());
-    assertEquals(HeifRemedies.HEVC_EXTENSION_STORE_URL,
-                 HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(0).target());
+    assertEquals(WindowsCodecs.HEIF_STORE_APP_URL, HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(0).target());
+    assertEquals(WindowsCodecs.HEIF_STORE_URL, HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(2).target());
+    assertEquals(WindowsCodecs.HEVC_STORE_APP_URL, HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(0).target());
+    assertEquals(WindowsCodecs.HEVC_STORE_URL, HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(2).target());
+    assertEquals("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG", WindowsCodecs.HEIF_STORE_APP_URL);
+    assertEquals("https://apps.microsoft.com/detail/9NMZLZ57R3T7", WindowsCodecs.HEVC_STORE_URL);
   }
 
+  /**
+   * The statuses the Windows backend reports (WicProbe): the HEIF Image Extension with its winget command (after Check
+   * Again, in "More"), the HEVC Video Extensions without one (a paid product).
+   */
+  @Test
+  void windowsBackendStatuses() {
+    HeifRemedy heif = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEIF_EXTENSION_MISSING, "test")
+                                               .withInstallUrl(WindowsCodecs.HEIF_STORE_APP_URL)
+                                               .withInstallCommand(WindowsCodecs.HEIF_WINGET_COMMAND));
+    assertNotNull(heif);
+    assertEquals(List.of(Action.openUrl("remedy.action.open.store", WindowsCodecs.HEIF_STORE_APP_URL),
+                         Action.checkAgain(),
+                         Action.copyCommand(WindowsCodecs.HEIF_WINGET_COMMAND),
+                         Action.openUrl("remedy.action.open.store.web", WindowsCodecs.HEIF_STORE_URL),
+                         Action.learnMore(HeifRemedies.WINDOWS_HELP_URL)), heif.actions());
+    assertEquals(WindowsCodecs.HEIF_WINGET_COMMAND, heif.command());
+
+    HeifRemedy hevc = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test")
+                                               .withInstallUrl(WindowsCodecs.HEVC_STORE_APP_URL));
+    assertEquals(HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING), hevc);
+  }
+
+  /**
+   * Linux: the command comes from the backend (the detected distribution, see LibheifRemedyTest); without one (Flatpak,
+   * an unknown distribution) the README section with the commands of every distribution comes first.
+   */
   @Test
   void linuxRemediesCopyTheCommandFirst() {
     for (Reason reason : List.of(Reason.LINUX_LIBHEIF_MISSING, Reason.LINUX_HEVC_PLUGIN_MISSING)) {
-      HeifRemedy remedy = HeifRemedies.forReason(reason);
-      Action copy = remedy.actions().get(0);
-      assertEquals(ActionType.COPY_COMMAND, copy.type());
-      assertEquals(remedy.command(), copy.target());
-      assertEquals(ActionType.CHECK_AGAIN, remedy.actions().get(1).type());
+      HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(reason, "test")
+                                                   .withInstallCommand("sudo pacman -S --needed libheif libde265")
+                                                   .withInstallUrl(HeifRemedies.LINUX_HELP_URL));
+      assertNotNull(remedy);
+      assertEquals(List.of(Action.copyCommand("sudo pacman -S --needed libheif libde265"), Action.checkAgain(),
+                           Action.learnMore(HeifRemedies.LINUX_HELP_URL)), remedy.actions());
+      assertEquals("sudo pacman -S --needed libheif libde265", remedy.command());
+
+      HeifRemedy noCommand = HeifRemedies.forReason(reason);
+      assertNull(noCommand.command(), "no default command: a Debian command would be wrong elsewhere");
+      assertEquals(List.of(Action.openUrl("remedy.action.open.install.page", HeifRemedies.LINUX_HELP_URL), Action.checkAgain()),
+                   noCommand.actions());
     }
-    assertEquals(HeifRemedies.LIBHEIF_COMMAND, HeifRemedies.forReason(Reason.LINUX_LIBHEIF_MISSING).command());
-    assertEquals(HeifRemedies.HEVC_PLUGIN_COMMAND, HeifRemedies.forReason(Reason.LINUX_HEVC_PLUGIN_MISSING).command());
+  }
+
+  /** The README sections the remedies link to exist (GitHub's heading anchors); the tests run in the project directory. */
+  @Test
+  void readmeSectionsExist() throws IOException {
+    Set<String> anchors = new TreeSet<>();
+    for (String line : java.nio.file.Files.readAllLines(java.nio.file.Paths.get("README.md"), StandardCharsets.UTF_8)) {
+      if (!line.startsWith("#")) continue;
+      String heading = line.replaceFirst("^#+\\s*", "").trim().toLowerCase(Locale.ROOT);
+      anchors.add(heading.replaceAll("[^\\p{L}\\p{N} -]", "").replace(' ', '-'));
+    }
+    for (String url : List.of(HeifRemedies.REQUIREMENTS_URL, HeifRemedies.WINDOWS_HELP_URL, HeifRemedies.LINUX_HELP_URL)) {
+      assertTrue(url.startsWith(HeifRemedies.PROJECT_URL + "#"), url);
+      assertTrue(anchors.contains(url.substring(url.indexOf('#') + 1)), url + " not in " + anchors);
+    }
   }
 
   @Test
@@ -157,8 +214,8 @@ class HeifRemediesTest {
     HeifRemedy docs = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
                                                .withInstallUrl("https://example.org/libheif"));
     assertNotNull(docs);
-    assertEquals(HeifRemedies.HEVC_PLUGIN_COMMAND, docs.command());
-    assertTrue(docs.actions().contains(Action.openUrl("remedy.action.open.install.page", "https://example.org/libheif")), docs.toString());
+    assertNull(docs.command());
+    assertEquals(Action.openUrl("remedy.action.open.install.page", "https://example.org/libheif"), docs.actions().get(0));
 
     String freeHevc = "ms-windows-store://pdp/?ProductId=9N4WGH0Z6VHQ";
     HeifRemedy windows = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test")
@@ -166,7 +223,8 @@ class HeifRemediesTest {
                                                   .withInstallCommand("winget install --id 9N4WGH0Z6VHQ --source msstore"));
     assertNotNull(windows);
     assertEquals(Action.openUrl("remedy.action.open.store", freeHevc), windows.actions().get(0));
-    assertEquals(ActionType.COPY_COMMAND, windows.actions().get(1).type());
+    assertEquals(ActionType.CHECK_AGAIN, windows.actions().get(1).type());
+    assertEquals(ActionType.COPY_COMMAND, windows.actions().get(2).type());
     assertEquals("winget install --id 9N4WGH0Z6VHQ --source msstore", windows.command());
   }
 

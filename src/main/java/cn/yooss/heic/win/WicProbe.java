@@ -177,14 +177,14 @@ final class WicProbe {
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING,
                                            "WIC has no HEIF decoder (install the HEIF Image Extension, Microsoft Store "
                                            + WindowsCodecs.HEIF_PRODUCT_ID + "); " + details)
-        .withInstallUrl(WindowsCodecs.HEIF_STORE_URL)
+        .withInstallUrl(WindowsCodecs.HEIF_STORE_APP_URL)
         .withInstallCommand(WindowsCodecs.HEIF_WINGET_COMMAND);
     }
     if (hevcDecoderMissing()) {
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.WINDOWS_HEVC_EXTENSION_MISSING,
                                            "The HEIF decoder has no HEVC codec (install the HEVC Video Extensions, "
                                            + "Microsoft Store " + WindowsCodecs.HEVC_PRODUCT_ID + "); " + details)
-        .withInstallUrl(WindowsCodecs.HEVC_STORE_URL);
+        .withInstallUrl(WindowsCodecs.HEVC_STORE_APP_URL);
     }
     return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR, "The Windows HEIF decoder does not work: " + details);
   }

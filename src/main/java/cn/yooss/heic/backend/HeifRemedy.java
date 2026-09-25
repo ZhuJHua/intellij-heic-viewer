@@ -146,7 +146,10 @@ public final class HeifRemedy {
     return reason.bundleKey();
   }
 
-  /** The command that installs the missing component, shown with the explanation; {@code null} if there is none. */
+  /**
+   * The command that installs the missing component, shown with the explanation (and in the banner when copying it is
+   * the first action); {@code null} if there is none.
+   */
   public @Nullable String command() {
     return command;
   }

@@ -19,23 +19,27 @@ package cn.yooss.heic.win;
  * (arm64) image has the HEIF Image Extension and the device-manufacturer HEVC package provisioned, the Windows Server
  * 2025 image has neither (and no Microsoft Store). Elsewhere it depends on the Windows edition and the PC maker; where
  * no HEVC package came with the PC, the paid one is the one a user can get.
+ * <p>
+ * The backend's statuses carry the Store app page ({@code ms-windows-store:}) and, for the free HEIF Image Extension,
+ * the winget command; {@code backend.HeifRemedies} turns them into the banner's and the notifications' actions (with the
+ * web page for systems without the Store app).
  */
-final class WindowsCodecs {
+public final class WindowsCodecs {
   private WindowsCodecs() {
   }
 
-  static final String HEIF_PRODUCT_ID = "9PMMSR1CGPWG";
-  static final String HEVC_PRODUCT_ID = "9NMZLZ57R3T7";
-  static final String HEVC_DEVICE_MANUFACTURER_PRODUCT_ID = "9N4WGH0Z6VHQ";
+  public static final String HEIF_PRODUCT_ID = "9PMMSR1CGPWG";
+  public static final String HEVC_PRODUCT_ID = "9NMZLZ57R3T7";
+  public static final String HEVC_DEVICE_MANUFACTURER_PRODUCT_ID = "9N4WGH0Z6VHQ";
 
   /** Opens in any browser; the page offers to continue in the Microsoft Store app. */
-  static final String HEIF_STORE_URL = "https://apps.microsoft.com/detail/" + HEIF_PRODUCT_ID;
-  static final String HEVC_STORE_URL = "https://apps.microsoft.com/detail/" + HEVC_PRODUCT_ID;
+  public static final String HEIF_STORE_URL = "https://apps.microsoft.com/detail/" + HEIF_PRODUCT_ID;
+  public static final String HEVC_STORE_URL = "https://apps.microsoft.com/detail/" + HEVC_PRODUCT_ID;
   /** Opens the product page in the Microsoft Store app directly. */
-  static final String HEIF_STORE_APP_URL = "ms-windows-store://pdp/?ProductId=" + HEIF_PRODUCT_ID;
-  static final String HEVC_STORE_APP_URL = "ms-windows-store://pdp/?ProductId=" + HEVC_PRODUCT_ID;
+  public static final String HEIF_STORE_APP_URL = "ms-windows-store://pdp/?ProductId=" + HEIF_PRODUCT_ID;
+  public static final String HEVC_STORE_APP_URL = "ms-windows-store://pdp/?ProductId=" + HEVC_PRODUCT_ID;
 
   /** Installs the (free) HEIF Image Extension with the Windows Package Manager from the Microsoft Store source. */
-  static final String HEIF_WINGET_COMMAND =
+  public static final String HEIF_WINGET_COMMAND =
     "winget install --id " + HEIF_PRODUCT_ID + " --source msstore --accept-package-agreements";
 }

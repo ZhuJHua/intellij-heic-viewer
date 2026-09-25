@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The texts of the banner and of the balloons, resolved through the IDE's message bundle machinery (Java 21 bytecode in
  * 261, hence "platform"). The banner and the balloons themselves are tested in a light IDE,
- * {@link HeicDecoderUiPlatformTest}.
+ * {@link DecoderUiPlatformIntegrationTest}.
  */
 @Tag("platform")
 class DecoderTextsTest {
@@ -33,6 +34,23 @@ class DecoderTextsTest {
       assertTrue(banner.endsWith(remedy.command()), banner);
       assertTrue(content.contains("<code>" + remedy.command() + "</code>"), content);
     }
+  }
+
+  /** The command is in the banner where copying it is the remedy (Linux), not where the Store comes first (Windows). */
+  @Test
+  void bannerShowsTheCommandOnlyWhereItIsTheRemedy() {
+    HeifRemedy linux = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_LIBHEIF_MISSING, "no libheif")
+                                                .withInstallCommand("sudo pacman -S --needed libheif libde265"));
+    assertNotNull(linux);
+    assertTrue(HeicDecoderNotificationProvider.text(linux).endsWith("sudo pacman -S --needed libheif libde265"));
+
+    String winget = "winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements";
+    HeifRemedy windows = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEIF_EXTENSION_MISSING, "no WIC decoder")
+                                                  .withInstallUrl("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG")
+                                                  .withInstallCommand(winget));
+    assertNotNull(windows);
+    assertEquals(cn.yooss.heic.HeicBundle.message(windows.titleKey()), HeicDecoderNotificationProvider.text(windows));
+    assertTrue(DecoderPrompt.content(windows).contains("<code>" + winget + "</code>"), "the balloon and the tooltip have it");
   }
 
   @Test
@@ -52,7 +70,8 @@ class DecoderTextsTest {
     HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEIF_EXTENSION_MISSING, "no WIC decoder"));
     assertNotNull(remedy);
     String content = DecoderPrompt.content(remedy);
-    assertTrue(content.contains("HEIF Image Extensions"), content);
+    assertTrue(content.contains("HEIF Image Extension"), content); // the Microsoft Store's title
+    assertTrue(content.contains("HEVC Video Extensions"), content);
     assertFalse(content.contains("<code>"), "no command: " + content);
   }
 }

@@ -58,7 +58,7 @@ class HeifBackendStatusTest {
     assertEquals(a, b);
     assertEquals(a.hashCode(), b.hashCode());
     assertNotEquals(a, b.withInstallCommand("c"));
-    assertNotEquals(a, HeifBackendStatus.unavailable(HeifBackendStatus.Reason.NOT_IMPLEMENTED, "x").withInstallUrl("u"));
+    assertNotEquals(a, HeifBackendStatus.unavailable(HeifBackendStatus.Reason.UNSUPPORTED_OS, "x").withInstallUrl("u"));
     assertNotEquals(HeifBackendStatus.available("x"), HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR, "x"));
     // IllegalArgumentException from the @NotNull instrumentation, NullPointerException without it
     assertThrows(RuntimeException.class, () -> HeifBackendStatus.unavailable(null, "x"));
