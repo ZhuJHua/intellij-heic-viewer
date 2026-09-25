@@ -61,6 +61,12 @@ jobs:
             expect: NOT_IMPLEMENTED
           - name: Windows x64
             os: windows-latest
+            expect: WINDOWS_HEIF_EXTENSION_MISSING
+          # winget installs the free HEIF Image Extension on Windows Server 2025; the HEVC Video Extensions cannot be
+          # installed there (the paid one needs a purchase, the device-manufacturer one is not offered), so the backend
+          # must report the missing HEVC codec, unless the best-effort installation gets both.
+          - name: Windows x64, HEIF Image Extension
+            os: windows-latest
             codecs: try-install
             expect: WINDOWS_HEIF_EXTENSION_MISSING
           # The IntelliJ IDEA downloaded here is the x64 build (lib/jna/amd64 only): JNA's arm64 library comes from the
@@ -117,10 +123,9 @@ jobs:
           }
           $heif = Get-AppxPackage -AllUsers *HEIFImageExtension*
           $hevc = Get-AppxPackage -AllUsers *HEVCVideoExtension*
-          if ($heif -and $hevc) {
-            Write-Host "HEIF and HEVC extensions installed: the backend must be available"
-            "HEIC_EXPECT_INSTALLED=available" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
-          }
+          $expect = if ($heif -and $hevc) { 'available' } elseif ($heif) { 'WINDOWS_HEVC_EXTENSION_MISSING' } else { '' }
+          Write-Host "HEIF Image Extension: $([bool]$heif), HEVC Video Extension: $([bool]$hevc) -> expected status: $expect"
+          if ($expect) { "HEIC_EXPECT_INSTALLED=$expect" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii }
 
       - name: JNA native library for ${{ runner.arch }}
         if: ${{ matrix.jna-natives }}
@@ -135,7 +140,8 @@ jobs:
           echo "$JNA_SHA256  $dir/jna.jar" | sha256sum -c -
           unzip -j -o "$dir/jna.jar" 'com/sun/jna/win32-aarch64/jnidispatch.dll' -d "$dir/win32-aarch64"
           ls -l "$dir/win32-aarch64"
-          echo "JNA_NATIVE_DIR_ARG=-PjnaNativeDir=$(cygpath -w "$dir/win32-aarch64")" >> "$GITHUB_ENV"
+          # Forward slashes: the value is expanded unquoted into the bash command line of the build step.
+          echo "JNA_NATIVE_DIR_ARG=-PjnaNativeDir=$(cygpath -m "$dir/win32-aarch64")" >> "$GITHUB_ENV"
 
       # JDK 25 runs Gradle and compiles (--release 17); the test tasks use JDK 25, 21 and 17 as Gradle toolchains.
       - name: Setup Java
@@ -184,7 +190,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || 'default' }}
+          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || matrix.codecs || 'default' }}
           path: |
             build/reports/tests
             build/test-results

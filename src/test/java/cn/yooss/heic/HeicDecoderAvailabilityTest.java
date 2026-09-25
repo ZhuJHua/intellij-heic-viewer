@@ -38,7 +38,7 @@ class HeicDecoderAvailabilityTest {
     String windows = HeicDecoderAvailability.promptContent(
       HeifBackendStatus.unavailable(HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING, "no WIC decoder")
         .withInstallUrl("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG"));
-    assertTrue(windows.contains("HEIF Image Extensions"), windows);
+    assertTrue(windows.contains("HEIF Image Extension"), windows); // the Microsoft Store title
     assertFalse(windows.contains("<code>"), "no command: " + windows);
   }
 }

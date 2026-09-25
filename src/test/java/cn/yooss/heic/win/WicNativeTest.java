@@ -127,16 +127,20 @@ class WicNativeTest {
   /** An embedded ICC profile (here the iCCP chunk of a PNG) comes back as a color context and is converted to sRGB. */
   @Test
   void iccProfileIsConvertedToSrgb() throws IOException {
+    BufferedImage gradient = new BufferedImage(256, 64, BufferedImage.TYPE_INT_RGB);
+    for (int y = 0; y < 64; y++) {
+      for (int x = 0; x < 256; x++) gradient.setRGB(x, y, x << 16 | (255 - x) << 8 | (y * 4));
+    }
     byte[] linear = ICC_Profile.getInstance(ColorSpace.CS_LINEAR_RGB).getData();
-    byte[] png = withIccProfile(Fixtures.bytes("bands.png"), linear);
-    BufferedImage expected = new BufferedImage(read(png).getWidth(), read(png).getHeight(), BufferedImage.TYPE_INT_RGB);
-    expected.setRGB(0, 0, expected.getWidth(), expected.getHeight(), rgb(read(png)), 0, expected.getWidth());
+    byte[] png = withIccProfile(encode(gradient, "png"), linear);
+    BufferedImage expected = new BufferedImage(256, 64, BufferedImage.TYPE_INT_RGB);
+    expected.setRGB(0, 0, 256, 64, rgb(gradient), 0, 256);
     PixelPipeline.convertToSrgb(expected, linear);
+    double converted = Fixtures.meanDifference(gradient, expected);
+    assertTrue(converted > 3, "the profile makes a difference: " + converted);
     BufferedImage image = decoder.decode(png, 0, false, PixelPipeline.STRIP_PIXELS);
     double mean = Fixtures.meanDifference(image, expected);
     assertTrue(mean < 0.5, "mean difference " + mean);
-    double unconverted = Fixtures.meanDifference(read(png), expected);
-    assertTrue(unconverted > 3, "the profile makes a difference: " + unconverted);
   }
 
   /** COM on threads that already joined an apartment: an STA (like AWT threads) and the MTA. */
