@@ -3,10 +3,14 @@
 #   macOS arm64 and x86_64      ImageIO.framework through the IDE's JNA (x86_64 passes CGRect by value differently)
 #   Linux x64 / arm64           the system libheif through the IDE's JNA: 1.17 with the libde265 plugin (x64, arm64),
 #                               1.12 (x64, Ubuntu 22.04), 1.17 without HEVC decoder (x64), no libheif (x64)
-#   Windows x64 / arm64         WIC
+#   Windows x64 / arm64         WIC through the IDE's JNA. Windows Server 2025 (x64) has no HEIF Image Extension and no
+#                               Microsoft Store: the backend must report WINDOWS_HEIF_EXTENSION_MISSING there (unless the
+#                               best-effort installation below succeeds), and WicNativeTest runs the same COM pipeline
+#                               with WIC's built-in PNG/JPEG/TIFF/BMP/GIF decoders. The Windows 11 arm64 image has the HEIF
+#                               Image Extension and the HEVC Video Extension provisioned: HEIC is decoded for real there.
 # HEIC_EXPECT_BACKEND is the status HeifBackendContractTest requires of the system decoder on that runner: "available",
-# or the HeifBackendStatus.Reason the backend must report (e.g. LINUX_LIBHEIF_MISSING; the Windows backend is a
-# placeholder so far: NOT_IMPLEMENTED). Test reports are uploaded for every job.
+# or the HeifBackendStatus.Reason the backend must report (e.g. LINUX_LIBHEIF_MISSING). Test reports are uploaded for
+# every job.
 #
 # The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded for the runner's OS and
 # cached. Plugin Verifier runs against pluginVerificationIdes in a separate job (like the Build workflow).
@@ -69,11 +73,21 @@ jobs:
             expect: available
           - name: Windows x64
             os: windows-latest
-            expect: NOT_IMPLEMENTED
+            expect: WINDOWS_HEIF_EXTENSION_MISSING
+          # winget installs the free HEIF Image Extension on Windows Server 2025; the HEVC Video Extensions cannot be
+          # installed there (the paid one needs a purchase, the device-manufacturer one is not offered), so the backend
+          # must report the missing HEVC codec, unless the best-effort installation gets both.
+          - name: Windows x64, HEIF Image Extension
+            os: windows-latest
+            codecs: try-install
+            expect: WINDOWS_HEIF_EXTENSION_MISSING
+          # The IntelliJ IDEA downloaded here is the x64 build (lib/jna/amd64 only): JNA's arm64 library comes from the
+          # JNA release of the IDE's version (jna-natives).
           - name: Windows arm64
             os: windows-11-arm
             platform: -PplatformType=IU -PplatformVersion=2026.1.5
-            expect: NOT_IMPLEMENTED
+            jna-natives: '5.17.0'
+            expect: available
     env:
       HEIC_EXPECT_BACKEND: ${{ matrix.expect }}
     defaults:
@@ -111,6 +125,50 @@ jobs:
           sudo apt-get purge -y 'libheif*' || true
           if ldconfig -p | grep libheif; then echo "::error::libheif is still installed"; exit 1; fi
 
+      - name: Windows codec packages
+        if: ${{ runner.os == 'Windows' }}
+        shell: powershell
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture | Format-List
+          Get-AppxPackage -AllUsers | Where-Object { $_.Name -match 'HEIF|HEVC' } |
+            Select-Object Name, Version, Architecture | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+
+      # Best effort: the HEIF Image Extension (free) and the HEVC Video Extensions from Device Manufacturer (free, where
+      # the Store allows it) through winget's Microsoft Store source. If both end up installed, the HEIC tests run and the
+      # backend must be available.
+      - name: Try to install the HEIF and HEVC extensions
+        if: ${{ matrix.codecs == 'try-install' }}
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          if (-not $winget) { Write-Host "winget is not available on this runner: HEIC is not decoded here"; exit 0 }
+          foreach ($id in '9PMMSR1CGPWG', '9N4WGH0Z6VHQ') {
+            winget install --id $id --source msstore --accept-package-agreements --accept-source-agreements --disable-interactivity --silent
+            Write-Host "winget install $id exited with $LASTEXITCODE"
+          }
+          $heif = Get-AppxPackage -AllUsers *HEIFImageExtension*
+          $hevc = Get-AppxPackage -AllUsers *HEVCVideoExtension*
+          $expect = if ($heif -and $hevc) { 'available' } elseif ($heif) { 'WINDOWS_HEVC_EXTENSION_MISSING' } else { '' }
+          Write-Host "HEIF Image Extension: $([bool]$heif), HEVC Video Extension: $([bool]$hevc) -> expected status: $expect"
+          if ($expect) { "HEIC_EXPECT_INSTALLED=$expect" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii }
+
+      - name: JNA native library for ${{ runner.arch }}
+        if: ${{ matrix.jna-natives }}
+        env:
+          JNA_VERSION: ${{ matrix.jna-natives }}
+          # sha256 of https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar
+          JNA_SHA256: b3a9408e7c51e08ef0e3bfcc08f443f6ec0f6191ba8cd7c18d53d2b22e5bdbc0
+        run: |
+          dir="$(cygpath -u "$RUNNER_TEMP")/jna-natives"
+          mkdir -p "$dir"
+          curl -sSfL -o "$dir/jna.jar" "https://repo1.maven.org/maven2/net/java/dev/jna/jna/$JNA_VERSION/jna-$JNA_VERSION.jar"
+          echo "$JNA_SHA256  $dir/jna.jar" | sha256sum -c -
+          unzip -j -o "$dir/jna.jar" 'com/sun/jna/win32-aarch64/jnidispatch.dll' -d "$dir/win32-aarch64"
+          ls -l "$dir/win32-aarch64"
+          # Forward slashes: the value is expanded unquoted into the bash command line of the build step.
+          echo "JNA_NATIVE_DIR_ARG=-PjnaNativeDir=$(cygpath -m "$dir/win32-aarch64")" >> "$GITHUB_ENV"
+
       # JDK 25 runs Gradle and compiles (--release 17); the test tasks use JDK 25, 21 and 17 as Gradle toolchains.
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -136,15 +194,20 @@ jobs:
 
       # testJdk25 rather than `test`, which the IntelliJ Platform Gradle Plugin only runs on the IDE's architectures.
       - name: Build and test
+        env:
+          HEIC_EXPECT_BACKEND: ${{ env.HEIC_EXPECT_INSTALLED || matrix.expect }}
         run: >
-          ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }}
+          ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }} ${{ env.JNA_NATIVE_DIR_ARG }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
       # The light-IDE tests (*PlatformIntegrationTest: the plugin inside the IntelliJ test framework, e.g. the decoder
-      # banner and notifications, the Linux-only setting, IfsUtil decoding through the system decoder) need the `test` task, which only runs where the IDE compiled against has a build for
-      # the runner: not on the arm64 jobs, which compile against IntelliJ IDEA's x64 download.
+      # banner and notifications, the Linux-only setting, IfsUtil decoding through the system decoder) need the `test`
+      # task, which only runs where the IDE compiled against has a build for the runner: not on the arm64 jobs, which
+      # compile against IntelliJ IDEA's x64 download.
       - name: Light-IDE tests
         if: ${{ !cancelled() && !matrix.platform }}
+        env:
+          HEIC_EXPECT_BACKEND: ${{ env.HEIC_EXPECT_INSTALLED || matrix.expect }}
         run: >
           ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
@@ -156,12 +219,16 @@ jobs:
           home="${GRADLE_USER_HOME:-$HOME/.gradle}"
           if command -v cygpath > /dev/null; then home="$(cygpath -u "$home")"; fi
           find "$home/caches" -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
+          # JNA version of the IDE (jna-natives must match it): the constants of com/sun/jna/Version.class in util-8.jar.
+          for jar in $(find "$home/caches" -name util-8.jar -path '*/lib/*' 2>/dev/null | head -3); do
+            echo "$jar: JNA $(unzip -p "$jar" com/sun/jna/Version.class | grep -a -o -E '[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')"
+          done || true
 
       - name: Upload test reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || 'default' }}
+          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || matrix.codecs || 'default' }}
           path: |
             build/reports/tests
             build/test-results

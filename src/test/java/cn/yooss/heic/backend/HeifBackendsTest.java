@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Backend selection by OS. Pure Java: creating a backend never loads native code, so this runs on every OS. */
@@ -77,16 +78,25 @@ class HeifBackendsTest {
     assertTrue(unavailable.getMessage().contains("UNSUPPORTED_OS"), unavailable.getMessage());
   }
 
-  /** Placeholders until the Windows backend is implemented. */
+  /** The Windows backend only probes the system on Windows (x64 or arm64); see WicProbeTest. */
+  @Test
+  void windowsBackendProbeElsewhere() {
+    assumeFalse(HeifBackends.Os.current() == HeifBackends.Os.WINDOWS, "runs on Windows");
+    HeifBackendStatus status = new WicHeifBackend().status();
+    assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, status.reason(), status.toString());
+  }
+
+  /** The backend of another OS: the input check comes first, then every operation fails with the status. */
   @ParameterizedTest
-  @EnumSource(value = HeifBackends.Os.class, names = {"WINDOWS"})
-  void placeholderBackends(HeifBackends.Os os) {
+  @EnumSource(value = HeifBackends.Os.class, names = {"WINDOWS", "LINUX"})
+  void backendsOfOtherSystems(HeifBackends.Os os) {
+    assumeFalse(HeifBackends.Os.current() == os, "the backend of this OS");
     HeifBackend backend = HeifBackends.create(os);
-    assertEquals(HeifBackendStatus.Reason.NOT_IMPLEMENTED, backend.status().reason(), backend.status().toString());
+    assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, backend.status().reason(), backend.status().toString());
     IOException notHeif = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb.png"), 0));
     assertEquals(HeifInput.NOT_HEIF, notHeif.getMessage(), "the input check comes first");
     IOException unavailable = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
-    assertTrue(unavailable.getMessage().contains("NOT_IMPLEMENTED"), unavailable.getMessage());
+    assertTrue(unavailable.getMessage().contains("UNSUPPORTED_OS"), unavailable.getMessage());
     assertThrows(IOException.class, () -> backend.readInfo(Fixtures.bytes("rgb_sips.heic")));
     assertThrows(IOException.class, () -> backend.decodeThumbnail(Fixtures.bytes("rgb_sips.heic"), 64));
   }
