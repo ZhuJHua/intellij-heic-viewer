@@ -223,8 +223,7 @@ jobs:
           - image: ubuntu:20.04
             prepare: apt-get update
             known: alpha_sips.heic,alpha_libheif.heic,rgb16_sips.heic,ten_bit.heic
-          - image: debian:11
-            prepare: apt-get update
+          # (Debian 11 is not checked: since its LTS ended, its security updates are no longer on deb.debian.org.)
           - image: ubuntu:22.04
             prepare: apt-get update
           - image: ubuntu:24.04

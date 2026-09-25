@@ -57,10 +57,11 @@ Side-by-side image diff of a modified HEIC file:
 - **Windows 10 or 11**, x64 or arm64: the *HEIF Image Extensions* and the *HEVC Video Extensions* from the Microsoft
   Store. The plugin links to them when they are missing.
   <!-- TODO(windows backend): Store product ids, minimum versions, Windows Server / LTSC notes. -->
-- **Linux**, x64 or arm64: libheif (`libheif.so.1`, 1.6 or newer; tested with 1.12, 1.17 and 1.23) with its HEVC
-  decoder (libde265) from the distribution's packages, for example `sudo apt install libheif1 libheif-plugin-libde265`
-  on Ubuntu 24.04. The plugin shows the install command for the distribution when they are missing; see
-  [Linux: libheif](#linux-libheif) for the commands of other distributions.
+- **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with its HEVC decoder (libde265) from the distribution's
+  packages, for example `sudo apt install libheif1 libheif-plugin-libde265` on Ubuntu 24.04. The plugin shows the
+  install command for the distribution when they are missing; see [Linux: libheif](#linux-libheif) for the commands of
+  other distributions. Tested with libheif 1.12 to 1.23; the libheif 1.6 of Ubuntu 20.04 shows photos, but not images
+  with transparency or 10 bits per channel.
 
 ## Installation
 
@@ -164,6 +165,9 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
     little less saturated; HDR images (PQ/HLG transfer) look flat.
   - The orientation comes from the HEIF transformations (`irot`, `imir`, which libheif applies); an EXIF orientation
     without them (not written by cameras and phones, which store both) is ignored.
+  - Old libheif versions decode less: the libheif 1.6 of Ubuntu 20.04 fails on images with transparency and does not
+    read 10-bit files (brand `heix`); such files show "Image not loaded". The CI checks libheif 1.6, 1.12, 1.15, 1.16,
+    1.17, 1.19, 1.21 and 1.23.
 - Not verified in a real IDE yet: Linux (the decoder tests pass in CI on Ubuntu 22.04 and 24.04, x64 and arm64), Intel
   Macs (the decoder tests pass on them in CI), macOS versions before 26, HEIC files stored with Git LFS.
 
@@ -188,7 +192,7 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
    | Windows | `win.WicHeifBackend` | Windows Imaging Component with the HEIF/HEVC Store extensions <!-- TODO(windows backend) --> |
-   | Linux | `linux.LibheifHeifBackend` | libheif (`libheif.so.1`, 1.6+) with an HEVC decoder (libde265) |
+   | Linux | `linux.LibheifHeifBackend` | libheif 1.x (`libheif.so.1`) with an HEVC decoder (libde265) |
 
    `AbstractHeifBackend` implements what is the same everywhere: before any native call the data must pass
    `HeifInput` (the `HeifSniffer` check, because system decoders pick the codec by content, and the pure-Java

@@ -8,7 +8,7 @@
 
 - Windows and Linux: HEIC/HEIF images are decoded by the operating system's own decoder (Windows: WIC with the *HEIF Image Extensions* and *HEVC Video Extensions* from the Microsoft Store; Linux: libheif with its libde265 HEVC plugin). Nothing is bundled.
 - A notification tells what to install when the system decoder is missing, with the install page or command, *Check Again* (HEIC files then load without a restart) and *Don't Show Again*.
-- Linux: libheif 1.6 or newer (`libheif.so.1`) with its HEVC decoder is used; the notification shows the install command for Debian, Ubuntu and derivatives, Fedora (RPM Fusion), RHEL-compatible distributions (EPEL and RPM Fusion), openSUSE (Packman), Arch Linux, Alpine and NixOS. Embedded thumbnails are used for file icons, and ICC color profiles are converted to sRGB.
+- Linux: the system's libheif 1.x (`libheif.so.1`, 1.12 or newer for images with transparency and 10-bit images) with its HEVC decoder is used; the notification shows the install command for Debian, Ubuntu and derivatives, Fedora (RPM Fusion), RHEL-compatible distributions (EPEL and RPM Fusion), openSUSE (Packman), Arch Linux, Alpine and NixOS. Embedded thumbnails are used for file icons, and ICC color profiles are converted to sRGB.
 - Advanced Setting *libheif library* (Linux): the location of a libheif outside the system's library path.
 
 ### Changed

@@ -54,9 +54,10 @@ Git 中修改过的 HEIC 文件左右对比：
 - **Windows 10 / 11**（x64 或 arm64）：需要 Microsoft Store 中的 *HEIF 图像扩展*（HEIF Image Extensions）和 *HEVC 视频扩展*
   （HEVC Video Extensions）。缺少时插件会给出链接。
   <!-- TODO(windows backend)：Store 产品 ID、最低版本、Windows Server / LTSC 说明。 -->
-- **Linux**（x64 或 arm64）：发行版软件包中的 libheif（`libheif.so.1`，1.6 或更新版本；已用 1.12、1.17、1.23 测试）及其
-  HEVC 解码器（libde265），例如 Ubuntu 24.04 上 `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的
-  安装命令；其它发行版的命令见 [Linux: libheif](#linux-libheif)。
+- **Linux**（x64 或 arm64）：发行版软件包中的 libheif 1.x（`libheif.so.1`）及其 HEVC 解码器（libde265），例如 Ubuntu 24.04 上
+  `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的安装命令；其它发行版的命令见
+  [Linux: libheif](#linux-libheif)。已用 libheif 1.12 至 1.23 测试；Ubuntu 20.04 的 libheif 1.6 能显示照片，但不能显示带透明通道或
+  每通道 10 bit 的图片。
 
 ## 安装
 
@@ -149,6 +150,8 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
     Display P3 或 BT.2020）不做转换，显示得略微偏淡；HDR 图片（PQ/HLG 传递函数）看起来发灰。
   - 方向取自 HEIF 变换（`irot`、`imir`，由 libheif 应用）；没有这些变换、只有 EXIF 方向的文件（相机和手机不会这样写，它们两者都写）
     不会被旋转。
+  - 旧版 libheif 能解码的内容较少：Ubuntu 20.04 的 libheif 1.6 解码带透明通道的图片会失败，也不能读取 10 bit 文件（品牌 `heix`），
+    这些文件显示 “Image not loaded”。CI 检查了 libheif 1.6、1.12、1.15、1.16、1.17、1.19、1.21 和 1.23。
 - 尚未在真实 IDE 中验证：Linux（解码测试在 CI 的 Ubuntu 22.04 和 24.04、x64 和 arm64 上通过）、Intel Mac（解码测试在 CI 中通过）、
   macOS 26 以前的版本、Git LFS 管理的 HEIC。
 
@@ -173,7 +176,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
    | Windows | `win.WicHeifBackend` | WIC + Microsoft Store 的 HEIF/HEVC 扩展 <!-- TODO(windows backend) --> |
-   | Linux | `linux.LibheifHeifBackend` | libheif（`libheif.so.1`，1.6+）+ HEVC 解码器（libde265） |
+   | Linux | `linux.LibheifHeifBackend` | libheif 1.x（`libheif.so.1`）+ HEVC 解码器（libde265） |
 
    `AbstractHeifBackend` 实现各平台相同的部分：任何本地调用之前，数据必须通过 `HeifInput`（`HeifSniffer` 检查——系统解码器按内容选择
    解码器，其它格式绝不能交给它；以及纯 Java 的 `IsoBoxes` 检查顶层 box 与 `iloc` 数据区是否完整——ImageIO.framework 会把截断的文件
