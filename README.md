@@ -267,12 +267,13 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    and libraries are opened so that JNA's Cleaner thread cannot inherit the plugin's context.
 4. **macOS decoder** (`mac` package): `HeicDecoder` creates a `CGImageSource` (no caching), reads the primary image's
    properties, creates a transformed (orientation-applied) image with `CGImageSourceCreateThumbnailAtIndex`, draws it in
-   bands of about one megapixel (cropped with `CGImageCreateWithImageInRect`) into an explicit 8-bit sRGB bitmap context
-   and copies the pixels into a `BufferedImage`. Every call has its own autorelease pool and all CF objects and native
-   buffers are released in `finally` blocks. The image source must report a HEIF-family type (`public.heic`,
-   `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a `CGRect` is
-   passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by the four
-   components on the stack on x86_64.
+   bands of about one megapixel, but at most eight (cropped with `CGImageCreateWithImageInRect`; when ImageIO could not
+   cache the decoded image, e.g. for a malformed file, every band decodes the whole image again), into an explicit 8-bit
+   sRGB bitmap context and copies the pixels into a `BufferedImage`. Every call has its own autorelease pool and all CF
+   objects and native buffers are released in `finally` blocks. The image source must report a HEIF-family type
+   (`public.heic`, `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a
+   `CGRect` is passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by
+   the four components on the stack on x86_64.
 5. **Windows decoder** (`win` package): `WicDecoder` initializes COM on the calling thread (`CoInitializeEx`,
    multithreaded, balanced by `CoUninitialize`; a thread that already is in a single-threaded apartment, such as an AWT
    thread, is used as it is), creates the WIC imaging factory, a memory stream (`SHCreateMemStream`) and a decoder from

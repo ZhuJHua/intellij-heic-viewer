@@ -21,9 +21,9 @@ import java.util.Set;
  * Algorithm (see README): {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} ->
  * primary image -> properties -> {@code CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform,
  * ThumbnailMaxPixelSize, ShouldCacheImmediately)} so that the HEIF {@code irot}/{@code imir} and EXIF orientation
- * are applied -> drawn in ~1M-pixel strips (cropped with {@code CGImageCreateWithImageInRect}) into an explicit
- * 8-bit sRGB bitmap context -> copied into a {@code TYPE_INT_RGB} image, or a non-premultiplied
- * {@code TYPE_INT_ARGB} image when the file has alpha.
+ * are applied -> drawn in strips of ~1M pixels, but at most {@link #MAX_DRAWS} of them (cropped with
+ * {@code CGImageCreateWithImageInRect}), into an explicit 8-bit sRGB bitmap context -> copied (in ~1M-pixel chunks)
+ * into a {@code TYPE_INT_RGB} image, or a non-premultiplied {@code TYPE_INT_ARGB} image when the file has alpha.
  * <p>
  * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
  * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
@@ -80,8 +80,14 @@ public final class HeicDecoder {
 
   /** @param stripPixels pixels rendered per strip (tests use other values to compare strip layouts) */
   static BufferedImage decode(byte[] data, int maxPixelSize, boolean allowEmbeddedThumbnail, int stripPixels) throws IOException {
+    return decode(bound(), data, maxPixelSize, allowEmbeddedThumbnail, stripPixels);
+  }
+
+  /** @param bound the binding (tests wrap the real one to count native calls) */
+  static BufferedImage decode(Bound bound, byte[] data, int maxPixelSize, boolean allowEmbeddedThumbnail, int stripPixels)
+    throws IOException {
     HeifInput.check(data);
-    try (Session session = new Session(bound())) {
+    try (Session session = new Session(bound)) {
       session.open(data);
       HeifImageInfo info = session.info();
       long image = session.createThumbnail(thumbnailSide(info, maxPixelSize), allowEmbeddedThumbnail);
@@ -90,6 +96,17 @@ public final class HeicDecoder {
     catch (RuntimeException | LinkageError e) {
       throw nativeFailure(e);
     }
+  }
+
+  /**
+   * The rows drawn per strip and the rows copied into the Java image per chunk, for a {@code width x height} image:
+   * strips of about {@code stripPixels} pixels, but at most {@link #MAX_DRAWS} strips (see there); chunks of at most
+   * {@code stripPixels} pixels and never more than a strip.
+   */
+  static int[] stripPlan(int width, int height, int stripPixels) {
+    int rows = PixelPipeline.stripRows(width, height, stripPixels); // 1 .. height
+    int stripRows = Math.max(rows, (height + MAX_DRAWS - 1) / MAX_DRAWS); // at least 1/MAX_DRAWS of the rows
+    return new int[]{stripRows, rows};
   }
 
   /**
@@ -134,6 +151,14 @@ public final class HeicDecoder {
   static final int kCGImageAlphaNoneSkipFirst = 6;
   static final int kCGBitmapByteOrder32Little = 2 << 12;
   static final int kCGBlendModeCopy = 17;
+  /**
+   * The most strips one decode draws. A cropped view shares the decoded pixels only while ImageIO.framework keeps them
+   * cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), the thumbnail is a
+   * lazy image and every draw runs the whole HEIF decode again: with ~1M-pixel strips, a 64-megapixel image would be
+   * decoded about 64 times (about a minute, not cancellable). Fewer, taller strips cost a larger native scratch buffer
+   * (1/8 of the image: 32 MB at the default 64-megapixel budget), next to ImageIO's cached copy of the whole image.
+   */
+  static final int MAX_DRAWS = 8;
 
   /** A {@link MacApi} plus the constants the algorithm needs, resolved once. */
   static final class Bound {
@@ -278,7 +303,9 @@ public final class HeicDecoder {
       int width = out.getWidth();
       int height = out.getHeight();
 
-      int stripRows = PixelPipeline.stripRows(width, height, stripPixels);
+      int[] plan = stripPlan(width, height, stripPixels);
+      int stripRows = plan[0];
+      int copyRows = plan[1];
       long bytesPerRow = 4L * width;
       buffer = api.malloc(bytesPerRow * stripRows);
       if (buffer == 0) throw new IOException("Cannot allocate " + bytesPerRow * stripRows + " bytes of native memory");
@@ -291,12 +318,13 @@ public final class HeicDecoder {
       if (context == 0) throw new IOException("Cannot create a " + width + "x" + stripRows + " bitmap context");
       api.cgContextSetBlendMode(context, kCGBlendModeCopy); // overwrite, never blend with stale rows
 
-      int[] pixels = new int[width * stripRows];
+      int[] pixels = new int[width * copyRows];
       for (int y0 = 0; y0 < height; y0 += stripRows) {
         int rows = Math.min(stripRows, height - y0);
         if (stripRows < height) {
-          // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped
-          // view (it shares the already decoded pixels) into the top `rows` rows of the context instead.
+          // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped view into
+          // the top `rows` rows of the context instead. The view shares the decoded pixels only if ImageIO cached them;
+          // otherwise each draw decodes the whole image again, hence at most MAX_DRAWS strips.
           long strip = api.cgImageCreateWithImageInRect(image, 0, y0, width, rows); // image space, origin top-left
           if (strip == 0) throw new IOException("CGImageCreateWithImageInRect failed");
           try {
@@ -309,8 +337,11 @@ public final class HeicDecoder {
         else {
           api.cgContextDrawImage(context, 0, 0, width, height, image);
         }
-        api.readInts(buffer, pixels, width * rows);
-        PixelPipeline.writeArgbRows(out, y0, rows, pixels, alpha); // un-premultiplies images with alpha
+        for (int r0 = 0; r0 < rows; r0 += copyRows) { // the Java side in small chunks, however tall the strip
+          int n = Math.min(copyRows, rows - r0);
+          api.readInts(buffer + r0 * bytesPerRow, pixels, width * n);
+          PixelPipeline.writeArgbRows(out, y0 + r0, n, pixels, alpha); // un-premultiplies images with alpha
+        }
       }
       return out;
     }

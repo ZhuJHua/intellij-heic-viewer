@@ -16,6 +16,10 @@
 - Supports IntelliJ-based IDEs 2024.1 and newer (Android Studio Koala 2024.1.1 and newer; previously 2026.1.4 / Android Studio Quail 3): the macOS decoder is called through the JNA library that comes with the IDE instead of the Java FFM API, and the plugin is compiled for Java 17.
 - The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime, in the background. The plugin still bundles no decoder and no native code.
 
+### Fixed
+
+- macOS: a malformed HEIC whose declared size does not match its coded image could keep the image viewer busy for about a minute (ImageIO decoded the whole image again for every band of about one megapixel); an image is now drawn in at most eight bands.
+
 ## [0.1.0] - 2026-09-25
 
 ### Added

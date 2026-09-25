@@ -211,6 +211,47 @@ class HeicDecoderTest {
     }
   }
 
+  /**
+   * A thumbnail that ImageIO.framework could not cache (e.g. a malformed file whose {@code ispe} does not match the coded
+   * image) is decoded again on every draw, so a decode draws at most {@link HeicDecoder#MAX_DRAWS} strips, however small
+   * the strip budget; the Java side still copies small chunks, and the pixels do not change.
+   */
+  @Test
+  void atMostMaxDrawsStripsPerDecode() throws Throwable {
+    // A crafted file of the review: ispe 50362x12301 (orientation 5) comes out as 3952x16187 at the default budget,
+    // which used to be 62 strips (about a minute when every draw decodes again).
+    int[] plan = HeicDecoder.stripPlan(3952, 16187, cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS);
+    assertTrue((16187 + plan[0] - 1) / plan[0] <= HeicDecoder.MAX_DRAWS, "rows per strip " + plan[0]);
+    assertEquals(cn.yooss.heic.backend.PixelPipeline.stripRows(3952, 16187, cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS),
+                 plan[1], "copied in ~1M-pixel chunks");
+    for (int[] size : new int[][]{{1, 1}, {7, 3}, {2000, 1200}, {16384, 16384}, {8000, 8000}, {100_000, 2}, {3, 100_000}}) {
+      for (int stripPixels : new int[]{1, 1000, 1 << 20, Integer.MAX_VALUE}) {
+        int[] p = HeicDecoder.stripPlan(size[0], size[1], stripPixels);
+        String what = size[0] + "x" + size[1] + " at " + stripPixels + ": " + Arrays.toString(p);
+        assertTrue(p[0] >= 1 && p[1] >= 1 && p[1] <= p[0] && p[0] <= size[1], what);
+        assertTrue((size[1] + p[0] - 1) / p[0] <= HeicDecoder.MAX_DRAWS, what);
+      }
+    }
+
+    // A real decode with a strip budget of one pixel: 8 draws of 150 rows, copied row by row, pixels unchanged.
+    byte[] data = Fixtures.bytes("bands_2000x1200.heic");
+    java.util.concurrent.atomic.AtomicInteger draws = new java.util.concurrent.atomic.AtomicInteger();
+    MacApi real = new cn.yooss.heic.mac.jna.JnaMacApi();
+    MacApi counting = (MacApi) java.lang.reflect.Proxy.newProxyInstance(
+      MacApi.class.getClassLoader(), new Class<?>[]{MacApi.class}, (proxy, method, args) -> {
+        if (method.getName().equals("cgContextDrawImage")) draws.incrementAndGet();
+        try {
+          return method.invoke(real, args);
+        }
+        catch (java.lang.reflect.InvocationTargetException e) {
+          throw e.getCause();
+        }
+      });
+    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting), data, 0, false, 1);
+    assertEquals(HeicDecoder.MAX_DRAWS, draws.get());
+    assertArrayEquals(pixels(HeicDecoder.decode(data, 0, false, Integer.MAX_VALUE)), pixels(image));
+  }
+
   /** Orientation 6 (rotate 90 degrees clockwise) on an image that is rendered in several strips. */
   @Test
   void multiStripRenderingWithOrientation() throws IOException {

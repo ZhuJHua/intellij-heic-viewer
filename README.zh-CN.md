@@ -235,7 +235,8 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 
    **macOS 解码**（`mac` 包）：`HeicDecoder` 的流程：`CFDataCreate` → `CGImageSourceCreateWithData(ShouldCache=false)` → 主图属性 →
    `CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform, ThumbnailMaxPixelSize, ShouldCacheImmediately)`
-   → 以约 100 万像素为一条带，经 `CGImageCreateWithImageInRect` 裁剪后绘制到显式的 8 bit **sRGB** 位图上下文 →
+   → 以约 100 万像素为一条带（最多 8 条：ImageIO 无法缓存解码结果时，例如格式有误的文件，每画一条都要重新解码整张图），经
+   `CGImageCreateWithImageInRect` 裁剪后绘制到显式的 8 bit **sRGB** 位图上下文 →
    复制到 `BufferedImage`。每次调用都有自己的 autorelease pool，所有 CF 对象和本地缓冲区在 `finally` 中释放，线程安全。
    ImageIO 报告的类型必须属于 HEIF 家族（`public.heic`、`public.heif` 等）。`MacApi` 列出它需要的本地调用，由 `jna.JnaMacApi` 实现；
    按值传递的 `CGRect` 在 arm64 上作为 4 个 double 传递，在 x86_64 上先用 8 个占位 double 填满 `xmm0`–`xmm7`，再把 4 个分量放到栈上。
