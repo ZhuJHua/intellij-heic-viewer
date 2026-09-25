@@ -77,7 +77,8 @@ Git 中修改过的 HEIC 文件左右对比：
 ## 限制与已知问题
 
 - 解码依赖操作系统自带的解码器。没有它时（Windows / Linux 未安装[环境要求](#环境要求)中的组件，或其它操作系统），HEIC 文件仍以图片类型打开，
-  但显示 “Image not loaded”，同时通知会说明需要安装什么（安装后点通知中的“重新检测”，无需重启即可显示）。
+  但显示 “Image not loaded”；图片上方的横幅（差异对比和缩略图则是每个会话最多一次的通知）会说明需要安装什么。点“重新检测”，
+  或打开商店页面/复制安装命令后回到 IDE，已打开的 HEIC 图片无需重启即可显示；已打开的差异对比需要重新打开。
 - 颜色统一转换到 **sRGB**：Display P3 照片中超出 sRGB 的颜色会被裁剪。
 - **HDR 增益图（gain map）被忽略**，显示的是标准动态范围的基础图像。
 - 只显示文件的**主图**；多图文件、`.heics` 序列的其它帧、深度图等辅助图像不显示。
@@ -150,10 +151,20 @@ Git 中修改过的 HEIC 文件左右对比：
    并在 `idea.log` 中以警告记录这一情况。
 5. **IJPL-39443 修复**（`HeicFileTypeMappingRepair`）：插件在启动/加载时同步（只读）检查：如果某扩展名当前不属于任何文件类型，才在 EDT 上
    重新关联到 Image（用户显式映射到其它类型的扩展名不会被改动）。正常启动时不向 EDT 投递任何事件（原因见第 8 条）。
-   **缺少解码器的提示**（`HeicDecoderAvailability`）：注册读取器后在后台线程探测后端状态；如果缺少用户可以安装的组件，就显示通知
-   （通知组 “HEIC Viewer”），说明缺少什么，并提供后端给出的安装页面、安装命令（复制到剪贴板）、“重新检测”（安装后无需重启即可显示 HEIC）
-   和“不再显示”；其它状态只写入 `idea.log`。`-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以强制指定状态，
-   用于查看其它操作系统上的提示。
+   **缺少解码器的提示**（`ui` 包）：注册读取器后在后台线程探测后端状态；界面只读取后端缓存的状态，从不在 EDT 上探测（`DecoderStatus`）。
+   解码器不可用时，在 HEIC 图片无法显示的地方告诉用户原因和对应的解决办法（`backend.HeifRemedies`：Microsoft Store 页面或安装命令、
+   “重新检测”、“了解详情”等）：
+   - HEIC 图片编辑器上方的**横幅**（`HeicDecoderNotificationProvider`，`editorNotificationProvider`）。平台只会主动为文本编辑器收集横幅，
+     所以解码器缺失时，`HeicFileOpenedListener` 会在打开 HEIC 文件时请求更新横幅；
+   - 没有横幅的地方显示**通知**（通知组 “HEIC Viewer”，气泡），每个会话最多一次：打开 HEIC 文件的差异对比（`HeicDiffExtension`，
+     `diff.DiffExtension`）、未打开的文件生成缩略图失败，或刚安装插件时；“不再显示”按原因分别记录。
+
+   “重新检测”在后台线程重新探测。找到解码器后横幅消失，已打开的 HEIC 编辑器重新加载图片（`ImageEditorImpl.refreshFile()`，与文件在
+   磁盘上改变时相同），缩略图重新解码，并用通知确认；仍然缺失时，通知会说明现在缺少什么。用户打开商店页面或复制安装命令后，IDE 窗口下次
+   被激活时会自动重新检测（`HeicActivationListener`，有防抖，30 分钟内有效）。解码器可用的正常启动不显示任何内容，也不向 EDT 投递事件。
+   卸载插件前会主动移除它的横幅（IntelliJ 2026.1 会把已卸载提供者的面板留在编辑器里，导致类加载器无法回收），并让它的通知过期。
+   `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以强制指定状态，用于查看其它操作系统上的界面；加上
+   `-Dheic.viewer.debug.backendStatus.recover=true` 后，第一次“重新检测”会切换到当前系统真正的解码器。
 6. **缩略图文件图标**（`thumbnail` 包）：
    - `HeicThumbnailIconProvider`（`com.intellij.fileIconProvider`，`order="first"`，动态扩展点）只对本地
      （`isInLocalFileSystem`）、非空、不超过 64 MB、扩展名为 heic/heif/hif/heics 的文件、且设置开启时工作。`getIcon` **从不解码**：
@@ -246,9 +257,10 @@ Gradle JVM 选为 IDE 自带的 JBR），或者传入
 这都是预期的：插件支持 2024.1（JBR 17），Plugin Verifier 会针对 `pluginVerificationIdes` 中最旧的 IDE 检查 API。
 
 编译所用 IDE 的平台 jar 是 Java 21 字节码，所以 `testJdk17` 使用最小的类路径（插件 jar、JUnit 和 IDE 的 `util-8.jar`，其中包含 JNA）。
-需要其它 IDE 类的测试标记为 `platform`，只在 JDK 21 和 25 上运行。`HeicPlatformIntegrationTest` 会启动一个轻量 IDE（IntelliJ 测试框架，
-`BasePlatformTestCase`），因此只在 `test` 中运行：加载 plugin.xml 后 HEIC 扩展名属于 Image 文件类型，并且 IDE 的 `IfsUtil` 通过本插件的
-读取器解码 HEIC 文件。
+需要其它 IDE 类的测试标记为 `platform`，只在 JDK 21 和 25 上运行。`*PlatformIntegrationTest` 会启动一个轻量 IDE（IntelliJ 测试框架，
+`BasePlatformTestCase`），因此只在 `test` 中运行：`HeicPlatformIntegrationTest`（加载 plugin.xml 后 HEIC 扩展名属于 Image 文件类型，
+并且 IDE 的 `IfsUtil` 通过本插件的读取器解码 HEIC 文件）和 `DecoderUiPlatformIntegrationTest`（用模拟后端测试横幅、通知、
+“重新检测”和激活时的检测）。
 
 ### 项目结构
 
@@ -264,7 +276,6 @@ src/main/java/cn/yooss/heic/
   HeicImageReader.java             读取器：读入流、宽高、图像类型、子采样/源区域/像素预算、异常包装
   DecodeLimits.java                像素预算
   HeicSupport.java                 在 IIORegistry 中注册/注销（排序、清理旧副本、注册表分裂）
-  HeicDecoderAvailability.java     “安装缺少的解码器”通知
   HeicSettings.java                Advanced Settings 读取（失败时回退默认值）
   HeicBundle.java                  资源包 messages/HeicBundle
   HeicFileTypeMappingRepair.java   IJPL-39443 修复
@@ -272,7 +283,8 @@ src/main/java/cn/yooss/heic/
   HeicDynamicPluginListener.java   免重启加载/卸载
   HeicReaderRegistrar.java         命令行 Diff/合并窗口（IDE 未运行时的 studio diff/merge）中注册读取器（从不接受文件的编辑器提供者）
   backend/                         HeifBackend、HeifBackendStatus、HeifBackends（按操作系统选择）、AbstractHeifBackend、HeifImageInfo、
-                                   HeifInput + IsoBoxes（输入检查）、PixelPipeline、UnavailableHeifBackend；jna/JnaLibraries（JNA 规则、加载本地库）
+                                   HeifInput + IsoBoxes（输入检查）、PixelPipeline、UnavailableHeifBackend、HeifRemedy + HeifRemedies
+                                   （每种不可用状态下用户可以做什么）；jna/JnaLibraries（JNA 规则、加载本地库）
   mac/                             MacHeifBackend、HeicDecoder（ImageIO.framework 解码流程）、MacApi、jna/JnaMacApi
   win/WicHeifBackend.java          Windows Imaging Component  <!-- TODO(windows backend) -->
   linux/LibheifHeifBackend.java    libheif  <!-- TODO(linux backend) -->
@@ -282,6 +294,9 @@ src/main/java/cn/yooss/heic/
   thumbnail/ThumbnailRenderer.java           等比居中、渐进缩小、描边、多分辨率图片（纯 Java2D）
   thumbnail/ThumbnailGeometry.java, ThumbnailKey.java, LruCache.java   尺寸计算、缓存键、LRU
   thumbnail/HeicThumbnailSettingsListener.java, HeicThumbnailFileListener.java   设置切换 / 文件修改时刷新图标
+  ui/                              缺少解码器时的界面：编辑器横幅（HeicDecoderNotificationProvider、HeicFileOpenedListener）、通知
+                                   （DecoderPrompt）、状态与“重新检测”（DecoderStatus）、刷新各视图（HeicViews）、解决办法的操作、
+                                   HeicDiffExtension、HeicActivationListener
 src/main/resources/
   META-INF/plugin.xml              插件 id、名称、vendor、依赖以及插件的全部扩展（description 和 change-notes 由 Gradle 从 README.md / CHANGELOG.md 生成）
   META-INF/pluginIcon.svg, pluginIcon_dark.svg
@@ -297,15 +312,19 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 - 在 `win.WicHeifBackend` / `linux.LibheifHeifBackend`（目前都是报告 `NOT_IMPLEMENTED` 的占位实现）中继承 `backend.AbstractHeifBackend`；
   `HeifBackends` 已经按操作系统选择它们。
 - `probe()`：通过 `backend.jna.JnaLibraries` 加载系统库，返回 `HeifBackendStatus.available(...)` 或 `unavailable(Reason, detail)`，
-  并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。用户可以安装的原因会触发
-  `HeicDecoderAvailability` 的通知，文案是两个资源包中的 `backend.status.<REASON>`。
+  并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。
+- 每种原因显示给用户的内容（横幅、通知）来自 `backend.HeifRemedies` 中它的解决办法：两个资源包中的文案 `remedy.title.<REASON>` 和
+  `backend.status.<REASON>`，以及操作（安装页面或安装命令、“重新检测”、“了解详情”）。后端传入的 URL 和命令会替换 `HeifRemedies` 的默认值
+  （只接受 `https:`、`ms-windows-store:` URL 和单行命令）。请用核实过的数据替换其中以及资源包中标记为 `TODO(windows backend)` /
+  `TODO(linux backend)` 的默认值；`HeifRemediesTest` 会检查每一种解决办法。
 - `doReadInfo` / `doDecode` / `doDecodeThumbnail`：输入检查、可用性检查和本地异常的包装由基类完成。用 `PixelPipeline` 生成图片
   （8 bit sRGB、非预乘透明通道、已应用方向、不超过 `maxPixelSize`）。
 - 遵守 `JnaLibraries` 中的 JNA 规则（不用 `Library`/`Structure`/`Memory`/回调，字符串用 `utf8z`/`utf16z` 数组传递），
   `BytecodeLevelTest` 和 `PluginClassLoaderLeakTest` 会检查。
 - `HeifBackendContractTest` 必须在该操作系统上通过；在 `.github/workflows/cross-platform.yml` 中把每个任务的 `expect` 设为该环境
   必须报告的状态（`available`，或 `LINUX_LIBHEIF_MISSING` 等）。
-- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以在任何系统上显示任意状态的通知。
+- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以在任何系统上显示任意状态的横幅和通知（加上
+  `-Dheic.viewer.debug.backendStatus.recover=true` 后，“重新检测”会找到真正的解码器）。
 
 ### 插件描述与更新日志
 
@@ -320,7 +339,7 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
   `CHANGELOG.md` 的 `[Unreleased]` 小节创建一个 GitHub Release 草稿。
 - `.github/workflows/cross-platform.yml`：推送到 `dev/**` 分支时或手动运行。在 macOS arm64 与 x86_64、安装和未安装 libheif 的
   Linux x64、Linux arm64、Windows x64 与 arm64 上构建并在 JDK 25、21、17 上运行测试（按操作系统下载并缓存编译所用的 IDE；
-  Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用 IntelliJ IDEA），
+  Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用 IntelliJ IDEA），在 IDE 有对应架构版本的任务上还用 `test` 运行轻量 IDE 测试，
   另有一个 Plugin Verifier 任务。每个任务通过 `HEIC_EXPECT_BACKEND` 指定 `HeifBackendContractTest` 在该环境中必须看到的解码器状态
   （`available`，或 `LINUX_LIBHEIF_MISSING` 等 `HeifBackendStatus.Reason`）。测试报告作为 artifact 上传。
 - 在 GitHub 上发布该草稿会触发 `.github/workflows/release.yml`：把发布说明写入 `CHANGELOG.md` 的版本小节、签名并发布到

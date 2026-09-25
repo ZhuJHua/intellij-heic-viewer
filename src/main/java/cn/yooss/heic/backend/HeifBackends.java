@@ -4,6 +4,8 @@ import cn.yooss.heic.linux.LibheifHeifBackend;
 import cn.yooss.heic.mac.MacHeifBackend;
 import cn.yooss.heic.win.WicHeifBackend;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.Locale;
 
@@ -51,21 +53,46 @@ public final class HeifBackends {
    */
   public static final String DEBUG_STATUS_PROPERTY = "heic.viewer.debug.backendStatus";
 
+  /**
+   * Debugging aid for {@link #DEBUG_STATUS_PROPERTY}: {@code -Dheic.viewer.debug.backendStatus.recover=true} makes the
+   * forced status go away at the first re-check ("Check Again"), which then reports the real backend of this OS, as if
+   * the missing component had just been installed.
+   */
+  public static final String DEBUG_RECOVER_PROPERTY = DEBUG_STATUS_PROPERTY + ".recover";
+
   /** The backend for this OS (created on the first call, without probing it). */
   public static @NotNull HeifBackend current() {
     HeifBackend result = current;
     if (result != null) return result;
     synchronized (LOCK) {
       if (current == null) {
-        HeifBackend debug = debugBackend(System.getProperty(DEBUG_STATUS_PROPERTY));
+        HeifBackend debug = debugBackend(System.getProperty(DEBUG_STATUS_PROPERTY), Boolean.getBoolean(DEBUG_RECOVER_PROPERTY));
         current = debug != null ? debug : create(Os.current());
       }
       return current;
     }
   }
 
+  /**
+   * Tests: makes {@link #current()} return {@code backend} ({@code null}: select the backend of this OS again on the
+   * next call). Returns the backend that was current before (possibly {@code null}), to be restored afterwards.
+   */
+  @TestOnly
+  public static @Nullable HeifBackend replaceForTests(@Nullable HeifBackend backend) {
+    synchronized (LOCK) {
+      HeifBackend previous = current;
+      current = backend;
+      return previous;
+    }
+  }
+
   /** The backend {@link #DEBUG_STATUS_PROPERTY} asks for, or {@code null} (not set or invalid). */
   static HeifBackend debugBackend(String value) {
+    return debugBackend(value, false);
+  }
+
+  /** @param recoverOnRecheck {@link #DEBUG_RECOVER_PROPERTY} */
+  static HeifBackend debugBackend(String value, boolean recoverOnRecheck) {
     if (value == null || value.trim().isEmpty()) return null;
     String[] parts = value.split("\\|", -1);
     HeifBackendStatus.Reason reason;
@@ -78,7 +105,7 @@ public final class HeifBackends {
     HeifBackendStatus status = HeifBackendStatus.unavailable(reason, "Forced by -D" + DEBUG_STATUS_PROPERTY)
       .withInstallUrl(parts.length > 1 ? parts[1] : null)
       .withInstallCommand(parts.length > 2 ? parts[2] : null);
-    return new UnavailableHeifBackend("debug", "system HEIF decoder (" + DEBUG_STATUS_PROPERTY + ")", status);
+    return new DebugHeifBackend(status, recoverOnRecheck, () -> create(Os.current()));
   }
 
   /** A new backend instance for {@code os} (tests; the plugin uses {@link #current()}). */
