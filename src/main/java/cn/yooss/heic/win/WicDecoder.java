@@ -293,8 +293,8 @@ public final class WicDecoder {
           }
         }
       }
-      else if (hasTransparency(pixelFormat[0])) {
-        alpha = Alpha.IN_PIXELS;
+      if (alpha == Alpha.NONE && hasTransparency(pixelFormat[0])) {
+        alpha = Alpha.IN_PIXELS; // other formats; a HEIF decoder whose frames carry alpha themselves
       }
       return new Opened(container[0], count[0], frame, size[0], size[1], pixelFormat[0], alpha, transform, orientation(frame));
     }

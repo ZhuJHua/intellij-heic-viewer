@@ -87,6 +87,18 @@ class WicDecoderTest {
     api.assertClean();
   }
 
+  /** A HEIF decoder whose frames carry alpha themselves (not the one of HEIF Image Extension 1.2.36) keeps it too. */
+  @Test
+  void heifFramesWithAlphaInThePixels() throws IOException {
+    FakeWinApi api = fake();
+    api.framePixelFormat = Guids.GUID_WICPixelFormat32bppBGRA;
+    api.pixels[3] = 0x20ABCDEF;
+    BufferedImage image = new WicDecoder(api).decode(DATA, 0, true, 7);
+    assertEquals(BufferedImage.TYPE_INT_ARGB, image.getType());
+    assertEquals(0x20ABCDEF, ((DataBufferInt) image.getRaster().getDataBuffer()).getData()[3]);
+    api.assertClean();
+  }
+
   @Test
   void heifOnlyUnlessATestAsksOtherwise() {
     FakeWinApi api = fake();
