@@ -212,6 +212,11 @@ jobs:
           ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
+      # The colors of Microsoft's HEIF decoder as WIC decodes the fixtures and as the plugin does (WicColorTest).
+      - name: Windows color report
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: cat build/reports/color/wic-colors.txt 2> /dev/null || echo "no color report (no HEVC codec on this runner)"
+
       # Which native JNA directories the IDE provides (JNA can only be used in tests on the runner's architecture).
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}

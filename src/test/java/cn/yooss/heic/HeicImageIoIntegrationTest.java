@@ -187,8 +187,7 @@ class HeicImageIoIntegrationTest {
     assertTrue(ImageIO.write(alpha, "png", png));
     BufferedImage back = ImageIO.read(new ByteArrayInputStream(png.toByteArray()));
     double mean = Fixtures.meanDifference(back, Fixtures.png("alpha.png"));
-    assertTrue(mean < SystemDecoder.colorTolerance(3.0, 12.0),
-               "straight alpha survives a PNG round trip, mean difference " + mean);
+    assertTrue(mean < 3.0, "straight alpha survives a PNG round trip, mean difference " + mean);
   }
 
   @ParameterizedTest

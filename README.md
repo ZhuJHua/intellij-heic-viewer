@@ -189,10 +189,18 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
   Non-local files (inside archives, remote, historical revisions in the diff) and files over 64 MB keep the generic
   icon. The first time a file is shown, the generic icon appears briefly; folders with many HEIC files fill in two at a
   time. Up to 500 icons are cached.
-- **Windows colors** come from Microsoft's HEIF decoder. In CI (HEIF Image Extension 1.2.36) it converted several single
-  (non-grid) test images that signal BT.601 YCbCr coefficients (written by libheif and macOS) with BT.709 coefficients,
-  so saturated colors shift (pure red decodes as (255, 25, 0)); the grid images, the layout iPhone photos have, came out
-  right, including one in Display P3. The plugin shows what Windows decodes, like Windows' own apps.
+- **Windows colors**: Microsoft's HEIF decoder (HEIF Image Extension 1.2.36, measured in CI) has two color conversion
+  errors, which the plugin works around in memory (the files are not changed):
+  - A file whose primary image is a single 8-bit image (not a grid) is converted with the BT.709 matrix whatever the
+    file signals, so the BT.601 colors that libheif and macOS write shift (pure red decodes as (255, 25, 0)). The
+    plugin gives Windows such a file as a grid of one tile, which it converts with the matrix and range of the file.
+  - Grids and 10-bit images whose `nclx` profile gives the BT.709 or an unspecified transfer curve (macOS writes the
+    latter) are converted from that curve to sRGB, which brightens the shadows compared with every other viewer. The
+    plugin presents these curves as sRGB, as macOS and libheif treat them.
+
+  iPhone photos (grids with an ICC profile) are not affected. The Photos app and other Windows apps still show the
+  errors. `-Dheic.viewer.windows.colorFixes=false` switches the workarounds off. 8-bit monochrome HEIC images decode
+  as black on Windows.
 - **Windows**: the first HEIC image after the IDE starts can take a second or two while Windows activates the Store
   packages; the availability check pays this in the background during startup.
 - **Linux**:

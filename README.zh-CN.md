@@ -170,9 +170,16 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
   Recent Files、Search Everywhere 等）。非本地文件（jar/归档内、远程、Diff 中的历史版本）和超过 64 MB 的文件使用普通图片图标。
   第一次显示某个文件时会先短暂显示普通图标；一个目录下有大量 HEIC 文件时，缩略图按 2 个线程逐个出现。缓存最多 500 个图标，
   超出后最久未使用的会在需要时重新解码。
-- **Windows 上的颜色**来自微软的 HEIF 解码器。在 CI 中（HEIF 图像扩展 1.2.36），它把几张标明 BT.601 YCbCr 系数的单图（非网格）
-  测试图片（由 libheif 和 macOS 生成）按 BT.709 系数转换，饱和色会有偏差（纯红解码为 (255, 25, 0)）；网格图片（iPhone 照片的结构）
-  颜色正确，包括一张 Display P3 图片。插件显示的就是 Windows 解码的结果，与 Windows 自带应用一致。
+- **Windows 上的颜色**：微软的 HEIF 解码器（HEIF 图像扩展 1.2.36，在 CI 中实测）有两个颜色转换错误，插件在内存中绕过了它们
+  （不修改文件）：
+  - 主图是单张 8 bit 图片（不是网格）的文件，无论文件标明什么，都按 BT.709 矩阵转换，因此 libheif 和 macOS 写入的 BT.601
+    颜色会偏（纯红解码为 (255, 25, 0)）。插件把这类文件作为只有一个 tile 的网格交给 Windows，Windows 会按文件标明的矩阵和
+    范围转换。
+  - `nclx` 标明 BT.709 或"未指定"传输曲线（macOS 写入后者）的网格图片和 10 bit 图片，会从该曲线转换到 sRGB，暗部比其他所有
+    查看器都亮。插件把这些曲线当作 sRGB 交给 Windows，与 macOS 和 libheif 的处理一致。
+
+  iPhone 照片（带 ICC 配置文件的网格）不受影响。"照片"等 Windows 应用仍会显示这些错误。`-Dheic.viewer.windows.colorFixes=false`
+  可关闭这些修正。8 bit 单色（灰度）HEIC 图片在 Windows 上解码为全黑。
 - **Windows**：IDE 启动后的第一张 HEIC 图片可能需要一两秒（Windows 激活 Store 包）；可用性检测在启动时于后台承担这部分开销。
 - **Linux**：
   - libheif 以软件方式按原始分辨率解码，插件再缩小，因此比 macOS 慢（以 Apple M 系列上的 libheif 1.23 实测：像 iPhone 那样
