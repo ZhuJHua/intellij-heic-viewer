@@ -79,7 +79,7 @@ final class HeicViews {
     Application application = ApplicationManager.getApplication();
     if (application == null || application.isDisposed()) return;
     application.invokeLater(() -> {
-      RemedyActions.hideCopiedBalloon(); // anchored to a link of a banner that is going away
+      RemedyActions.closePopups(); // the "copied" confirmation and the "More" popup belong to banners that are going away
       reloadOpenEditors();
     }, ModalityState.nonModal(), ignored -> shutDown || application.isDisposed());
   }
@@ -135,7 +135,8 @@ final class HeicViews {
    * platform does not do it reliably: IntelliJ 2026.1 only re-collects the banners of the providers that are still
    * registered, so the panel of this plugin would stay in the editor (with its actions, plugin classes) and keep the
    * plugin class loader alive. {@link #removePanels} removes a provider's panels from the editors of all open files right
-   * away; after {@code shutDown} the provider shows nothing, so no new panel is created.
+   * away; after {@code shutDown} the provider collects nothing, and a function it returned earlier creates no panel when
+   * the platform applies it later on the EDT ({@link #isBannerHidden} is checked again then), so no new panel appears.
    */
   static void shutDown() {
     shutDown = true;

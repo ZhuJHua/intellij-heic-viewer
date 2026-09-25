@@ -8,16 +8,19 @@ import cn.yooss.heic.backend.HeifRemedy;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.EditorNotificationPanel;
 import com.intellij.ui.EditorNotificationProvider;
 import com.intellij.ui.HyperlinkLabel;
+import com.intellij.ui.awt.RelativePoint;
 import org.intellij.images.editor.ImageFileEditor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
+import java.awt.Point;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -34,8 +37,11 @@ import java.util.function.Function;
  * the banners ({@link DecoderStatus}). The panel itself is created on the EDT. When the decoder becomes available
  * ("Check Again"), the banners are updated away and the editors reload their image ({@link HeicViews}).
  * <p>
- * Dynamic unload: the platform removes this provider's panels from open editors when the extension is removed; after
- * {@code beforePluginUnload} no new panel is created.
+ * Dynamic unload: IntelliJ 2024.1 to 2025.x remove this provider's panels from open editors when the extension is
+ * removed, 2026.1 and newer do not; {@link HeicViews#shutDown()} removes them in {@code beforePluginUnload}. The function
+ * returned by {@link #collectNotificationData} is applied later, in a separate EDT step of the platform's update job,
+ * which may run after {@code beforePluginUnload} (the platform flushes the event queue right after it): it checks
+ * {@link HeicViews#isBannerHidden} again when applied, so no panel is created after the shutdown (both run on the EDT).
  */
 public final class HeicDecoderNotificationProvider implements EditorNotificationProvider, DumbAware {
   @Override
@@ -50,7 +56,11 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
     if (status.isAvailable() || HeicViews.isBannerHidden(status.reason())) return null;
     HeifRemedy remedy = HeifRemedies.forStatus(status);
     if (remedy == null) return null;
-    return editor -> editor instanceof ImageFileEditor ? createPanel(editor, project, remedy) : null;
+    HeifBackendStatus.Reason reason = remedy.reason();
+    // Applied later on the EDT: not after the plugin's shutdown (the panel would keep the plugin class loader alive),
+    // and not for a banner the user closed meanwhile.
+    return editor -> editor instanceof ImageFileEditor && !HeicViews.isBannerHidden(reason)
+                     ? createPanel(editor, project, remedy) : null;
   }
 
   /** At most this many links; with more actions, the first {@code MAX_LINKS - 1} and "More" (a popup with the rest). */
@@ -78,14 +88,20 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
     return panel;
   }
 
-  /** The actions that do not fit into the banner, in a popup below the "More" link. */
+  /**
+   * The actions that do not fit into the banner, in a popup below the "More" link, right-aligned with it (the link is at
+   * the right end of the banner: a popup starting at the link would reach beyond the editor). The popup is closed with
+   * the banners and before the plugin is unloaded ({@link RemedyActions#popupShown}).
+   */
   private static void showMore(@NotNull List<HeifRemedy.Action> actions, @Nullable Project project, @NotNull JComponent anchor) {
     List<String> labels = new ArrayList<>();
     for (HeifRemedy.Action action : actions) labels.add(HeicBundle.message(action.textKey()));
-    JBPopupFactory.getInstance().createPopupChooserBuilder(labels)
+    JBPopup popup = JBPopupFactory.getInstance().createPopupChooserBuilder(labels)
       .setItemChosenCallback(label -> RemedyActions.perform(actions.get(labels.indexOf(label)), project, anchor))
-      .createPopup()
-      .showUnderneathOf(anchor);
+      .createPopup();
+    if (!RemedyActions.popupShown(popup)) return;
+    int width = popup.getContent().getPreferredSize().width;
+    popup.show(new RelativePoint(anchor, new Point(Math.min(0, anchor.getWidth() - width), anchor.getHeight())));
   }
 
   /**

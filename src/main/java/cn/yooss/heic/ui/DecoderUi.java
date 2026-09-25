@@ -14,20 +14,24 @@ public final class DecoderUi {
   }
 
   /**
-   * Before the plugin is unloaded (EDT): no more probes, re-checks, banners or balloons; the banners and balloons on
-   * screen (whose actions are plugin classes) are removed, so nothing of the plugin stays in the IDE's windows.
+   * Before the plugin is unloaded (EDT): no more probes, re-checks, banners or balloons; the banners, balloons and
+   * popups on screen (whose actions are plugin classes) are removed, so nothing of the plugin stays in the IDE's windows.
    */
   public static void shutDown() {
     try {
       DecoderStatus.shutDown();
-      HeicViews.shutDown();
     }
     finally {
       try {
-        RemedyActions.shutDown();
+        RemedyActions.shutDown(); // the "copied" confirmation and the "More" popup, before their banner goes away
       }
       finally {
-        DecoderPrompt.shutDown();
+        try {
+          HeicViews.shutDown();
+        }
+        finally {
+          DecoderPrompt.shutDown();
+        }
       }
     }
   }

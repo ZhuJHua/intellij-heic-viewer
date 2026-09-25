@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
+import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +58,10 @@ public final class DecoderStatus {
   private static CompletableFuture<HeifBackendStatus> firstProbe;
   private static final AtomicBoolean startupCheck = new AtomicBoolean();
   private static final AtomicBoolean rechecking = new AtomicBoolean();
+  /** A "Check Again" not answered yet: it may come while a re-check (e.g. on activation) runs. */
+  private static final AtomicBoolean userRecheckPending = new AtomicBoolean();
+  /** The project of the last "Check Again", for its balloon (weakly: a static field must not keep a closed project). */
+  private static volatile @Nullable WeakReference<Project> userRecheckProject;
   /** Until when (epoch millis) activating the IDE re-checks the decoder; 0: not armed. */
   private static volatile long activationCheckUntil;
   private static volatile long lastActivationCheck;
@@ -134,21 +139,38 @@ public final class DecoderStatus {
   }
 
   /**
-   * Forgets the cached status and probes again on a pooled thread (ignored while a re-check is running). A decoder that
-   * became available refreshes every view ({@link HeicViews#decoderBecameAvailable()}) and is reported in a balloon;
-   * the result of {@link Trigger#USER "Check Again"} is always reported.
+   * Forgets the cached status and probes again on a pooled thread, one re-check at a time. A decoder that became
+   * available refreshes every view ({@link HeicViews#decoderBecameAvailable()}) and is reported in a balloon; the result
+   * of {@link Trigger#USER "Check Again"} is always reported. A "Check Again" while a re-check runs (e.g. the one on
+   * activation, when the user comes back to the IDE by clicking it) is answered by that re-check if it has not probed
+   * yet, otherwise by one more probe right after it; an activation re-check while one runs is dropped.
    */
   static void recheck(@NotNull Trigger trigger, @Nullable Project project) {
-    if (shutDown || !rechecking.compareAndSet(false, true)) return;
+    if (shutDown) return;
+    if (trigger == Trigger.USER) {
+      userRecheckProject = project != null ? new WeakReference<>(project) : null;
+      userRecheckPending.set(true); // before the compareAndSet: a running re-check sees it at the latest in its finally
+    }
+    if (!rechecking.compareAndSet(false, true)) return;
     boolean started = execute(() -> {
       try {
-        runRecheck(trigger, project);
+        boolean user = userRecheckPending.getAndSet(false);
+        runRecheck(user ? Trigger.USER : trigger, user ? userRecheckProject() : project);
       }
       finally {
         rechecking.set(false);
+        if (userRecheckPending.get()) recheck(Trigger.USER, userRecheckProject()); // "Check Again" during this probe
       }
     });
-    if (!started) rechecking.set(false);
+    if (!started) {
+      rechecking.set(false);
+      userRecheckPending.set(false);
+    }
+  }
+
+  private static @Nullable Project userRecheckProject() {
+    WeakReference<Project> project = userRecheckProject;
+    return project != null ? project.get() : null;
   }
 
   /** Pooled thread. */
@@ -202,6 +224,8 @@ public final class DecoderStatus {
   static void shutDown() {
     shutDown = true;
     activationCheckUntil = 0;
+    userRecheckPending.set(false);
+    userRecheckProject = null;
   }
 
   /** Tests: forgets the per-session state (the backend is replaced through {@code HeifBackends.replaceForTests}). */
@@ -213,6 +237,8 @@ public final class DecoderStatus {
     startupCheck.set(false);
     activationCheckUntil = 0;
     lastActivationCheck = 0;
+    userRecheckPending.set(false);
+    userRecheckProject = null;
     shutDown = false;
   }
 

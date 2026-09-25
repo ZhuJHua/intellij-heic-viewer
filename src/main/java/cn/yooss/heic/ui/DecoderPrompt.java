@@ -34,6 +34,9 @@ import java.util.List;
  *   <li><b>Result of "Check Again"</b>: available now, or still missing (with the actions again).</li>
  * </ul>
  * The notifications' actions are plugin classes, so {@link #shutDown()} expires them before the plugin is unloaded.
+ * The notifications on screen are kept in a static list for that, so their actions take the project from the action
+ * event and capture none: closing a project only hides its balloons, it does not expire them, and a captured project
+ * would stay reachable from the list after it was closed.
  */
 public final class DecoderPrompt {
   private static final Logger LOG = Logger.getInstance(DecoderPrompt.class);
@@ -133,10 +136,10 @@ public final class DecoderPrompt {
         String text = HeicBundle.message(action.textKey());
         if (action.type() == HeifRemedy.ActionType.CHECK_AGAIN) {
           // The result is reported in a new balloon.
-          notification.addAction(NotificationAction.createExpiring(text, (event, n) -> RemedyActions.perform(action, project, null)));
+          notification.addAction(NotificationAction.createExpiring(text, (event, n) -> RemedyActions.perform(action, event.getProject(), null)));
         }
         else {
-          notification.addAction(NotificationAction.create(text, (event, n) -> RemedyActions.perform(action, project, source(event))));
+          notification.addAction(NotificationAction.create(text, (event, n) -> RemedyActions.perform(action, event.getProject(), source(event))));
         }
       }
       if (dismissible) {
@@ -146,6 +149,12 @@ public final class DecoderPrompt {
           () -> PropertiesComponent.getInstance().setValue(DISMISSED_KEY_PREFIX + reason.name(), true)));
       }
     }
+    // Not kept once it expired (e.g. "Check Again" in it was clicked).
+    notification.whenExpired(() -> {
+      synchronized (LOCK) {
+        shown.remove(notification);
+      }
+    });
     List<Notification> previous;
     synchronized (LOCK) {
       if (shutDown) return;
@@ -181,6 +190,12 @@ public final class DecoderPrompt {
       shown.clear();
     }
     for (Notification notification : notifications) notification.expire();
+  }
+
+  /** Tests: the list of notifications that may still be on screen (live). */
+  @TestOnly
+  static @NotNull Object shownNotificationsForTests() {
+    return shown;
   }
 
   @TestOnly

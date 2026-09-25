@@ -23,9 +23,15 @@ import com.intellij.openapi.fileEditor.FileEditorProvider;
 import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.popup.Balloon;
+import com.intellij.openapi.ui.popup.JBPopup;
+import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.testFramework.LeakHunter;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.testFramework.ServiceContainerUtil;
@@ -33,16 +39,23 @@ import com.intellij.ui.EditorNotificationPanel;
 import com.intellij.ui.EditorNotificationProvider;
 import com.intellij.ui.EditorNotifications;
 import com.intellij.ui.HyperlinkLabel;
+import com.intellij.ui.UiInterceptors;
 import org.intellij.images.editor.ImageFileEditor;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.JComponent;
 import java.awt.datatransfer.DataFlavor;
+import java.lang.ref.WeakReference;
+import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /**
@@ -469,7 +482,180 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertNull("no backend was created", HeifBackends.replaceForTests(null));
   }
 
+  /**
+   * "Check Again" clicked while the re-check on activation is still probing (the user comes back to the IDE by clicking
+   * it, which activates the window first): answered by one more probe, not dropped; the balloon (with the Store again)
+   * is shown once.
+   */
+  public void testCheckAgainDuringTheActivationRecheckIsAnswered() throws Exception {
+    FakeHeifBackend backend = use(FakeHeifBackend.probed(HEIF_MISSING));
+    backend.recheckResult = HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test: HEVC missing");
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    backend.recheckEntered = entered;
+    backend.recheckRelease = release;
+    DecoderStatus.remedyActionPerformed();
+    DecoderStatus.applicationActivated();
+    assertTrue("the re-check on activation probes", entered.await(10, TimeUnit.SECONDS));
+
+    RemedyActions.perform(HeifRemedy.Action.checkAgain(), getProject(), null);
+    release.countDown();
+    waitFor("the answer to Check Again", () -> backend.rechecks.get() == 2 && !isRechecking() && !notifications.isEmpty());
+    PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+    assertEquals(2, backend.rechecks.get());
+    assertEquals(1, notifications.size());
+    assertEquals(HeicBundle.message("remedy.check.missing.title"), notifications.get(0).getTitle());
+
+    // Without a Check Again, a still missing decoder is not reported after an activation.
+    notifications.clear();
+    DecoderStatus.resetActivationDebounceForTests();
+    DecoderStatus.applicationActivated();
+    waitFor("the re-check on activation", () -> backend.rechecks.get() == 3 && !isRechecking());
+    PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
+    assertEquals(0, notifications.size());
+  }
+
+  /**
+   * The platform collects a banner in a read action and applies the function later, in a separate EDT step, which may
+   * run after the plugin's {@code beforePluginUnload} (2026.1+ would then leave the panel, with its plugin-class actions,
+   * in the editor): a function collected before the shutdown creates nothing afterwards. Nor after the user closed the
+   * banner meanwhile.
+   */
+  public void testBannerCollectedBeforeTheShutdownIsNotCreatedAfterIt() throws Exception {
+    use(FakeHeifBackend.probed(HEIF_MISSING));
+    VirtualFile file = heicFile("late.heic");
+    ImageFileEditor editor = createImageEditor(file);
+    HeicDecoderNotificationProvider provider = new HeicDecoderNotificationProvider();
+
+    Function<? super FileEditor, ? extends JComponent> closed = provider.collectNotificationData(getProject(), file);
+    assertNotNull(closed);
+    HeicViews.hideBanners(Reason.WINDOWS_HEIF_EXTENSION_MISSING);
+    assertNull("closed by the user meanwhile", closed.apply(editor));
+    HeicViews.resetForTests();
+
+    Function<? super FileEditor, ? extends JComponent> data = provider.collectNotificationData(getProject(), file);
+    assertNotNull(data);
+    DecoderUi.shutDown();
+    assertNull("no panel after beforePluginUnload", data.apply(editor));
+  }
+
+  /**
+   * The banner's "More" popup (a window created by plugin code) is closed before the plugin is unloaded, and when the
+   * decoder becomes available; after the shutdown no popup is shown.
+   */
+  public void testMorePopupIsClosedWithTheBanners() throws Exception {
+    use(FakeHeifBackend.probed(HEIF_MISSING));
+    VirtualFile file = heicFile("more.heic");
+    ImageFileEditor editor = createImageEditor(file);
+    EditorNotificationPanel panel = banner(file, editor);
+    assertNotNull(panel);
+    HyperlinkLabel more = panel.findLabelByName(HeicBundle.message("remedy.action.more"));
+    assertNotNull(more);
+
+    JBPopup first = clickMore(more);
+    assertSame(first, RemedyActions.trackedPopupsForTests()[1]);
+    JBPopup second = clickMore(more);
+    assertTrue("a second popup replaces the first", first.isDisposed());
+    RemedyActions.closePopups(); // the decoder became available: the banners go away
+    assertTrue(second.isDisposed());
+    assertNull(RemedyActions.trackedPopupsForTests()[1]);
+
+    JBPopup third = clickMore(more);
+    DecoderUi.shutDown();
+    assertTrue("closed before the plugin is unloaded", third.isDisposed());
+    JBPopup late = JBPopupFactory.getInstance().createPopupChooserBuilder(List.of("a", "b")).createPopup();
+    assertFalse("nothing is shown while the plugin is unloaded", RemedyActions.popupShown(late));
+    assertTrue(late.isDisposed());
+  }
+
+  /**
+   * The "copied" confirmation is hidden without animation and disposed at once (an animated hide disposes it, and the
+   * listener on the frame that references the banner's link, only after the plugin was unloaded), and the plugin does
+   * not keep it once the platform lets it go (a closed balloon still references its frame and project).
+   */
+  public void testCopiedConfirmationIsClosedAtOnceAndNotKept() throws Exception {
+    List<String> calls = Collections.synchronizedList(new ArrayList<>());
+    RemedyActions.trackCopiedBalloonForTests(recordingBalloon(calls));
+    DecoderUi.shutDown();
+    assertEquals(List.of("hideImmediately", "dispose"), calls);
+    assertNull(RemedyActions.trackedPopupsForTests()[0]);
+
+    RemedyActions.resetForTests();
+    Balloon kept = recordingBalloon(new ArrayList<>());
+    RemedyActions.trackCopiedBalloonForTests(kept);
+    assertSame(kept, RemedyActions.trackedPopupsForTests()[0]);
+    WeakReference<Balloon> reference = new WeakReference<>(kept);
+    kept = null;
+    for (int i = 0; i < 100 && reference.get() != null; i++) {
+      System.gc();
+      Thread.sleep(10);
+    }
+    assertNull("referenced weakly", reference.get());
+    assertNull(RemedyActions.trackedPopupsForTests()[0]);
+  }
+
+  /**
+   * The balloons of a project that was closed do not keep it: closing a project may only hide its balloons (IntelliJ
+   * 2024.1), which then stay in the plugin's list of notifications to expire, so their actions must not capture the
+   * project.
+   */
+  public void testClosedProjectIsNotKeptByTheBalloons() throws Exception {
+    Path directory = Files.createTempDirectory("heic-closed-project");
+    Disposable parent = Disposer.newDisposable();
+    try {
+      Project other = PlatformTestUtil.loadAndOpenProject(directory, parent);
+      Notification balloon;
+      try {
+        assertNotSame(getProject(), other);
+        DecoderPrompt.decodeUnavailable(HEIF_MISSING, other); // the diff of project "other"
+        PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+        List<?> shown = (List<?>) DecoderPrompt.shownNotificationsForTests();
+        assertEquals(1, shown.size());
+        balloon = (Notification) shown.get(0);
+        assertEquals(5, balloon.getActions().size()); // the four actions of the remedy and "Don't Show Again"
+      }
+      finally {
+        PlatformTestUtil.forceCloseProjectWithoutSaving(other);
+      }
+      assertTrue(other.isDisposed());
+      PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+      LeakHunter.checkLeak(balloon, Project.class, project -> project == other);
+      LeakHunter.checkLeak(DecoderPrompt.shownNotificationsForTests(), Project.class, project -> project == other);
+    }
+    finally {
+      Disposer.dispose(parent);
+    }
+  }
+
   // ---------------------------------------------------------------------------------------------------------------------
+
+  /** Clicks the banner's "More" link and returns the popup it shows (intercepted: a light IDE is headless). */
+  private static JBPopup clickMore(HyperlinkLabel more) {
+    List<JBPopup> shown = new ArrayList<>();
+    UiInterceptors.register(new UiInterceptors.UiInterceptor<>(JBPopup.class) {
+      @Override
+      protected void doIntercept(@NotNull JBPopup popup) {
+        shown.add(popup);
+      }
+    });
+    more.doClick();
+    assertEquals(1, shown.size());
+    return shown.get(0);
+  }
+
+  /** A {@link Balloon} that records the calls of the plugin (hideImmediately, hide, dispose, ...). */
+  private static Balloon recordingBalloon(List<String> calls) {
+    return (Balloon) Proxy.newProxyInstance(Balloon.class.getClassLoader(), new Class<?>[]{Balloon.class}, (proxy, method, args) -> {
+      switch (method.getName()) {
+        case "hashCode": return System.identityHashCode(proxy);
+        case "equals": return proxy == args[0];
+        case "toString": return "recording balloon";
+        default:
+          calls.add(method.getName());
+          return method.getReturnType() == boolean.class ? Boolean.FALSE : null;
+      }
+    });
+  }
 
   private static boolean isRechecking() {
     return DecoderStatus.isRecheckingForTests();

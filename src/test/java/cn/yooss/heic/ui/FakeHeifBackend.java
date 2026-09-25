@@ -8,6 +8,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -21,6 +23,9 @@ final class FakeHeifBackend implements HeifBackend {
   final AtomicInteger probes = new AtomicInteger();
   final AtomicInteger rechecks = new AtomicInteger();
   volatile Thread probeThread;
+  /** If set, the next re-check counts {@link #recheckEntered} down and waits (up to 10 s) for this latch. */
+  volatile CountDownLatch recheckRelease;
+  volatile CountDownLatch recheckEntered;
 
   /** Probed already: {@link #cachedStatus()} is {@code status} from the start. */
   static FakeHeifBackend probed(@NotNull HeifBackendStatus status) {
@@ -65,11 +70,24 @@ final class FakeHeifBackend implements HeifBackend {
   }
 
   @Override
-  public synchronized @NotNull HeifBackendStatus recheckStatus() {
-    rechecks.incrementAndGet();
-    probeThread = Thread.currentThread();
-    cached = recheckResult;
-    return cached;
+  public @NotNull HeifBackendStatus recheckStatus() {
+    CountDownLatch release = recheckRelease;
+    if (release != null) {
+      recheckRelease = null;
+      recheckEntered.countDown();
+      try {
+        release.await(10, TimeUnit.SECONDS);
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+    synchronized (this) {
+      rechecks.incrementAndGet();
+      probeThread = Thread.currentThread();
+      cached = recheckResult;
+      return cached;
+    }
   }
 
   @Override
