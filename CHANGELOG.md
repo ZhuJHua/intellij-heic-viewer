@@ -19,6 +19,7 @@
 ### Fixed
 
 - macOS: a malformed HEIC whose declared size does not match its coded image could keep the image viewer busy for about a minute (ImageIO decoded the whole image again for every band of about one megapixel); an image is now drawn in at most eight bands.
+- macOS: images with transparency that are decoded smaller (the thumbnail icons) had darkened edges on some Macs (ImageIO's thumbnail scaler did not weight the colors by alpha); they are now downscaled alpha-weighted by the plugin, like on Windows and Linux.
 
 ## [0.1.0] - 2026-09-25
 

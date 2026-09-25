@@ -252,6 +252,55 @@ class HeicDecoderTest {
     assertArrayEquals(pixels(HeicDecoder.decode(data, 0, false, Integer.MAX_VALUE)), pixels(image));
   }
 
+  /**
+   * An image with alpha that is requested smaller is downscaled alpha-weighted, by the plugin rather than ImageIO's
+   * thumbnail scaler, which darkens the edges on some Macs (red at a quarter alpha: 128 on the GitHub runners). Also
+   * for thumbnails; the strip layout (at most MAX_DRAWS draws) does not change the pixels.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
+  void downscaledAlphaIsAlphaWeighted(String name) throws Throwable {
+    byte[] data = Fixtures.bytes(name);
+    for (BufferedImage image : new BufferedImage[]{HeicDecoder.decode(data, 90), HeicDecoder.decodeThumbnail(data, 90)}) {
+      assertEquals("90x68", image.getWidth() + "x" + image.getHeight());
+      assertEquals(BufferedImage.TYPE_INT_ARGB, image.getType());
+      int edge = image.getRGB(22, 34); // source columns 97.8 to 102.2: half transparent, half red at alpha 128
+      String message = name + ": " + Integer.toHexString(edge);
+      assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
+      assertTrue(((edge >> 16) & 0xFF) >= 240 && ((edge >> 8) & 0xFF) <= 16 && (edge & 0xFF) <= 16, message);
+      assertEquals(0, image.getRGB(0, 0) >>> 24, "transparent corner");
+    }
+
+    java.util.concurrent.atomic.AtomicInteger draws = new java.util.concurrent.atomic.AtomicInteger();
+    MacApi real = new cn.yooss.heic.mac.jna.JnaMacApi();
+    MacApi counting = (MacApi) java.lang.reflect.Proxy.newProxyInstance(
+      MacApi.class.getClassLoader(), new Class<?>[]{MacApi.class}, (proxy, method, args) -> {
+        if (method.getName().equals("cgContextDrawImage")) draws.incrementAndGet();
+        try {
+          return method.invoke(real, args);
+        }
+        catch (java.lang.reflect.InvocationTargetException e) {
+          throw e.getCause();
+        }
+      });
+    BufferedImage stripped = HeicDecoder.decode(new HeicDecoder.Bound(counting), data, 90, false, 1);
+    assertEquals(HeicDecoder.MAX_DRAWS, draws.get());
+    assertArrayEquals(pixels(HeicDecoder.decode(data, 90)), pixels(stripped));
+  }
+
+  /** Which decodes are downscaled alpha-weighted: with alpha, smaller than the image, at most 64 megapixels. */
+  @Test
+  void alphaWeightedOnlyForSmallerImagesWithAlphaWithinTheBudget() {
+    HeifImageInfo alpha = new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, true);
+    assertTrue(HeicDecoder.isAlphaWeighted(alpha, 256));
+    assertFalse(HeicDecoder.isAlphaWeighted(alpha, 0), "full size");
+    assertFalse(HeicDecoder.isAlphaWeighted(alpha, 8000), "not smaller");
+    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, false), 256));
+    assertTrue(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 8000, 1, 8, true), 256));
+    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8001, 8000, 1, 8, true), 256),
+                "above the budget: ImageIO's scaler, as before");
+  }
+
   /** Orientation 6 (rotate 90 degrees clockwise) on an image that is rendered in several strips. */
   @Test
   void multiStripRenderingWithOrientation() throws IOException {

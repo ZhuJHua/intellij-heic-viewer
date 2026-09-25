@@ -3,6 +3,8 @@ package cn.yooss.heic.mac;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.HeifInput;
 import cn.yooss.heic.backend.PixelPipeline;
+import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
+import cn.yooss.heic.backend.PlaneConverter;
 import cn.yooss.heic.mac.jna.JnaMacApi;
 
 import java.awt.image.BufferedImage;
@@ -23,7 +25,9 @@ import java.util.Set;
  * ThumbnailMaxPixelSize, ShouldCacheImmediately)} so that the HEIF {@code irot}/{@code imir} and EXIF orientation
  * are applied -> drawn in strips of ~1M pixels, but at most {@link #MAX_DRAWS} of them (cropped with
  * {@code CGImageCreateWithImageInRect}), into an explicit 8-bit sRGB bitmap context -> copied (in ~1M-pixel chunks)
- * into a {@code TYPE_INT_RGB} image, or a non-premultiplied {@code TYPE_INT_ARGB} image when the file has alpha.
+ * into a {@code TYPE_INT_RGB} image, or a non-premultiplied {@code TYPE_INT_ARGB} image when the file has alpha. An
+ * image with alpha that is requested smaller is decoded at full size and downscaled alpha-weighted by
+ * {@link PlaneConverter} instead of by ImageIO ({@link #isAlphaWeighted}).
  * <p>
  * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
  * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
@@ -90,6 +94,10 @@ public final class HeicDecoder {
     try (Session session = new Session(bound)) {
       session.open(data);
       HeifImageInfo info = session.info();
+      if (isAlphaWeighted(info, maxPixelSize)) {
+        long image = session.createThumbnail(thumbnailSide(info, 0), false); // full size, like the image viewer's decode
+        return session.renderAlphaWeighted(image, maxPixelSize, stripPixels);
+      }
       long image = session.createThumbnail(thumbnailSide(info, maxPixelSize), allowEmbeddedThumbnail);
       return session.render(image, info.hasAlpha(), stripPixels);
     }
@@ -107,6 +115,20 @@ public final class HeicDecoder {
     int rows = PixelPipeline.stripRows(width, height, stripPixels); // 1 .. height
     int stripRows = Math.max(rows, (height + MAX_DRAWS - 1) / MAX_DRAWS); // at least 1/MAX_DRAWS of the rows
     return new int[]{stripRows, rows};
+  }
+
+  /**
+   * Whether an image is downscaled by {@link PlaneConverter} (alpha-weighted) rather than by ImageIO.framework: an image
+   * with alpha, requested smaller than it is, of at most {@link #ALPHA_WEIGHTED_MAX_PIXELS}. ImageIO's thumbnail scaler
+   * does not weight the colors by alpha on every Mac: the color under transparent pixels (black in HEIC files) then
+   * darkens every edge (red at a quarter alpha came out as 128 instead of 255 on the GitHub macOS 26 arm64 and macOS 15
+   * Intel runners, as 191 on an M-series Mac). Larger images (which only the pixel budget downscales) keep ImageIO's
+   * scaler, whose decode does not need the full-size image in memory a second time.
+   */
+  static boolean isAlphaWeighted(HeifImageInfo info, int maxPixelSize) {
+    if (!info.hasAlpha() || maxPixelSize <= 0) return false;
+    long width = info.rawWidth(), height = info.rawHeight();
+    return Math.max(width, height) > maxPixelSize && width * height <= ALPHA_WEIGHTED_MAX_PIXELS;
   }
 
   /**
@@ -159,6 +181,8 @@ public final class HeicDecoder {
    * (1/8 of the image: 32 MB at the default 64-megapixel budget), next to ImageIO's cached copy of the whole image.
    */
   static final int MAX_DRAWS = 8;
+  /** Largest image with alpha that is downscaled alpha-weighted (the default pixel budget), see {@link #isAlphaWeighted}. */
+  static final long ALPHA_WEIGHTED_MAX_PIXELS = 64_000_000L;
 
   /** A {@link MacApi} plus the constants the algorithm needs, resolved once. */
   static final class Bound {
@@ -321,22 +345,7 @@ public final class HeicDecoder {
       int[] pixels = new int[width * copyRows];
       for (int y0 = 0; y0 < height; y0 += stripRows) {
         int rows = Math.min(stripRows, height - y0);
-        if (stripRows < height) {
-          // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped view into
-          // the top `rows` rows of the context instead. The view shares the decoded pixels only if ImageIO cached them;
-          // otherwise each draw decodes the whole image again, hence at most MAX_DRAWS strips.
-          long strip = api.cgImageCreateWithImageInRect(image, 0, y0, width, rows); // image space, origin top-left
-          if (strip == 0) throw new IOException("CGImageCreateWithImageInRect failed");
-          try {
-            api.cgContextDrawImage(context, 0, stripRows - rows, width, rows, strip); // context space, origin bottom-left
-          }
-          finally {
-            api.cfRelease(strip);
-          }
-        }
-        else {
-          api.cgContextDrawImage(context, 0, 0, width, height, image);
-        }
+        drawStrip(context, image, width, height, y0, rows, stripRows);
         for (int r0 = 0; r0 < rows; r0 += copyRows) { // the Java side in small chunks, however tall the strip
           int n = Math.min(copyRows, rows - r0);
           api.readInts(buffer + r0 * bytesPerRow, pixels, width * n);
@@ -344,6 +353,81 @@ public final class HeicDecoder {
         }
       }
       return out;
+    }
+
+    /**
+     * Draws rows {@code y0 .. y0+rows-1} of {@code image} into the top {@code rows} rows of {@code context}, which is
+     * {@code stripRows} rows high.
+     */
+    private void drawStrip(long context, long image, int width, int height, int y0, int rows, int stripRows)
+      throws IOException {
+      if (stripRows < height) {
+        // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped view into
+        // the top `rows` rows of the context instead. The view shares the decoded pixels only if ImageIO cached them;
+        // otherwise each draw decodes the whole image again, hence at most MAX_DRAWS strips.
+        long strip = api.cgImageCreateWithImageInRect(image, 0, y0, width, rows); // image space, origin top-left
+        if (strip == 0) throw new IOException("CGImageCreateWithImageInRect failed");
+        try {
+          api.cgContextDrawImage(context, 0, stripRows - rows, width, rows, strip); // context space, origin bottom-left
+        }
+        finally {
+          api.cfRelease(strip);
+        }
+      }
+      else {
+        api.cgContextDrawImage(context, 0, 0, width, height, image);
+      }
+    }
+
+    /**
+     * Draws the full-size {@code image} (with alpha) into premultiplied sRGB strips, as {@link #render} does, and
+     * downscales it to {@code maxPixelSize} with {@link PlaneConverter} (alpha-weighted box filter, then one bilinear
+     * step) while reading the strips: the Java heap holds a strip and the reduced image, never the full-size image.
+     */
+    BufferedImage renderAlphaWeighted(long image, int maxPixelSize, int stripPixels) throws IOException {
+      long imageWidth = api.cgImageGetWidth(image), imageHeight = api.cgImageGetHeight(image);
+      if (imageWidth <= 0 || imageHeight <= 0 || imageWidth * imageHeight > Integer.MAX_VALUE / 4) {
+        throw new IOException("Invalid decoded image size " + imageWidth + "x" + imageHeight);
+      }
+      int width = (int) imageWidth;
+      int height = (int) imageHeight;
+      int stripRows = stripPlan(width, height, stripPixels)[0];
+      long bytesPerRow = 4L * width;
+      buffer = api.malloc(bytesPerRow * stripRows);
+      if (buffer == 0) throw new IOException("Cannot allocate " + bytesPerRow * stripRows + " bytes of native memory");
+      long colorSpace = own(api.cgColorSpaceCreateWithName(k.kCGColorSpaceSRGB));
+      if (colorSpace == 0) throw new IOException("Cannot create the sRGB color space");
+      int bitmapInfo = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little; // int 0xAARRGGBB, premultiplied
+      long context = own(api.cgBitmapContextCreate(buffer, width, stripRows, 8, bytesPerRow, colorSpace, bitmapInfo));
+      if (context == 0) throw new IOException("Cannot create a " + width + "x" + stripRows + " bitmap context");
+      api.cgContextSetBlendMode(context, kCGBlendModeCopy); // overwrite, never blend with stale rows
+
+      int[] drawn = {-1}; // the first row of the strip in the context
+      int[][] pixels = {new int[0]};
+      // PlaneConverter reads the rows in order, in chunks that need not match the strips.
+      return PlaneConverter.convert(width, height, 4 * width, ByteLayout.RGBA, true, true, maxPixelSize, (y0, rows, target) -> {
+        for (int done = 0; done < rows; ) {
+          int y = y0 + done;
+          int start = y / stripRows * stripRows;
+          int stripHeight = Math.min(stripRows, height - start);
+          if (drawn[0] != start) {
+            drawStrip(context, image, width, height, start, stripHeight, stripRows);
+            drawn[0] = start;
+          }
+          int n = Math.min(rows - done, start + stripHeight - y);
+          if (pixels[0].length < width * n) pixels[0] = new int[width * n];
+          int[] argb = pixels[0];
+          api.readInts(buffer + (y - start) * bytesPerRow, argb, width * n);
+          for (int i = 0, at = done * 4 * width; i < width * n; i++, at += 4) {
+            int p = argb[i];
+            target[at] = (byte) (p >> 16);
+            target[at + 1] = (byte) (p >> 8);
+            target[at + 2] = (byte) p;
+            target[at + 3] = (byte) (p >>> 24);
+          }
+          done += n;
+        }
+      });
     }
 
     /** Builds a CFDictionary from key/value pairs; values are {@link Boolean} or {@link Long}. Released on close. */

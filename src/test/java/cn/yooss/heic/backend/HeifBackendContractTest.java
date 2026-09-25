@@ -199,7 +199,8 @@ class HeifBackendContractTest {
 
   /**
    * Downscaling an image with alpha weights the colors by alpha: the color under the transparent pixels (black in HEIC
-   * files) must not darken the edges (Windows scaled the colors and the alpha plane separately).
+   * files) must not darken the edges (Windows scaled the colors and the alpha plane separately, and so does ImageIO's
+   * thumbnail scaler on some Macs).
    */
   @ParameterizedTest
   @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
@@ -211,10 +212,9 @@ class HeifBackendContractTest {
     int edge = image.getRGB(22, 34);
     String message = name + " (" + BACKEND.id() + "): " + Integer.toHexString(edge);
     assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
-    // Alpha-weighted: red stays red (about 255). macOS ImageIO's own thumbnail scaler (the decoder downscales there)
-    // darkens such an edge a little (0x44bf0000 on macOS 26); scaling colors and alpha separately gives about 150.
-    int minRed = BACKEND.id().startsWith("macos") ? 170 : 220;
-    assertTrue(((edge >> 16) & 0xFF) >= minRed, message);
+    // Alpha-weighted: red stays red (about 255). Scaling colors and alpha separately gives about 128 to 150 (WIC's
+    // scaler; ImageIO's thumbnail scaler on the GitHub macOS runners, 0x40800404; 0x44bf0000 on an M-series Mac).
+    assertTrue(((edge >> 16) & 0xFF) >= 220, message);
     assertTrue(((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
   }
 
