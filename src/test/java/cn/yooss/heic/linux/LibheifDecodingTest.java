@@ -18,6 +18,7 @@ import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -237,6 +238,46 @@ class LibheifDecodingTest {
     byte[] ftypOnly = Arrays.copyOf(full, 32);
     LibheifException e = assertThrows(LibheifException.class, () -> decoder().decode(ftypOnly, 0, false));
     assertTrue(e.getMessage().startsWith("heif_context_read_from_memory_without_copy failed: "), e.getMessage());
+  }
+
+  /**
+   * A primary image above the decode limit ({@link LibheifDecoder#MAX_DECODE_SIDE} squared pixels, made small here) is
+   * not decoded: libheif would build it at full size in native memory. The declared size is checked in Java, and libheif
+   * checks the image it builds, so that a small declared size ({@code ispe}) cannot get around the limit. Reading the
+   * size and embedded thumbnails are not limited.
+   */
+  @Test
+  void imagesAboveTheDecodeLimitAreNotDecoded() throws IOException {
+    Libheif lib = TestLibheif.backend().library();
+    byte[] grid = Fixtures.bytes("grid_libheif.heic"); // 600x400, a grid of 128x128 tiles
+    IOException tooLarge = assertThrows(IOException.class, () -> new LibheifDecoder(lib, 256).decode(grid, 0, false));
+    assertTrue(tooLarge.getMessage().contains("too large to decode"), tooLarge.getMessage());
+    assertEquals("600x400", size(new LibheifDecoder(lib, 256).readInfo(grid)));
+    BufferedImage fits = new LibheifDecoder(lib, 1024).decode(grid, 0, false);
+    assertEquals("600x400", fits.getWidth() + "x" + fits.getHeight());
+    byte[] withThumbnail = Fixtures.bytes("thumb_irot.heic"); // 400x600 with a 64x96 thumbnail
+    assertEquals("43x64", size(new LibheifDecoder(lib, 16).decode(withThumbnail, 64, true)));
+
+    assumeTrue(lib.canLimitDecodeSize(), "libheif " + lib.version() + " has no heif_context_set_maximum_image_size_limit");
+    byte[] claimsSmall = TestLibheif.withIspe(grid, 600, 400, 64, 64); // the grid says 64x64, its canvas is still 600x400
+    assertEquals("64x64", size(new LibheifDecoder(lib, 256).readInfo(claimsSmall)));
+    LibheifException limited = assertThrows(LibheifException.class, () -> new LibheifDecoder(lib, 256).decode(claimsSmall, 0, false));
+    assertEquals(6, limited.code(), limited.getMessage()); // heif_error_Memory_allocation_error
+    assertEquals(1000, limited.subcode(), limited.getMessage()); // heif_suberror_Security_limit_exceeded
+    try {
+      new LibheifDecoder(lib, 1024).decode(claimsSmall, 0, false); // decodes with some versions, others refuse the ispe
+    }
+    catch (LibheifException e) {
+      assertNotEquals(1000, e.subcode(), "not the limit: " + e.getMessage());
+    }
+  }
+
+  private static String size(BufferedImage image) {
+    return image.getWidth() + "x" + image.getHeight();
+  }
+
+  private static String size(HeifImageInfo info) {
+    return info.width() + "x" + info.height();
   }
 
   private static LibheifDecoder decoder() {

@@ -25,7 +25,8 @@ import java.util.Locale;
  * its soname {@code libheif.so.1} and its ABI since 1.0); newer optional functions are looked up individually and used
  * only when present: {@code heif_init} (1.13), {@code heif_image_handle_is_premultiplied_alpha} (1.12),
  * {@code heif_load_plugins} (1.14), {@code heif_get_decoder_descriptors} (1.15), {@code heif_get_plugin_directories}
- * (1.17) and {@code heif_image_get_plane_readonly2} (1.20).
+ * (1.17) and {@code heif_image_get_plane_readonly2} (1.20); {@code heif_context_set_maximum_image_size_limit} is looked
+ * up the same way.
  * <p>
  * <b>{@code struct heif_error} returned by value.</b> Most functions return {@code struct heif_error {int code;
  * int subcode; const char* message;}}, 16 bytes, by value. Both supported ABIs return such a struct in two
@@ -93,6 +94,7 @@ final class Libheif {
   private final @Nullable Function freePluginDirectories;
   private final @Nullable Function decoderDescriptors;
   private final @Nullable Function decoderDescriptorName;
+  private final @Nullable Function setMaximumImageSizeLimit;
 
   private Libheif(String source, NativeLibrary library) {
     this.source = source;
@@ -130,6 +132,7 @@ final class Libheif {
     freePluginDirectories = pluginDirectories != null ? optionalFunction("heif_free_plugin_directories") : null;
     decoderDescriptors = optionalFunction("heif_get_decoder_descriptors");
     decoderDescriptorName = decoderDescriptors != null ? optionalFunction("heif_decoder_descriptor_get_name") : null;
+    setMaximumImageSizeLimit = optionalFunction("heif_context_set_maximum_image_size_limit");
   }
 
   /**
@@ -263,6 +266,28 @@ final class Libheif {
   /** {@code heif_context_alloc()}; 0 on failure. */
   long contextAlloc() {
     return contextAlloc.invokeLong(new Object[0]);
+  }
+
+  /**
+   * Caps the size of the image libheif builds when an image is decoded in {@code context}: about {@code side * side}
+   * pixels. libheif checks it when {@code heif_decode_image} creates the image (for a grid, the canvas sized from the
+   * grid's own description, so a small {@code ispe} in the file cannot get around it). The meaning of the argument of
+   * {@code heif_context_set_maximum_image_size_limit} changed: up to 1.17 a limit per side (a side of at least the
+   * limit fails), so {@code side * sqrt(2)} is passed there (about the same area for images of other shapes, e.g.
+   * panoramas); 1.18.x and 1.19.1+ take the side of a square ({@code side * side} pixels); 1.19.0 alone took the pixel
+   * count. Up to 1.17 the limit is also checked against {@code ispe} when a file is read, so this must be called after
+   * {@code heif_context_read_*} (reading the image's properties is never limited). A no-op where the function is
+   * missing.
+   */
+  void limitDecodeSize(long context, int side) {
+    if (setMaximumImageSizeLimit == null || context == 0) return;
+    int version = comparableVersion();
+    long value = version < 11800 ? Math.round(side * Math.sqrt(2)) : version == 11900 ? (long) side * side : side;
+    setMaximumImageSizeLimit.invokeVoid(new Object[]{context, (int) Math.min(Integer.MAX_VALUE, value)});
+  }
+
+  boolean canLimitDecodeSize() {
+    return setMaximumImageSizeLimit != null;
   }
 
   void contextFree(long context) {

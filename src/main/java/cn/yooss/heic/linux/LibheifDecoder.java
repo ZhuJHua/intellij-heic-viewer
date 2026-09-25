@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.Locale;
 
 /**
  * Decodes the primary image of HEIF data with libheif ({@link Libheif}):
@@ -30,17 +31,34 @@ import java.util.ArrayDeque;
  *   {@code nclx} matrix coefficients) and leaves the colors in the file's color space.</li>
  * </ol>
  * Thumbnails use a thumbnail embedded in the file ({@code thmb} reference) when one has the same orientation and aspect
- * ratio as the primary image and is at least as large as requested. Every native object is released in
+ * ratio as the primary image and is at least as large as requested. A primary image above {@link #MAX_DECODE_SIDE}
+ * squared pixels is not decoded (libheif would need gigabytes of native memory for it). Every native object is released in
  * {@code finally} blocks (images, handles, context, then the data). Thread-safe: every call has its own context.
  */
 final class LibheifDecoder {
   /** An embedded thumbnail is used only if its aspect ratio differs by less than this from the primary image's. */
   private static final double THUMBNAIL_ASPECT_TOLERANCE = 0.02;
+  /**
+   * The largest primary image decoded: {@code MAX_DECODE_SIDE^2} pixels, about 268 MP. libheif decodes at full
+   * resolution in native memory (about 4.6 bytes per pixel with libheif 1.23, up to 6.2 with 1.17 grids, so up to about
+   * 1.2 to 1.7 GB), whatever size is shown, and neither the pixel budget nor the Java heap limit that; the thumbnails of
+   * a folder are decoded two at a time. Separate from the pixel budget ({@code DecodeLimits}), which only sizes the
+   * result. Checked in Java on the image's declared size and by libheif itself when it builds the image
+   * ({@link Libheif#limitDecodeSize}), so that a file whose declared size is small cannot get around it.
+   */
+  static final int MAX_DECODE_SIDE = 16385;
 
   private final Libheif lib;
+  private final int maxDecodeSide;
 
   LibheifDecoder(@NotNull Libheif lib) {
+    this(lib, MAX_DECODE_SIDE);
+  }
+
+  /** @param maxDecodeSide the side of the largest (square) primary image that is decoded (tests make it small) */
+  LibheifDecoder(@NotNull Libheif lib, int maxDecodeSide) {
     this.lib = lib;
+    this.maxDecodeSide = maxDecodeSide;
   }
 
   @NotNull HeifImageInfo readInfo(byte[] data) throws IOException {
@@ -65,6 +83,15 @@ final class LibheifDecoder {
       if (useEmbeddedThumbnail && maxPixelSize > 0) {
         long thumbnail = session.thumbnail(width, height, maxPixelSize);
         if (thumbnail != 0) source = thumbnail;
+      }
+      if (source == session.primary) {
+        long limit = (long) maxDecodeSide * maxDecodeSide;
+        if ((long) width * height > limit) {
+          throw new IOException(String.format(Locale.ROOT, "The image is too large to decode with libheif: %dx%d (%.0f "
+                                                           + "megapixels, at most %.0f; libheif decodes at full size)",
+                                              width, height, width * (double) height / 1e6, limit / 1e6));
+        }
+        lib.limitDecodeSize(session.context, maxDecodeSide); // the size libheif really builds (e.g. a grid's canvas)
       }
       return session.render(source, alpha, maxPixelSize);
     }

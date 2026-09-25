@@ -4,6 +4,7 @@ import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifBackends;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 /**
@@ -56,6 +57,24 @@ final class TestLibheif {
   static boolean isAvailable() {
     HeifBackendStatus status = status();
     return status != null && status.isAvailable();
+  }
+
+  /**
+   * {@code data} with its {@code ispe} box of {@code width x height} changed to {@code newWidth x newHeight}: a file that
+   * declares another size than the image libheif builds (for the decode limit; also used by {@link DistroCheck}).
+   */
+  static byte[] withIspe(byte[] data, int width, int height, int newWidth, int newHeight) {
+    byte[] copy = data.clone();
+    ByteBuffer buffer = ByteBuffer.wrap(copy); // big-endian
+    for (int i = 4; i + 16 <= copy.length; i++) {
+      if (copy[i] == 'i' && copy[i + 1] == 's' && copy[i + 2] == 'p' && copy[i + 3] == 'e' && buffer.getInt(i - 4) == 20
+          && buffer.getInt(i + 8) == width && buffer.getInt(i + 12) == height) {
+        buffer.putInt(i + 8, newWidth);
+        buffer.putInt(i + 12, newHeight);
+        return copy;
+      }
+    }
+    throw new IllegalArgumentException("no ispe " + width + "x" + height);
   }
 
   /** Whether some libheif could be loaded (with or without HEVC decoder; JUnit condition). */

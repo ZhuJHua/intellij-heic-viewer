@@ -97,8 +97,42 @@ public final class DistroCheck {
       boolean ok = Math.abs(((icc >> 16) & 255) - 219) <= 4 && Math.abs(((icc >> 8) & 255) - 39) <= 4;
       return ok ? null : Integer.toHexString(icc);
     });
+    failures += check("decode limit (grid_libheif.heic)", () -> decodeLimit(backend));
     System.out.println(failures == 0 ? "DECODE OK" : "DECODE FAILED: " + failures);
     return failures == 0 ? 0 : 1;
+  }
+
+  /**
+   * The decode limit of {@link LibheifDecoder} (made small): checked in Java on the declared size, and by libheif on the
+   * image it builds when the file declares a small size ({@code heif_context_set_maximum_image_size_limit}, whose
+   * meaning differs between libheif versions).
+   */
+  private static String decodeLimit(HeifBackend backend) throws IOException {
+    Libheif lib = ((LibheifHeifBackend) backend).library();
+    if (lib == null) return "libheif is not loaded";
+    byte[] grid = Fixtures.bytes("grid_libheif.heic"); // 600x400
+    String fits = Fixtures.layout(new LibheifDecoder(lib, 1024).decode(grid, 0, false));
+    if (!fits.startsWith("600x400")) return "within the limit: " + fits;
+    try {
+      new LibheifDecoder(lib, 256).decode(grid, 0, false);
+      return "600x400 decoded despite a limit of 256x256";
+    }
+    catch (IOException e) {
+      if (!e.getMessage().contains("too large to decode")) return "Java check: " + e;
+    }
+    if (!lib.canLimitDecodeSize()) {
+      System.out.println("        libheif " + lib.version() + " has no heif_context_set_maximum_image_size_limit");
+      return null;
+    }
+    byte[] claimsSmall = TestLibheif.withIspe(grid, 600, 400, 64, 64);
+    try {
+      new LibheifDecoder(lib, 256).decode(claimsSmall, 0, false);
+      return "libheif " + lib.version() + " decoded a 600x400 grid that declares 64x64 despite a limit of 256x256";
+    }
+    catch (LibheifException e) {
+      System.out.println("        libheif " + lib.version() + ": " + e.getMessage());
+      return e.code() == 6 && e.subcode() == 1000 ? null : "libheif " + lib.version() + ": " + e.getMessage();
+    }
   }
 
   private interface Check {

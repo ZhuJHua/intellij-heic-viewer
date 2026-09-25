@@ -213,8 +213,10 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 - **Linux**:
   - libheif decodes in software at full resolution and the plugin downscales afterwards: slower than macOS (a
     12-megapixel photo stored as 512-pixel tiles, like an iPhone's, takes about 0.3 s, a single 12-megapixel tile
-    about 0.7 s, measured with libheif 1.23 on Apple M-series), and a large image needs 3-4 bytes per pixel of native
-    memory while it is decoded. Embedded thumbnails make the file icons fast.
+    about 0.7 s, measured with libheif 1.23 on Apple M-series), and an image needs about 4.5 to 6 bytes per pixel of
+    native memory while it is decoded, whatever size is shown. Images larger than about 268 megapixels (16384 x 16384)
+    are therefore not decoded ("Image not loaded"; libheif 1.17 and older limit each side to about 23000 pixels
+    instead). Embedded thumbnails make the file icons fast.
   - ICC profiles are converted to sRGB (Java's color management), but colors signaled only by an `nclx` profile with
     other primaries than sRGB/BT.709 (e.g. Display P3 or BT.2020 without an ICC profile) are shown unconverted, a
     little less saturated; HDR images (PQ/HLG transfer) look flat.
