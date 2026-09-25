@@ -176,6 +176,36 @@ class WicProbeTest {
     broken.hevcDecoders = null;
     broken.failures.put("CopyPixels", Hresult.E_FAIL);
     assertEquals(HeifBackendStatus.Reason.ERROR, probe(broken).reason());
+
+    // What the HEIF decoder reports without Media Foundation looks like a missing Store extension; neither helps.
+    FakeWinApi noHeif = sampleLike();
+    noHeif.hevcDecoders = null;
+    noHeif.failures.put("CreateDecoder", Hresult.WINCODEC_ERR_COMPONENTINITIALIZEFAILURE);
+    noHeif.failures.put("CreateDecoderFromStream", Hresult.WINCODEC_ERR_COMPONENTINITIALIZEFAILURE);
+    assertMediaFeaturePack(probe(noHeif));
+    FakeWinApi noHevc = sampleLike();
+    noHevc.hevcDecoders = null;
+    noHevc.failures.put("CreateBitmapFromSource", Hresult.MF_E_TOPO_CODEC_NOT_FOUND);
+    assertMediaFeaturePack(probe(noHevc));
+    // mfplat.dll present, but MFStartup: E_NOTIMPL ("the media components are not present")
+    FakeWinApi notImplemented = sampleLike();
+    notImplemented.failures.put("MFTEnumEx", Hresult.E_NOTIMPL);
+    notImplemented.failures.put("CreateBitmapFromSource", Hresult.MF_E_TOPO_CODEC_NOT_FOUND);
+    HeifBackendStatus status = probe(notImplemented);
+    assertMediaFeaturePack(status);
+    assertTrue(status.detail().contains("MFStartup/MFTEnumEx failed: 0x80004001 (E_NOTIMPL)"), status.detail());
+    // Another MFStartup failure is not taken for a missing Media Foundation.
+    FakeWinApi otherFailure = sampleLike();
+    otherFailure.failures.put("MFTEnumEx", Hresult.E_FAIL);
+    otherFailure.failures.put("CreateBitmapFromSource", Hresult.MF_E_TOPO_CODEC_NOT_FOUND);
+    assertEquals(HeifBackendStatus.Reason.WINDOWS_HEVC_EXTENSION_MISSING, probe(otherFailure).reason());
+  }
+
+  private static void assertMediaFeaturePack(HeifBackendStatus status) {
+    assertEquals(HeifBackendStatus.Reason.ERROR, status.reason(), status.toString());
+    assertNull(status.installUrl(), "no Store link: " + status);
+    assertNull(status.installCommand(), status.toString());
+    assertTrue(status.detail().contains("Media Feature Pack"), status.detail());
   }
 
   @Test

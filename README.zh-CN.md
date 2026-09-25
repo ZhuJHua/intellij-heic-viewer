@@ -86,6 +86,8 @@ Store 应用的系统）、“了解详情”（本节），以及 HEIF 图像�
   在 PowerShell 中执行 `Get-AppxPackage *HEIFImageExtension*; Get-AppxPackage *HEVCVideoExtension*` 可以查看已安装的包。
 - 没有 Microsoft Store 的版本（Windows Server、LTSC）无法从 Store 获得 HEVC 编码；在 Windows Server 2025 上 winget 可以安装
   HEIF 图像扩展，但装不了 HEVC 编码。
+- Windows "N" 版本需要先安装 *媒体功能包*（Media Feature Pack，设置 > 应用 > 可选功能）：没有 Media Foundation 时两个扩展都无法解码
+  HEIC，因此插件报告错误（`idea.log` 中 `HEIC decoder:` 一行会提到媒体功能包），而不是引导你去商店。
 - 只支持 64 位 Windows（x64 和 arm64），与 IDE 一致。
 - `idea.log` 中会记录检测结果：`HEIC decoder: Windows Imaging Component with the HEIF Image Extension through JNA 5.17.0 (amd64);
   CreateDecoder(HEIF): 0x00000000 (S_OK); test image: decoded (64x128); HEVC decoders: ...`，或者缺少组件时的错误码。

@@ -96,6 +96,9 @@ Extension, `winget install --id 9PMMSR1CGPWG --source msstore --accept-package-a
   `Get-AppxPackage *HEIFImageExtension*; Get-AppxPackage *HEVCVideoExtension*` lists what is installed.
 - Editions without the Microsoft Store (Windows Server, LTSC) cannot get the HEVC codec from the Store; on Windows
   Server 2025 winget installs the HEIF Image Extension, but not the HEVC codec.
+- Windows "N" editions need the *Media Feature Pack* (Settings > Apps > Optional features) first: without Media
+  Foundation neither extension can decode HEIC, so the plugin reports an error (the `HEIC decoder:` line in
+  `idea.log` names the Media Feature Pack) instead of sending you to the Store.
 - 64-bit Windows only (x64 and arm64), like the IDEs.
 - `idea.log` tells what was found: `HEIC decoder: Windows Imaging Component with the HEIF Image Extension through JNA
   5.17.0 (amd64); CreateDecoder(HEIF): 0x00000000 (S_OK); test image: decoded (64x128); HEVC decoders: ...`, or the

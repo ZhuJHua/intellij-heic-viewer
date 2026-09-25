@@ -28,6 +28,11 @@ import java.util.Locale;
  *   <td>size and metadata work, {@code CopyPixels}: {@code MF_E_TOPO_CODEC_NOT_FOUND}</td><td>0</td></tr>
  *   <tr><td>nothing</td><td>{@code S_OK}</td><td>works</td><td>1 (e.g. "HEVCVideoExtension")</td></tr>
  * </table>
+ * Without Media Foundation (Windows "N" editions without the Media Feature Pack: no {@code mfplat.dll}, or
+ * {@code MFStartup} fails with {@code E_NOTIMPL}) the HEIF decoder cannot decode HEVC either, however the failure looks;
+ * the status is then {@code ERROR} with the Media Feature Pack as the remedy in its detail, since neither Store
+ * extension would help. Not observed (no such runner); from Microsoft's documentation of {@code MFStartup}.
+ * <p>
  * The decisive check is decoding a tiny embedded HEIC ({@link #SAMPLE_BASE64}, 128x64 with {@code irot} 90 degrees, left half
  * red, right half blue): it proves the whole chain (WIC, HEIF decoder, HEVC transform, this plugin's binding). The first
  * decode in a process takes about one to two seconds (the Store packages are activated and the codec is loaded), later
@@ -72,6 +77,11 @@ final class WicProbe {
   @Nullable List<String> hevcDecoders;
   /** Why the HEVC decoders could not be enumerated (Media Foundation missing, an error), or {@code null}. */
   @Nullable String hevcProblem;
+  /**
+   * Media Foundation is not installed ({@code mfplat.dll} missing, or {@code MFStartup} {@code E_NOTIMPL}: "the media
+   * components are not present"): a Windows "N" edition without the Media Feature Pack.
+   */
+  boolean mediaFoundationMissing;
 
   /** Runs every check (never throws for a failed check; a {@link LinkageError} of the binding propagates). */
   static @NotNull WicProbe run(@NotNull WicDecoder decoder) {
@@ -98,10 +108,17 @@ final class WicProbe {
     try {
       List<String> names = new ArrayList<>();
       int hr = api.enumerateVideoDecoders(Guids.MFVideoFormat_HEVC, MFT_ENUM_FLAGS, names);
-      if (Hresult.succeeded(hr)) probe.hevcDecoders = names;
-      else probe.hevcProblem = "MFTEnumEx failed: " + Hresult.describe(hr);
+      if (Hresult.succeeded(hr)) {
+        probe.hevcDecoders = names;
+      }
+      else {
+        // The HRESULT of MFStartup if that failed: E_NOTIMPL means "the media components are not present" (KB2703761).
+        probe.mediaFoundationMissing = hr == Hresult.E_NOTIMPL;
+        probe.hevcProblem = "MFStartup/MFTEnumEx failed: " + Hresult.describe(hr);
+      }
     }
     catch (UnsatisfiedLinkError e) {
+      probe.mediaFoundationMissing = true;
       probe.hevcProblem = "Media Foundation is not available (mfplat.dll: " + e.getMessage() + ")";
     }
     catch (RuntimeException e) {
@@ -175,6 +192,14 @@ final class WicProbe {
     String details = details();
     if (sampleFailure == null && sampleProblem == null) {
       return HeifBackendStatus.available("Windows Imaging Component with the HEIF Image Extension through " + details);
+    }
+    if (mediaFoundationMissing) {
+      // The HEIF decoder needs Media Foundation for HEVC: neither Store extension can work without it, so the user must
+      // not be sent to the Store in a loop. (No ms-settings: link: the UI opens https: and Store links only.)
+      return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR,
+                                           "Media Foundation is not installed (Windows N edition?): install the Media "
+                                           + "Feature Pack (Settings > Apps > Optional features), then the HEIF Image "
+                                           + "Extension and the HEVC Video Extensions; " + details);
     }
     if (heifDecoderMissing()) {
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING,
