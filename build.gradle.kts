@@ -1,6 +1,7 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import java.util.Properties
 
 plugins {
@@ -71,6 +72,9 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
+    // HeicPlatformIntegrationTest: a light IDE (BasePlatformTestCase, JUnit 4 style) in the `test` task only.
+    testImplementation(libs.junit4)
+    testRuntimeOnly(libs.junit.vintage.engine)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
@@ -90,6 +94,8 @@ dependencies {
 
         // Module Dependencies. Uses `platformBundledModules` property from the gradle.properties file for bundled IntelliJ Platform modules.
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
+
+        testFramework(TestFrameworkType.Platform)
     }
 }
 
@@ -289,6 +295,8 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     classpath = files(tasks.test.map { it.classpath })
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
     systemProperty("heic.test.javaVersion", javaVersion)
+    // Needs the IDE test environment that only `test` sets up.
+    filter { excludeTestsMatching("cn.yooss.heic.HeicPlatformIntegrationTest") }
     shouldRunAfter(tasks.test)
 }
 // JBR 25: IDEs 2026.1.3+, Android Studio Quail 3+.

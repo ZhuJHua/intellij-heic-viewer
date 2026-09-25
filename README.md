@@ -253,7 +253,9 @@ against (261) and that Java 17 is lower than the Java 21 that 261 requires. Both
 
 The platform jars of the IDE compiled against are Java 21 bytecode, so `testJdk17` runs with a minimal class path (the
 plugin jar, JUnit and the IDE's `util-8.jar`, which contains JNA). Tests that need other IDE classes are tagged
-`platform` and run only on JDK 21 and 25.
+`platform` and run only on JDK 21 and 25. `HeicPlatformIntegrationTest` starts a light IDE (IntelliJ test framework,
+`BasePlatformTestCase`) and therefore runs only in `test`: the HEIC extensions are Image files once plugin.xml is
+loaded, and the IDE's `IfsUtil` decodes a HEIC file through the reader.
 
 ### Project structure
 

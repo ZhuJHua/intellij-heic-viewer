@@ -246,7 +246,9 @@ Gradle JVM 选为 IDE 自带的 JBR），或者传入
 这都是预期的：插件支持 2024.1（JBR 17），Plugin Verifier 会针对 `pluginVerificationIdes` 中最旧的 IDE 检查 API。
 
 编译所用 IDE 的平台 jar 是 Java 21 字节码，所以 `testJdk17` 使用最小的类路径（插件 jar、JUnit 和 IDE 的 `util-8.jar`，其中包含 JNA）。
-需要其它 IDE 类的测试标记为 `platform`，只在 JDK 21 和 25 上运行。
+需要其它 IDE 类的测试标记为 `platform`，只在 JDK 21 和 25 上运行。`HeicPlatformIntegrationTest` 会启动一个轻量 IDE（IntelliJ 测试框架，
+`BasePlatformTestCase`），因此只在 `test` 中运行：加载 plugin.xml 后 HEIC 扩展名属于 Image 文件类型，并且 IDE 的 `IfsUtil` 通过本插件的
+读取器解码 HEIC 文件。
 
 ### 项目结构
 
