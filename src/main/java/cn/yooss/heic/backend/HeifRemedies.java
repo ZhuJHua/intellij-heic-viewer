@@ -25,7 +25,7 @@ import java.util.Locale;
  *   {@value WindowsCodecs#HEVC_PRODUCT_ID}), Check Again, Open Store Page in Browser, Learn More</td></tr>
  *   <tr><td>{@code LINUX_LIBHEIF_MISSING}, {@code LINUX_HEVC_PLUGIN_MISSING}</td><td>Copy Command (the command of the
  *   detected distribution, also shown in the banner), Check Again, Learn More ({@link #LINUX_HELP_URL}); without a
- *   command (Flatpak, unknown distribution): Installation Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
+ *   command (an older Flatpak runtime, an unknown distribution): Installation Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
  *   <tr><td>{@code ERROR}</td><td>Check Again, Report a Problem</td></tr>
  *   <tr><td>{@code UNSUPPORTED_OS}</td><td>Learn More</td></tr>
  * </table>
@@ -87,7 +87,7 @@ public final class HeifRemedies {
           actions.add(Action.learnMore(help));
         }
         else {
-          // No command for this system (Flatpak, an unknown distribution): the README explains the options.
+          // No command for this system (an older Flatpak runtime, an unknown distribution): the README explains the options.
           actions.add(Action.openUrl(installPageKey(help), help));
           actions.add(Action.checkAgain());
         }

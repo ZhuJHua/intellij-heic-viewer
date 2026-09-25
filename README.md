@@ -137,9 +137,15 @@ the commands above for the other distributions.
   so a `libheif1` that another package pulled in (ImageMagick, GIMP, ...) cannot decode HEIC photos by itself.
 - **NixOS** has no global library path: the plugin also looks in `/run/current-system/sw/lib`, `~/.nix-profile/lib`
   and `/etc/profiles/per-user/<user>/lib`.
-- **Flatpak** builds of an IDE only see the libraries of their Flatpak runtime. Use the IDE from the JetBrains Toolbox
-  App, a tarball or a Snap (JetBrains' Snaps use classic confinement, so the system's libraries are found as usual), or
-  set the path below to a libheif inside the sandbox.
+- **Flatpak** builds of an IDE only see the libraries of their Flatpak runtime. The freedesktop runtime 25.08 and newer
+  includes libheif (in September 2026 the Flathub builds of IntelliJ IDEA, Android Studio and WebStorm use 26.08,
+  PhpStorm 25.08), and its HEVC decoder comes with the `org.freedesktop.Platform.codecs-extra` extension, which
+  Flatpak installs with the runtime: HEIC works there as it is. If the extension is missing, the banner shows
+  `flatpak install flathub org.freedesktop.Platform.codecs-extra//<branch>-extra` (`<branch>` is the runtime's, e.g.
+  `26.08`; `flatpak info <app-id>` shows it); run it on the host, not in the IDE's terminal. Older runtimes cannot
+  decode HEIC (24.08's libheif does not find the codecs-extra plugin, 23.08 has no libheif): use the IDE from the
+  JetBrains Toolbox App, a tarball or a Snap (JetBrains' Snaps use classic confinement, so the system's libraries are
+  found as usual), or set the path below to a libheif inside the sandbox.
 - **Other locations** (a libheif you built, another prefix): *Settings | Advanced Settings | HEIC Viewer | libheif
   library* takes the path of `libheif.so.1` or of the directory that contains it. Once a libheif is loaded, a
   different one is only used after an IDE restart: two libheif versions in one process could crash the IDE.

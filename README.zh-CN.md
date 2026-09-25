@@ -121,8 +121,13 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
   因此被其它软件包（ImageMagick、GIMP 等）顺带装上的 `libheif1` 本身无法解码 HEIC 照片。
 - **NixOS** 没有全局的库路径：插件还会在 `/run/current-system/sw/lib`、`~/.nix-profile/lib` 和
   `/etc/profiles/per-user/<用户名>/lib` 中查找。
-- **Flatpak** 版 IDE 只能看到其 Flatpak 运行时中的库。请使用 JetBrains Toolbox App、tar.gz 包或 Snap 安装的 IDE
-  （JetBrains 的 Snap 使用 classic 模式，照常能找到系统的库），或把下面的路径设置为沙箱内的 libheif。
+- **Flatpak** 版 IDE 只能看到其 Flatpak 运行时中的库。freedesktop 运行时 25.08 及更新版本自带 libheif（2026 年 9 月，Flathub 上的
+  IntelliJ IDEA、Android Studio 和 WebStorm 使用 26.08，PhpStorm 使用 25.08），其 HEVC 解码器来自扩展
+  `org.freedesktop.Platform.codecs-extra`，Flatpak 会随运行时一起安装，因此可以直接显示 HEIC。缺少该扩展时，横幅会给出
+  `flatpak install flathub org.freedesktop.Platform.codecs-extra//<分支>-extra`（`<分支>` 为运行时的分支，如 `26.08`，可用
+  `flatpak info <应用 ID>` 查看）；请在宿主系统中运行，不要在 IDE 的终端里运行。更旧的运行时无法解码 HEIC（24.08 的 libheif
+  找不到 codecs-extra 中的插件，23.08 没有 libheif）：请使用 JetBrains Toolbox App、tar.gz 包或 Snap 安装的 IDE（JetBrains 的
+  Snap 使用 classic 模式，照常能找到系统的库），或把下面的路径设置为沙箱内的 libheif。
 - **其它位置**（自行编译的 libheif、其它安装前缀）：在 *Settings | Advanced Settings | HEIC Viewer | libheif 库* 中填写
   `libheif.so.1` 或其所在目录的路径。一旦加载了某个 libheif，另一个 libheif 要在重启 IDE 后才会使用：同一进程中的两个 libheif
   版本可能导致 IDE 崩溃。

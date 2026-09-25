@@ -209,6 +209,15 @@ final class OsReleaseSamples {
     "ID=gentoo",
     "PRETTY_NAME=\"Gentoo Linux\"",
     "VERSION_ID=\"2.17\"");
+  /** Inside a Flatpak sandbox: the os-release of the freedesktop runtime (org.freedesktop.Platform / .Sdk 26.08). */
+  static final String FREEDESKTOP_26_08 = String.join("\n",
+    "NAME=\"Freedesktop SDK\"",
+    "VERSION=\"26.08 (Flatpak runtime)\"",
+    "ID=org.freedesktop.platform",
+    "VERSION_ID=26.08",
+    "PRETTY_NAME=\"Freedesktop SDK 26.08 (Flatpak runtime)\"");
+  static final String FREEDESKTOP_25_08 = FREEDESKTOP_26_08.replace("26.08", "25.08");
+  static final String FREEDESKTOP_24_08 = FREEDESKTOP_26_08.replace("26.08", "24.08");
 
   private OsReleaseSamples() {
   }

@@ -102,6 +102,8 @@ class LibheifRemedyTest {
     assertNull(missing(""));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING,
                                             LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)));
+    assertNull(LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
+                                            LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)));
     assertTrue(LibheifRemedy.note(LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)).contains("Flatpak"));
     assertNull(LibheifRemedy.note(parse(OsReleaseSamples.UBUNTU_24_04)));
     // Snaps of JetBrains IDEs use classic confinement: the system's packages apply
@@ -112,6 +114,28 @@ class LibheifRemedyTest {
         assertNull(LibheifRemedy.installCommand(reason, parse(OsReleaseSamples.UBUNTU_24_04)), reason.name());
       }
     }
+  }
+
+  /**
+   * A Flatpak IDE sees its runtime's os-release. The freedesktop runtime 25.08 and newer has libheif, and its HEVC plugin
+   * is the codecs-extra extension (installed on the host); older runtimes get no command (the README explains them).
+   */
+  @Test
+  void flatpakRuntimes() {
+    LinuxDistribution runtime2608 = LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_26_08, true, false);
+    assertEquals("flatpak install flathub org.freedesktop.Platform.codecs-extra//26.08-extra",
+                 LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING, runtime2608));
+    assertEquals("flatpak install flathub org.freedesktop.Platform.codecs-extra//25.08-extra",
+                 LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
+                                              LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_25_08, true, false)));
+    assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING, runtime2608), "libheif is part of the runtime");
+    assertNull(LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
+                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true, false)));
+    assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING,
+                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true, false)));
+    // Not detected as a Flatpak (no /.flatpak-info): an unknown distribution, no command.
+    assertNull(hevc(OsReleaseSamples.FREEDESKTOP_26_08));
+    assertTrue(LibheifRemedy.note(runtime2608).contains("org.freedesktop.Platform.codecs-extra"), LibheifRemedy.note(runtime2608));
   }
 
   /**

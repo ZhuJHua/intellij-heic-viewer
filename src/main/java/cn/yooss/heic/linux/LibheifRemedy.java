@@ -33,7 +33,12 @@ import java.util.Set;
  *   <td>{@code apk add libheif}</td><td>{@code apk add libheif-libde265}</td></tr>
  *   <tr><td>NixOS (no global library path)</td><td colspan="2">{@code nix-env -iA nixos.libheif.lib} (found in
  *   {@code ~/.nix-profile/lib}), or {@code pkgs.libheif.lib} in {@code environment.systemPackages}</td></tr>
- *   <tr><td>Flatpak, other distributions</td><td colspan="2">none (the README explains the options)</td></tr>
+ *   <tr><td>Flatpak IDE on the freedesktop runtime 25.08 or newer ({@code ID=org.freedesktop.platform} in the
+ *   sandbox's os-release; the runtime has libheif, its HEVC plugin is the {@code org.freedesktop.Platform.codecs-extra}
+ *   extension, which Flatpak normally installs with the runtime)</td><td>none (libheif is part of the runtime)</td>
+ *   <td>{@code flatpak install flathub org.freedesktop.Platform.codecs-extra//<branch>-extra}, run on the host</td></tr>
+ *   <tr><td>Flatpak IDE on an older runtime (24.08's libheif looks for plugins elsewhere, 23.08 has no libheif), other
+ *   distributions</td><td colspan="2">none (the README explains the options)</td></tr>
  * </table>
  */
 final class LibheifRemedy {
@@ -47,6 +52,8 @@ final class LibheifRemedy {
   private static final Set<String> ENTERPRISE_LINUX_IDS =
     Set.of("rhel", "centos", "almalinux", "rocky", "ol", "eurolinux", "circle", "navy", "cloudlinux", "virtuozzo");
   private static final String PACKMAN = "https://ftp.gwdg.de/pub/linux/misc/packman/suse/";
+  /** {@code ID} in the os-release of the freedesktop Flatpak runtimes ({@code org.freedesktop.Platform} and {@code .Sdk}). */
+  static final String FREEDESKTOP_RUNTIME_ID = "org.freedesktop.platform";
 
   private LibheifRemedy() {
   }
@@ -55,7 +62,15 @@ final class LibheifRemedy {
   static @Nullable String installCommand(@NotNull Reason reason, @NotNull LinuxDistribution distribution) {
     boolean hevcOnly = reason == Reason.LINUX_HEVC_PLUGIN_MISSING;
     if (reason != Reason.LINUX_LIBHEIF_MISSING && !hevcOnly) return null;
-    if (distribution.isFlatpak()) return null; // the sandbox only sees its runtime's libraries
+    if (distribution.isFlatpak()) {
+      // The sandbox only sees its runtime's libraries. The freedesktop runtime 25.08+ has libheif, and its HEVC plugin is
+      // the codecs-extra extension (normally installed with the runtime); the command is for the host, not the sandbox.
+      if (hevcOnly && distribution.id().equals(FREEDESKTOP_RUNTIME_ID) && distribution.versionNumber() >= 2508
+          && distribution.versionId().matches("\\d+\\.\\d+")) {
+        return "flatpak install flathub org.freedesktop.Platform.codecs-extra//" + distribution.versionId() + "-extra";
+      }
+      return null;
+    }
     String id = distribution.id();
     if (id.equals("nixos")) return "nix-env -iA nixos.libheif.lib";
     if (isDebianFamily(distribution)) {
@@ -85,7 +100,8 @@ final class LibheifRemedy {
   /** A note for idea.log about the environment, or {@code null}. */
   static @Nullable String note(@NotNull LinuxDistribution distribution) {
     if (distribution.isFlatpak()) {
-      return "The IDE runs as a Flatpak and only sees the libraries of its Flatpak runtime";
+      return "The IDE runs as a Flatpak and only sees the libraries of its Flatpak runtime (the freedesktop runtime 25.08"
+             + " and newer has libheif; its HEVC decoder is the org.freedesktop.Platform.codecs-extra extension)";
     }
     if (distribution.id().equals("nixos")) {
       return "NixOS: libheif is looked for in /run/current-system/sw/lib, ~/.nix-profile/lib and /etc/profiles/per-user";
