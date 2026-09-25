@@ -15,7 +15,7 @@ import java.util.Locale;
  *   <caption>Backends</caption>
  *   <tr><th>OS</th><th>Backend</th><th>System decoder</th></tr>
  *   <tr><td>macOS</td><td>{@link MacHeifBackend}</td><td>ImageIO.framework</td></tr>
- *   <tr><td>Windows</td><td>{@link WicHeifBackend}</td><td>WIC + "HEIF Image Extensions" + "HEVC Video Extensions"</td></tr>
+ *   <tr><td>Windows</td><td>{@link WicHeifBackend}</td><td>WIC + "HEIF Image Extension" + "HEVC Video Extensions"</td></tr>
  *   <tr><td>Linux</td><td>{@link LibheifHeifBackend}</td><td>{@code libheif.so.1} + an HEVC decoder plugin</td></tr>
  *   <tr><td>other</td><td>{@link UnavailableHeifBackend}</td><td>none ({@code UNSUPPORTED_OS})</td></tr>
  * </table>

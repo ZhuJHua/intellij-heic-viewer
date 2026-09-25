@@ -20,7 +20,7 @@ public final class Guids {
   public static final String IID_IWICPixelFormatInfo2 = "a9db33a2-af5f-43c7-b679-74f5984b5aa4";
 
   // ---------------------------------------------------------------- container formats (wincodec.idl)
-  /** Windows 10 1809+: the container format of the "HEIF Image Extensions" decoder. */
+  /** Windows 10 1809+: the container format of the "HEIF Image Extension" decoder. */
   public static final String GUID_ContainerFormatHeif = "e1e62521-6787-405b-a339-500715b5763f";
   public static final String GUID_ContainerFormatPng = "1b7cfaf4-713f-473c-bbcd-6137425faeaf";
   public static final String GUID_ContainerFormatJpeg = "19e4a5aa-5662-4fc5-a0c0-1758028e1057";
