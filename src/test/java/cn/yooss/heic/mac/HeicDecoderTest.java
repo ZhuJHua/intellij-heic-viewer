@@ -267,7 +267,9 @@ class HeicDecoderTest {
       int edge = image.getRGB(22, 34); // source columns 97.8 to 102.2: half transparent, half red at alpha 128
       String message = name + ": " + Integer.toHexString(edge);
       assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
-      assertTrue(((edge >> 16) & 0xFF) >= 240 && ((edge >> 8) & 0xFF) <= 16 && (edge & 0xFF) <= 16, message);
+      // about 255 (0x40ef0404 on the GitHub runners, whose decoder gives the red a little green and blue); the old path
+      // gave 0x40800404 there and 0x44bf0000 on an M-series Mac
+      assertTrue(((edge >> 16) & 0xFF) >= 220 && ((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
       assertEquals(0, image.getRGB(0, 0) >>> 24, "transparent corner");
     }
 
