@@ -292,6 +292,21 @@ src/test/fixture-generators/       测试图片的生成源码与说明
 CHANGELOG.md                       Keep a Changelog 格式；每个版本的 change notes 由它生成
 ```
 
+### 实现解码后端（Windows、Linux）
+
+- 在 `win.WicHeifBackend` / `linux.LibheifHeifBackend`（目前都是报告 `NOT_IMPLEMENTED` 的占位实现）中继承 `backend.AbstractHeifBackend`；
+  `HeifBackends` 已经按操作系统选择它们。
+- `probe()`：通过 `backend.jna.JnaLibraries` 加载系统库，返回 `HeifBackendStatus.available(...)` 或 `unavailable(Reason, detail)`，
+  并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。用户可以安装的原因会触发
+  `HeicDecoderAvailability` 的通知，文案是两个资源包中的 `backend.status.<REASON>`。
+- `doReadInfo` / `doDecode` / `doDecodeThumbnail`：输入检查、可用性检查和本地异常的包装由基类完成。用 `PixelPipeline` 生成图片
+  （8 bit sRGB、非预乘透明通道、已应用方向、不超过 `maxPixelSize`）。
+- 遵守 `JnaLibraries` 中的 JNA 规则（不用 `Library`/`Structure`/`Memory`/回调，字符串用 `utf8z`/`utf16z` 数组传递），
+  `BytecodeLevelTest` 和 `PluginClassLoaderLeakTest` 会检查。
+- `HeifBackendContractTest` 必须在该操作系统上通过；在 `.github/workflows/cross-platform.yml` 中把每个任务的 `expect` 设为该环境
+  必须报告的状态（`available`，或 `LINUX_LIBHEIF_MISSING` 等）。
+- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` 可以在任何系统上显示任意状态的通知。
+
 ### 插件描述与更新日志
 
 - Marketplace / 插件管理器中显示的插件描述来自 `README.md` 中 `<!-- Plugin description -->` 与 `<!-- Plugin description end -->`

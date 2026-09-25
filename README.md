@@ -292,6 +292,23 @@ src/test/fixture-generators/  Sources and notes for generating the fixtures
 CHANGELOG.md                  Keep a Changelog; the change notes of each release are generated from it
 ```
 
+### Implementing a decoder backend (Windows, Linux)
+
+- Extend `backend.AbstractHeifBackend` in `win.WicHeifBackend` / `linux.LibheifHeifBackend` (both are placeholders
+  that report `NOT_IMPLEMENTED`); `HeifBackends` already selects them by OS.
+- `probe()`: load the system libraries through `backend.jna.JnaLibraries` and return
+  `HeifBackendStatus.available(...)` or `unavailable(Reason, detail)` with `withInstallUrl` (e.g. a Microsoft Store
+  link) or `withInstallCommand` (the distribution's package command). User-installable reasons show the notification of
+  `HeicDecoderAvailability`; their texts are `backend.status.<REASON>` in both message bundles.
+- `doReadInfo` / `doDecode` / `doDecodeThumbnail`: the input checks, the availability check and the wrapping of native
+  failures are done by the base class. Produce the images with `PixelPipeline` (8-bit sRGB, straight alpha,
+  orientation applied, never larger than `maxPixelSize`).
+- Follow the JNA rules in `JnaLibraries` (no `Library`/`Structure`/`Memory`/callbacks, strings as `utf8z`/`utf16z`
+  arrays); `BytecodeLevelTest` and `PluginClassLoaderLeakTest` check them.
+- `HeifBackendContractTest` must pass on the OS; in `.github/workflows/cross-platform.yml`, set `expect` of each job to
+  the status its runner must report (`available`, or e.g. `LINUX_LIBHEIF_MISSING`).
+- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` shows the notification of any status on any OS.
+
 ### Plugin description and change notes
 
 - The description shown on JetBrains Marketplace and in the IDE's plugin manager is the Markdown between
