@@ -150,6 +150,7 @@ public final class HeicDecoderAvailability {
       shown = notification;
     }
     if (previous != null) previous.expire();
+    LOG.info("Showing the HEIC Viewer notification: " + title + (missing != null ? " (" + missing.reason() + ")" : ""));
     notification.notify(null);
   }
 
