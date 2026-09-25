@@ -279,6 +279,8 @@ tasks.withType<Test>().configureEach {
     jvmArgumentProviders.add(JnaNativeArgs(jnaNativeDir))
     // Lets HeifBackendContractTest check what CI expects of the system decoder (e.g. "available" on macOS).
     providers.environmentVariable("HEIC_EXPECT_BACKEND").orNull?.let { systemProperty("heic.test.expectBackend", it) }
+    // The libheif the tests of the Linux backend use on any OS (default: the system's on Linux, Homebrew's on macOS).
+    providers.environmentVariable("HEIC_TEST_LIBHEIF").orNull?.let { systemProperty("heic.test.libheif", it) }
     testLogging {
         events("failed", "skipped")
         exceptionFormat = TestExceptionFormat.FULL

@@ -57,10 +57,11 @@ Side-by-side image diff of a modified HEIC file:
 - **Windows 10 or 11**, x64 or arm64: the *HEIF Image Extensions* and the *HEVC Video Extensions* from the Microsoft
   Store. The plugin links to them when they are missing.
   <!-- TODO(windows backend): Store product ids, minimum versions, Windows Server / LTSC notes. -->
-- **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with an HEVC decoder plugin (libde265), for example
-  `sudo apt install libheif1 libheif-plugin-libde265` on Debian/Ubuntu. The plugin shows the install command for the
-  distribution when they are missing.
-  <!-- TODO(linux backend): minimum libheif version, package names for Fedora (RPM Fusion), Arch, openSUSE, … -->
+- **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with its HEVC decoder (libde265) from the distribution's
+  packages, for example `sudo apt install libheif1 libheif-plugin-libde265` on Ubuntu 24.04. The plugin shows the
+  install command for the distribution when they are missing; see [Linux: libheif](#linux-libheif) for the commands of
+  other distributions. Tested with libheif 1.12 to 1.23; the libheif 1.6 of Ubuntu 20.04 shows photos, but not images
+  with transparency or 10 bits per channel.
 
 ## Installation
 
@@ -71,6 +72,52 @@ Side-by-side image diff of a modified HEIC file:
   then <kbd>Settings</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install Plugin from Disk...</kbd>.
   No restart is needed.
 
+### Linux: libheif
+
+On Linux, HEIC images are decoded by the system's libheif (`libheif.so.1`) with its HEVC decoder, libde265 (in newer
+releases a separate plugin package). If either is missing, the plugin's notification shows the command for the
+distribution (detected from `/etc/os-release`), with *Copy Command*; after installing, *Check Again* makes HEIC files
+load without restarting the IDE.
+
+| Distribution | Command |
+|---|---|
+| Ubuntu 23.10 and newer (24.04, 26.04, ...), Debian 13 and newer, Linux Mint 22, Pop!_OS 24.04, ... | `sudo apt install libheif1 libheif-plugin-libde265` |
+| Ubuntu 20.04 / 22.04, Debian 11 / 12, Linux Mint 20 / 21, ... (libde265 is linked in) | `sudo apt install libheif1` |
+| Fedora: Fedora's libheif has no HEVC decoder (patents); RPM Fusion Free adds it (`libheif-freeworld`) | `sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm && sudo dnf install libheif-freeworld` |
+| RHEL, AlmaLinux, Rocky Linux, CentOS Stream: libheif from EPEL, the HEVC decoder from RPM Fusion Free | `sudo dnf install --nogpgcheck https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E %rhel).noarch.rpm https://mirrors.rpmfusion.org/free/el/rpmfusion-free-release-$(rpm -E %rhel).noarch.rpm && sudo /usr/bin/crb enable && sudo dnf install libheif-freeworld` |
+| openSUSE Tumbleweed, Slowroll, Leap: openSUSE's libheif has no HEVC decoder; Packman Essentials has `libheif-HEIF` | `sudo zypper addrepo -cfp 90 https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials/ packman-essentials && sudo zypper --gpg-auto-import-keys refresh packman-essentials && sudo zypper install --from packman-essentials libheif1 libheif-HEIF` (`openSUSE_Slowroll`, `openSUSE_Leap_15.6`, ... for the others) |
+| Arch Linux, Manjaro, EndeavourOS, ... | `sudo pacman -S --needed libheif libde265` |
+| Alpine | `sudo apk add libheif` |
+| NixOS | `nix-env -iA nixos.libheif.lib`, or `pkgs.libheif.lib` in `environment.systemPackages` |
+
+When libheif is installed but has no HEVC decoder, the plugin asks for the decoder only:
+`sudo apt install libheif-plugin-libde265` on Debian and Ubuntu, `sudo apk add libheif-libde265` on Alpine 3.24 and newer;
+the commands above for the other distributions.
+
+- **Ubuntu 24.04 and newer**: since February 2026 (`libheif1` 1.17.6-1ubuntu4.3 in 24.04, and in 25.10 and 26.04)
+  `libheif-plugin-libde265` is only suggested ([LP: #2142762](https://bugs.launchpad.net/ubuntu/+source/libheif/+bug/2142762)),
+  so a `libheif1` that another package pulled in (ImageMagick, GIMP, ...) cannot decode HEIC photos by itself.
+- **NixOS** has no global library path: the plugin also looks in `/run/current-system/sw/lib`, `~/.nix-profile/lib`
+  and `/etc/profiles/per-user/<user>/lib`.
+- **Flatpak** builds of an IDE only see the libraries of their Flatpak runtime. Use the IDE from the JetBrains Toolbox
+  App, a tarball or a Snap (JetBrains' Snaps use classic confinement, so the system's libraries are found as usual), or
+  set the path below to a libheif inside the sandbox.
+- **Other locations** (a libheif you built, another prefix): *Settings | Advanced Settings | HEIC Viewer | libheif
+  library* takes the path of `libheif.so.1` or of the directory that contains it.
+- `idea.log` tells what was found: `HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with
+  libde265 HEVC decoder ...`, or which libraries were tried, or the plugin directories searched for an HEVC decoder.
+
+Package names checked in September 2026 against [packages.ubuntu.com](https://packages.ubuntu.com/search?keywords=libheif1),
+[packages.debian.org](https://packages.debian.org/search?keywords=libheif-plugin-libde265),
+[RPM Fusion](https://admin.rpmfusion.org/pkgdb/package/free/libheif-freeworld/) ([configuration](https://rpmfusion.org/Configuration),
+[why](https://discussion.fedoraproject.org/t/libheif-vs-libheif-freeworld/147974)),
+[packages.fedoraproject.org](https://packages.fedoraproject.org/pkgs/libheif/libheif/),
+[openSUSE:Factory/libheif](https://build.opensuse.org/package/show/openSUSE:Factory/libheif) and
+[Packman](https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials/),
+[archlinux.org](https://archlinux.org/packages/extra/x86_64/libheif/), [Alpine](https://pkgs.alpinelinux.org/packages?name=libheif*)
+and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/li/libheif/package.nix); the
+*Linux install commands* CI job runs them in containers of these distributions.
+
 ## Settings
 
 *Settings | Advanced Settings | HEIC Viewer*:
@@ -79,6 +126,7 @@ Side-by-side image diff of a modified HEIC file:
 |---|---|---|
 | Maximum decoded image size (megapixels, 1–512). Larger images are downscaled while decoding; the longer side is also limited to 16384 pixels. The image viewer always asks for full resolution and the diff decodes two images at once, so this bounds memory use. | `heic.viewer.max.megapixels` | 64 |
 | Show thumbnails as HEIC file icons. Applies as soon as the settings dialog is closed. | `heic.viewer.project.view.thumbnails` | on |
+| Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start or with *Check Again* in the notification. | `heic.viewer.libheif.path` | empty: the system's libheif |
 
 ## Limitations and known issues
 
@@ -109,8 +157,21 @@ Side-by-side image diff of a modified HEIC file:
   Non-local files (inside archives, remote, historical revisions in the diff) and files over 64 MB keep the generic
   icon. The first time a file is shown, the generic icon appears briefly; folders with many HEIC files fill in two at a
   time. Up to 500 icons are cached.
-- Not verified in a real IDE yet: Intel Macs (the decoder tests pass on them in CI), macOS versions before 26, HEIC
-  files stored with Git LFS.
+- **Linux**:
+  - libheif decodes in software at full resolution and the plugin downscales afterwards: slower than macOS (a
+    12-megapixel photo stored as 512-pixel tiles, like an iPhone's, takes about 0.3 s, a single 12-megapixel tile
+    about 0.7 s, measured with libheif 1.23 on Apple M-series), and a large image needs 3-4 bytes per pixel of native
+    memory while it is decoded. Embedded thumbnails make the file icons fast.
+  - ICC profiles are converted to sRGB (Java's color management), but colors signaled only by an `nclx` profile with
+    other primaries than sRGB/BT.709 (e.g. Display P3 or BT.2020 without an ICC profile) are shown unconverted, a
+    little less saturated; HDR images (PQ/HLG transfer) look flat.
+  - The orientation comes from the HEIF transformations (`irot`, `imir`, which libheif applies); an EXIF orientation
+    without them (not written by cameras and phones, which store both) is ignored.
+  - Old libheif versions decode less: the libheif 1.6 of Ubuntu 20.04 fails on images with transparency and does not
+    read 10-bit files (brand `heix`); such files show "Image not loaded". The CI checks libheif 1.6, 1.12, 1.15, 1.16,
+    1.17, 1.19, 1.21 and 1.23.
+- Not verified in a real IDE yet: Linux (the decoder tests pass in CI on Ubuntu 22.04 and 24.04, x64 and arm64), Intel
+  Macs (the decoder tests pass on them in CI), macOS versions before 26, HEIC files stored with Git LFS.
 
 ## How it works
 
@@ -133,7 +194,7 @@ Side-by-side image diff of a modified HEIC file:
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
    | Windows | `win.WicHeifBackend` | Windows Imaging Component with the HEIF/HEVC Store extensions <!-- TODO(windows backend) --> |
-   | Linux | `linux.LibheifHeifBackend` | `libheif.so.1` with an HEVC decoder plugin <!-- TODO(linux backend) --> |
+   | Linux | `linux.LibheifHeifBackend` | libheif 1.x (`libheif.so.1`) with an HEVC decoder (libde265) |
 
    `AbstractHeifBackend` implements what is the same everywhere: before any native call the data must pass
    `HeifInput` (the `HeifSniffer` check, because system decoders pick the codec by content, and the pure-Java
@@ -154,7 +215,25 @@ Side-by-side image diff of a modified HEIC file:
    `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a `CGRect` is
    passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by the four
    components on the stack on x86_64.
-5. **Registration**: `AppLifecycleListener.appFrameCreated` (normal start, before projects and editor tabs are
+5. **Linux decoder** (`linux` package): `Libheif` binds the libheif C API (only functions that exist since libheif
+   1.6; newer ones such as `heif_init` are used when present). The probe loads `libheif.so.1` (then `heif`, the NixOS
+   profiles, or the configured path), calls `heif_init` once (it loads the codec plugins; `heif_deinit` is never called,
+   because libheif's initialization is process-wide and the plugins must stay loaded for other users and for decodes
+   still running while the plugin is unloaded) and asks `heif_have_decoder_for_format(HEVC)`; without a decoder it
+   rescans the plugin directories (so that *Check Again* finds a plugin installed meanwhile), then reports
+   `LINUX_HEVC_PLUGIN_MISSING`. `LinuxDistribution` reads `/etc/os-release` and `LibheifRemedy` turns it into the install
+   command. `LibheifDecoder` copies the data to native memory (`heif_context_read_from_memory_without_copy` keeps
+   pointing into it until the context is freed), takes the primary image handle (its size is the displayed size:
+   libheif applies `irot`/`imir`/`clap` while decoding), decodes it with `heif_decode_image` to interleaved 8-bit RGB
+   or RGBA and reads the plane in strips; `PlaneConverter` downscales while reading (an alpha-weighted box filter by
+   the largest integer factor, then one bilinear step), so the Java heap never holds more than the requested size. An
+   ICC profile is converted to sRGB with `PixelPipeline`. `decodeThumbnail` uses an embedded thumbnail with the same
+   aspect ratio when it is at least as large as requested. libheif returns `struct heif_error` (16 bytes) by value:
+   on x86-64 (System V) and AArch64 such a struct comes back in two registers (`RAX`/`RDX`, `X0`/`X1`), so the
+   functions are called with `Function.invokeLong` and the first register holds `code` (low 32 bits) and `subcode`
+   (high 32 bits); other architectures are refused. Every context, handle, image and native buffer is released in
+   `finally` blocks.
+6. **Registration**: `AppLifecycleListener.appFrameCreated` (normal start, before projects and editor tabs are
    restored), `DynamicPluginListener.pluginLoaded` / `beforePluginUnload` (installation, update and removal without
    restart), and `HeicReaderRegistrar`, a `fileEditorProvider` for the Image file type whose `accept` registers the
    reader and always returns `false`: the command-line diff and merge (e.g. `studio diff a.heic b.heic` while the IDE is
@@ -170,7 +249,7 @@ Side-by-side image diff of a modified HEIC file:
    canary in which no HEIC image loaded). In that case a second instance is
    added to `ImageIO`'s registry through `ImageIO.scanForPlugins()`, with a context class loader that names only this
    reader. It is removed again on unload, and the split is logged as a warning in `idea.log`.
-6. **Missing decoder** (`ui` package): after registering, the backend's status is probed on a pooled thread; the UI
+7. **Missing decoder** (`ui` package): after registering, the backend's status is probed on a pooled thread; the UI
    only ever reads the backend's cached status and never probes on the EDT (`DecoderStatus`). When the decoder is
    unavailable, the user is told where a HEIC image fails to load, with the remedy of the reason
    (`backend.HeifRemedies`: the Microsoft Store page or the install command, *Check Again*, *Learn More*, ...):
@@ -190,7 +269,7 @@ Side-by-side image diff of a modified HEIC file:
    panels of an unloaded provider in the editor, which would keep the class loader alive) and its notifications expire.
    `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` forces a status, to see the UI of another OS; with
    `-Dheic.viewer.debug.backendStatus.recover=true` the first *Check Again* switches to the real decoder of the OS.
-7. **Thumbnails** (`thumbnail` package): `HeicThumbnailIconProvider` (`fileIconProvider`, `order="first"`) never
+8. **Thumbnails** (`thumbnail` package): `HeicThumbnailIconProvider` (`fileIconProvider`, `order="first"`) never
    decodes in `getIcon`: it looks up an LRU cache (500 entries, keyed by URL, VFS timestamp, length, icon size and the
    maximum screen scale) and otherwise queues a decode on the plugin's own bounded executor (two threads) and returns
    `null`, so the platform shows the default Image icon. The background task reads the file directly from disk (only
@@ -200,7 +279,7 @@ Side-by-side image diff of a modified HEIC file:
    `VirtualFileAppearanceListener.fireVirtualFileAppearanceChanged` refreshes the Project view, tabs and navigation
    bar. Only platform and JDK objects are handed to the platform, and `beforePluginUnload` shuts the executor down,
    waits up to one second for running decodes and clears the caches, so the plugin class loader can be unloaded.
-8. **Java 17 and dynamic unloading**: the plugin is compiled with `--release 17`. On JBR 17 (IntelliJ 2024.1) two
+9. **Java 17 and dynamic unloading**: the plugin is compiled with `--release 17`. On JBR 17 (IntelliJ 2024.1) two
    things would keep the plugin class loader alive after an unload, so neither is used: records (their
    `equals`/`hashCode`/`toString` bootstraps are cached by the JDK; value classes such as `DecodeLimits` are
    hand-written instead), and EDT events posted by plugin code during a normal start (`HeicFileTypeMappingRepair` only
@@ -214,7 +293,9 @@ Side-by-side image diff of a modified HEIC file:
 ### Requirements
 
 - Builds and tests on macOS, Windows and Linux. The decoder tests run where the system decoder is available (macOS;
-  Windows and Linux with the components listed under [Requirements](#requirements)); the rest runs everywhere.
+  Windows and Linux with the components listed under [Requirements](#requirements)); the rest runs everywhere. The
+  tests of the Linux backend (`linux` package) also run on macOS against Homebrew's libheif (`brew install libheif`),
+  or against any libheif given as `HEIC_TEST_LIBHEIF=/path/to/libheif`, and compare its images with ImageIO.framework's.
 - JDK 25 as the Gradle toolchain (the code is compiled with `--release 17`), plus JDK 21 and JDK 17 for `testJdk21` /
   `testJdk17`. Gradle picks up installed JDKs, including the one it runs on; otherwise the foojay resolver downloads
   them (see below to reuse an IDE's JBR 25).
@@ -298,7 +379,9 @@ src/main/java/cn/yooss/heic/
                               unavailable status); jna/JnaLibraries (JNA rules, library loading)
   mac/                        MacHeifBackend, HeicDecoder (the ImageIO.framework algorithm), MacApi, jna/JnaMacApi
   win/                        WicHeifBackend (Windows Imaging Component)  <!-- TODO(windows backend) -->
-  linux/                      LibheifHeifBackend (libheif)  <!-- TODO(linux backend) -->
+  linux/                      LibheifHeifBackend (probe), Libheif (the libheif C API through JNA), LibheifDecoder,
+                              PlaneConverter (streaming downscaling), LinuxDistribution + LibheifRemedy (os-release,
+                              install commands)
   thumbnail/                  Thumbnail icons: provider, loader, cache, renderer, listeners
   ui/                         Missing decoder: editor banner (HeicDecoderNotificationProvider, HeicFileOpenedListener),
                               notifications (DecoderPrompt), status and Check Again (DecoderStatus), refresh of the
@@ -316,8 +399,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 
 ### Implementing a decoder backend (Windows, Linux)
 
-- Extend `backend.AbstractHeifBackend` in `win.WicHeifBackend` / `linux.LibheifHeifBackend` (both are placeholders
-  that report `NOT_IMPLEMENTED`); `HeifBackends` already selects them by OS.
+- Extend `backend.AbstractHeifBackend` in `win.WicHeifBackend` (a placeholder that reports `NOT_IMPLEMENTED`);
+  `HeifBackends` already selects it by OS. `linux.LibheifHeifBackend` is a complete example.
 - `probe()`: load the system libraries through `backend.jna.JnaLibraries` and return
   `HeifBackendStatus.available(...)` or `unavailable(Reason, detail)` with `withInstallUrl` (e.g. a Microsoft Store
   link) or `withInstallCommand` (the distribution's package command).
@@ -351,12 +434,15 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
   and 17) on `macos-latest`, Plugin Verifier on `ubuntu-latest` against `pluginVerificationIdes`, and a draft GitHub
   release (from the `[Unreleased]` section of `CHANGELOG.md`) for pushes to `main`.
 - `.github/workflows/cross-platform.yml` runs on pushes to `dev/**` branches and manually: build and the tests on JDK 25,
-  21 and 17 on macOS arm64 and x86_64, Linux x64 with and without libheif, Linux arm64 and Windows x64 and arm64 (the
-  IDE to compile against is downloaded for each OS and cached; on arm64 Linux and Windows, which Android Studio has no
-  build for, IntelliJ IDEA), the light-IDE tests (`test`, on the jobs whose IDE has a build for the runner), and Plugin
-  Verifier. Each job sets `HEIC_EXPECT_BACKEND`
-  to the decoder status `HeifBackendContractTest` must see on that runner (`available`, or a `HeifBackendStatus.Reason`
-  such as `LINUX_LIBHEIF_MISSING`). Test reports are uploaded as artifacts.
+  21 and 17 on macOS arm64 and x86_64, Linux x64 (libheif 1.17 with and without its HEVC plugin, libheif 1.12 on
+  Ubuntu 22.04, no libheif), Linux arm64 (libheif 1.17) and Windows x64 and arm64 (the IDE to compile against is
+  downloaded for each OS and cached; on arm64 Linux and Windows, which Android Studio has no build for, IntelliJ IDEA),
+  the light-IDE tests (`test`, on the jobs whose IDE has a build for the runner), and Plugin Verifier. Each job sets
+  `HEIC_EXPECT_BACKEND` to the decoder status `HeifBackendContractTest` must see on that runner (`available`, or a
+  `HeifBackendStatus.Reason` such as `LINUX_LIBHEIF_MISSING`). Test reports are uploaded as artifacts. The *Linux
+  install commands* job runs the install command the plugin suggests in containers of Ubuntu, Debian, Fedora,
+  AlmaLinux, openSUSE, Arch Linux, Alpine and Nix, and checks with the plugin's classes that libheif is then found
+  and decodes.
 - Publishing the draft release triggers `.github/workflows/release.yml`: it moves the release notes into a version
   section of `CHANGELOG.md`, signs and publishes the plugin to JetBrains Marketplace, attaches the zip to the release
   and opens a pull request with the updated changelog. Required repository secrets: `PUBLISH_TOKEN`,
@@ -379,8 +465,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 ## Roadmap
 
 - 0.2: IntelliJ 2024.1+ / Android Studio Koala+ (JNA instead of FFM, Java 17), and Windows (WIC) and Linux (libheif)
-  support through the systems' own decoders, behind the `HeifBackend` interface (in progress: the Windows and Linux
-  backends are placeholders that report `NOT_IMPLEMENTED`).
+  support through the systems' own decoders, behind the `HeifBackend` interface (in progress: the Windows backend is a
+  placeholder that reports `NOT_IMPLEMENTED`).
 
 ## License
 

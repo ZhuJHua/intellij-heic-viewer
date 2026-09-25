@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Backend selection by OS. Pure Java: creating a backend never loads native code, so this runs on every OS. */
 class HeifBackendsTest {
@@ -66,9 +67,19 @@ class HeifBackendsTest {
     }
   }
 
-  /** Placeholders until the Windows and Linux backends are implemented. */
+  /** The libheif backend only answers on Linux; elsewhere it reports UNSUPPORTED_OS without loading anything. */
+  @Test
+  void linuxBackendProbeOnOtherSystems() {
+    assumeTrue(HeifBackends.Os.current() != HeifBackends.Os.LINUX, "Linux: see LibheifHeifBackendTest");
+    HeifBackend backend = HeifBackends.create(HeifBackends.Os.LINUX);
+    assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, backend.status().reason(), backend.status().toString());
+    IOException unavailable = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
+    assertTrue(unavailable.getMessage().contains("UNSUPPORTED_OS"), unavailable.getMessage());
+  }
+
+  /** Placeholders until the Windows backend is implemented. */
   @ParameterizedTest
-  @EnumSource(value = HeifBackends.Os.class, names = {"WINDOWS", "LINUX"})
+  @EnumSource(value = HeifBackends.Os.class, names = {"WINDOWS"})
   void placeholderBackends(HeifBackends.Os os) {
     HeifBackend backend = HeifBackends.create(os);
     assertEquals(HeifBackendStatus.Reason.NOT_IMPLEMENTED, backend.status().reason(), backend.status().toString());

@@ -10,11 +10,14 @@
  *                                               seq.heics (public.heics), rgb_sips.avif
  *   heif-enc (libheif 1.23.5, Homebrew)      -> rgb_libheif.heic, rot90_irot.heic (irot), fliph_imir.heic (imir),
  *                                               grid_libheif.heic (5x4 grid of 128 px tiles), multi.heic (2 images),
- *                                               ten_bit.heic, alpha_libheif.heic, rgb.avif, alpha.avif
+ *                                               ten_bit.heic, alpha_libheif.heic, rgb.avif, alpha.avif,
+ *                                               thumb_irot.heic (heif-enc -q 90 -t 96 --rotate-cw 90 rgb.png: irot and
+ *                                               an embedded 64x96 thumbnail)
  *   writeorient.swift (CGImageDestination)   -> exif3/5/6_apple.heic (Apple writes irot/imir plus EXIF orientation)
  *   header_only.heic                          = the first 64 bytes of rgb_sips.heic (ftyp + a cut meta box)
  *   garbage.heic                              = plain text
  * GenBands.java produces bands.png; bands_2000x1200.heic = sips -s format heic, bands_exif6.heic = writeorient ... 6.
+ * GenIcc.java produces the ICC profile and PNG of icc_wide.heic (colors in a wide-gamut space, embedded ICC profile).
  */
 import java.awt.*;
 import java.awt.image.*;
