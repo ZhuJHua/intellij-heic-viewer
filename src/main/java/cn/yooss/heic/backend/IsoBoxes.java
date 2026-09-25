@@ -1,4 +1,4 @@
-package cn.yooss.heic.mac;
+package cn.yooss.heic.backend;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -6,8 +6,9 @@ import java.util.Locale;
 /**
  * Pure-Java structural check of an ISO-BMFF (HEIF) file.
  * <p>
- * ImageIO.framework happily "decodes" a truncated HEIC (a partially downloaded or partially written file) and
- * returns an all-black image without reporting an error. Two cheap checks detect that case:
+ * System decoders may happily "decode" a truncated HEIC (a partially downloaded or partially written file):
+ * macOS ImageIO.framework returns an all-black image without reporting an error. Two cheap checks detect that case
+ * before any backend sees the data (see {@link HeifInput}):
  * <ol>
  *   <li>the top-level boxes must fit into the file (a box that claims more bytes than there are means the file was
  *   cut inside that box);</li>
@@ -15,7 +16,7 @@ import java.util.Locale;
  *   cut exactly at a box boundary, e.g. right before {@code mdat}).</li>
  * </ol>
  * Anything this class does not understand is not judged ({@code null}), so an unusual but valid file is never
- * rejected here; ImageIO.framework decides.
+ * rejected here; the system decoder decides.
  */
 final class IsoBoxes {
   private IsoBoxes() {
@@ -35,7 +36,7 @@ final class IsoBoxes {
     while (length - offset >= 8) {
       int at = (int) offset;
       String type = type(data, at + 4);
-      if (type == null) break; // trailing bytes that are not a box: leave them to ImageIO
+      if (type == null) break; // trailing bytes that are not a box: leave them to the decoder
       long size = u32(data, at);
       long header = 8;
       if (size == 1) {
@@ -50,7 +51,7 @@ final class IsoBoxes {
         if (type.equals("free") || type.equals("skip")) break; // padding only, no image data lost
         return describe(type, offset, size, length - offset);
       }
-      if (size < header) return null; // malformed; let ImageIO decide
+      if (size < header) return null; // malformed; let the decoder decide
       if (type.equals("moov")) movie = true;
       if (type.equals("meta") && metaStart < 0) {
         metaStart = offset + header + 4; // meta is a FullBox: version/flags precede the children

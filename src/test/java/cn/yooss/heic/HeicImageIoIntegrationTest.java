@@ -3,8 +3,7 @@ package cn.yooss.heic;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -35,11 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The real reader (macOS ImageIO.framework) driven through {@code javax.imageio} exactly like the IDE does:
- * {@code org.intellij.images.vfs.IfsUtil} (editor, diff) and {@code org.intellij.images.util.ImageInfoReader}
- * (image-info index, completion, documentation popup).
+ * The real reader with the system decoder of this OS ({@code HeifBackends.current()}) driven through
+ * {@code javax.imageio} exactly like the IDE does: {@code org.intellij.images.vfs.IfsUtil} (editor, diff) and
+ * {@code org.intellij.images.util.ImageInfoReader} (image-info index, completion, documentation popup). Skipped where
+ * no system decoder is available (HeifBackendContractTest checks that this matches what CI expects).
  */
-@EnabledOnOs(OS.MAC)
+@EnabledIf("cn.yooss.heic.SystemDecoder#isAvailable")
 class HeicImageIoIntegrationTest {
   private static HeicImageReaderSpi spi;
   private static Map<String, String> readersBeforeRegistration;

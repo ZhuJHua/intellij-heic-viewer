@@ -1,8 +1,7 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeifBackends;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -14,7 +13,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -34,9 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * longer returns. A reader registered through {@code getDefaultInstance()} is then invisible to ImageIO.
  * <p>
  * The race needs a JVM in which ImageIO has not been initialized yet, so it runs in a child JVM ({@link Child}),
- * which forces the interleaving deterministically.
+ * which forces the interleaving deterministically. Runs on every OS; the image is only decoded where the system decoder is
+ * available.
  */
-@EnabledOnOs(OS.MAC)
 class HeicSupportSplitRegistryTest {
   @Test
   void readerReachesImageIOEvenIfImageIOUsesAnotherRegistry() throws Exception {
@@ -50,7 +48,12 @@ class HeicSupportSplitRegistryTest {
 
     assertEquals("true", r.get("registered"), context);
     assertEquals(HeicImageReader.class.getName(), r.get("readerForHeic"), "what IfsUtil gets for a HEIC file\n" + context);
-    assertEquals("600x400", r.get("decoded"), context);
+    if (Boolean.parseBoolean(r.get("decoderAvailable"))) {
+      assertEquals("600x400", r.get("decoded"), context);
+    }
+    else {
+      assertTrue(r.get("decoded").startsWith("IOException"), "fails like any HEIC file without a system decoder\n" + context);
+    }
     assertEquals("1", r.get("inDefault"), "still registered in getDefaultInstance() as well\n" + context);
     assertEquals("true", r.get("visibleToImageIO"), context);
     assertEquals("true", r.get("warnedAboutSplit"), "the split is logged\n" + context);
@@ -61,14 +64,18 @@ class HeicSupportSplitRegistryTest {
     assertEquals(HeicImageReader.class.getName(), r.get("readerAfterReload"), context);
   }
 
-  private record Result(Map<String, String> values, String output) {
+  private static final class Result {
+    final Map<String, String> values;
+    final String output;
+
+    Result(Map<String, String> values, String output) {
+      this.values = values;
+      this.output = output;
+    }
   }
 
   private static Result runChild() throws IOException, InterruptedException {
-    String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-    ProcessBuilder builder = new ProcessBuilder(
-        java, "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true",
-        "-cp", System.getProperty("java.class.path"), Child.class.getName());
+    ProcessBuilder builder = new ProcessBuilder(ChildJvm.command(Child.class));
     builder.redirectErrorStream(true);
     Process process = builder.start();
     process.getOutputStream().close();
@@ -100,8 +107,14 @@ class HeicSupportSplitRegistryTest {
 
         out("registered", HeicSupport.register());
         out("readerForHeic", readerFor("rgb_sips.heic"));
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")));
-        out("decoded", image == null ? "null" : image.getWidth() + "x" + image.getHeight());
+        out("decoderAvailable", HeifBackends.current().status().isAvailable());
+        try {
+          BufferedImage image = ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")));
+          out("decoded", image == null ? "null" : image.getWidth() + "x" + image.getHeight());
+        }
+        catch (IOException e) {
+          out("decoded", "IOException: " + e.getMessage());
+        }
         out("inDefault", countInDefault());
         out("visibleToImageIO", HeicSupport.isVisibleToImageIO());
         out("warnedAboutSplit", log.warnings().stream().anyMatch(w -> w.startsWith("ImageIO does not use IIORegistry.getDefaultInstance()")));

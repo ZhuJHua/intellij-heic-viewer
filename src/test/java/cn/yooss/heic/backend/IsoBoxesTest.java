@@ -1,4 +1,4 @@
-package cn.yooss.heic.mac;
+package cn.yooss.heic.backend;
 
 import cn.yooss.heic.Fixtures;
 import org.junit.jupiter.api.Test;

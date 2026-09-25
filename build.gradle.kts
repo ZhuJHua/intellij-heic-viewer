@@ -40,18 +40,20 @@ val platformCanaryPath: File? = localSetting("platformCanaryPath")?.let { path -
 
 // Set the JVM language level used to build the project.
 java {
-    // FFM (java.lang.foreign) is final since Java 22; every supported IDE (since-build 261.26222) runs on JBR 25.
-    // Gradle finds JDK 25 among the installed JDKs (including the JDK Gradle itself runs on) or downloads it (foojay).
+    // A JDK 25 toolchain compiles everything with --release 17 (below): the oldest supported IDEs (2024.1, since-build
+    // 241.14494) run on JBR 17. Gradle finds JDK 25 among the installed JDKs (including the JDK Gradle itself runs on)
+    // or downloads it (foojay).
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    options.release = 22
+    // Main and test classes: Java 17 bytecode and API (the same test classes run on JDK 17, 21 and 25, see below).
+    // BytecodeLevelTest checks the plugin jar (class versions, no java.lang.foreign, no record ObjectMethods).
+    options.release = 17
     options.encoding = "UTF-8"
-    // "restricted" = calls to restricted FFM methods, which is the whole point of the mac package.
-    options.compilerArgs.addAll(listOf("-Xlint:all,-restricted,-options,-processing,-serial"))
+    options.compilerArgs.addAll(listOf("-Xlint:all,-options,-processing,-serial"))
 }
 
 // Configure project's dependencies
@@ -166,8 +168,8 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Do not report the OS module (com.intellij.modules.os.mac) as missing: Android Studio's product-info.json does not
-        // declare the OS aliases, and the dependency is optional anyway.
+        // Verify the plugin independently of the OS/architecture of the IDE build that is checked (the plugin supports
+        // macOS, Windows and Linux; the verifier would otherwise skip IDE modules of other systems).
         freeArgs = listOf("-ignore-os-arch")
 
         ides {
@@ -228,16 +230,70 @@ tasks {
     }
 
     test {
-        useJUnitPlatform()
-        // The decoder uses java.lang.foreign; the IDE itself runs with the same flag.
-        jvmArgs("--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true")
+        // JDK 25: the runtime of IDEs 2026.1.3+ (Android Studio Quail 3+).
         javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
-        testLogging {
-            events("failed", "skipped")
-            exceptionFormat = TestExceptionFormat.FULL
-        }
     }
 }
+
+// The IDE's JNA (com.sun.jna in lib/util-8.jar) is on the test class path, but its native part ships separately in
+// <IDE>/lib/jna/<arch>; point JNA there exactly like the IDE launcher does (product-info.json: -Djna.boot.library.path,
+// -Djna.nosys=true, -Djna.noclasspath=true). Directory names as in the IDE distributions: aarch64 or amd64, on macOS,
+// Windows and Linux alike. Evaluated only when a test task runs (resolving platformPath needs the IDE).
+val platformDir: Provider<File> = providers.provider { intellijPlatform.platformPath.toFile() }
+val jnaNativeDir: Provider<String> = platformDir.map { platform ->
+    val jna = platform.resolve("lib/jna")
+    val arch = System.getProperty("os.arch").lowercase()
+    val preferred = if (arch == "aarch64" || arch == "arm64") "aarch64" else "amd64"
+    val dir = jna.resolve(preferred).takeIf { it.isDirectory } ?: jna.listFiles()?.singleOrNull { it.isDirectory }
+    dir?.absolutePath ?: ""
+}
+
+/** JVM arguments that make JNA load its native library from the IDE, if the IDE has one for this architecture. */
+class JnaNativeArgs(@get:Input val nativeDir: Provider<String>) : CommandLineArgumentProvider {
+    override fun asArguments(): Iterable<String> = nativeDir.get().takeIf { it.isNotEmpty() }
+        ?.let { listOf("-Djna.boot.library.path=$it", "-Djna.nosys=true", "-Djna.noclasspath=true") }
+        ?: emptyList()
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // What the IDE launcher passes as well: java.lang for JnaLibraries (clears the inherited access control context of
+    // a JNA Cleaner thread started by plugin code, see PluginClassLoaderLeakTest).
+    jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
+    jvmArgumentProviders.add(JnaNativeArgs(jnaNativeDir))
+    // Lets HeifBackendContractTest check what CI expects of the system decoder (e.g. "available" on macOS).
+    providers.environmentVariable("HEIC_EXPECT_BACKEND").orNull?.let { systemProperty("heic.test.expectBackend", it) }
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = TestExceptionFormat.FULL
+    }
+}
+
+// The same tests on the older runtimes the plugin supports; `check` runs all three.
+fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(taskName) {
+    group = "verification"
+    description = "Runs the unit tests on JDK $javaVersion."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = files(tasks.test.map { it.classpath })
+    javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    shouldRunAfter(tasks.test)
+}
+// JBR 21: IDEs 2024.2 - 2025.3 and 2026.1 - 2026.1.2, Android Studio Ladybug - Quail 2.
+val testJdk21 = registerTestOn("testJdk21", 21)
+// JBR 17: IDEs 2024.1.x, Android Studio Koala.
+val testJdk17 = registerTestOn("testJdk17", 17)
+testJdk17.configure {
+    // The platform jars of the IDE compiled against (2026.1) are Java 21 bytecode and cannot be loaded on JDK 17, except
+    // util-8.jar (Java 8 bytecode: JNA, Logger, ...). The JDK 17 run gets a minimal class path: the plugin's classes,
+    // JUnit and util-8.jar. Tests that need other platform classes are tagged "platform" and run on JDK 21 and 25.
+    classpath = sourceSets.test.get().output + sourceSets.main.get().output +
+        configurations.testRuntimeClasspath.get().filter { it.name.matches(Regex("(junit-|opentest4j|apiguardian).*")) } +
+        files(platformDir.map { it.resolve("lib/util-8.jar") })
+    useJUnitPlatform { excludeTags("platform") }
+    // Test classes whose bytecode cannot even be verified without those platform classes (JUnit would fail discovery).
+    filter { excludeTestsMatching("cn.yooss.heic.HeicReaderRegistrarTest") }
+}
+tasks.check { dependsOn(testJdk21, testJdk17) }
 
 if (platformCanaryPath == null) {
     tasks.register("runIdeCanary") {

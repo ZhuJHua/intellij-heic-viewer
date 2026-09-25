@@ -1,6 +1,7 @@
 package cn.yooss.heic;
 
-import cn.yooss.heic.mac.HeicDecoder;
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifImageInfo;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -19,7 +20,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * Reads the primary image of a HEIC/HEIF file through {@link HeicBackend} (macOS ImageIO.framework).
+ * Reads the primary image of a HEIC/HEIF file through a {@link HeifBackend} (the system decoder of the running OS).
  * <ul>
  *   <li>The whole stream is read into memory first ({@code stream.length()} may be -1: the IDE disables the
  *   ImageIO disk cache).</li>
@@ -34,11 +35,11 @@ import java.util.function.Supplier;
  */
 final class HeicImageReader extends ImageReader {
   private final Supplier<DecodeLimits> limits;
-  private final HeicBackend backend;
+  private final HeifBackend backend;
   private byte[] data;
-  private HeicDecoder.Info info;
+  private HeifImageInfo info;
 
-  HeicImageReader(HeicImageReaderSpi provider, Supplier<DecodeLimits> limits, HeicBackend backend) {
+  HeicImageReader(HeicImageReaderSpi provider, Supplier<DecodeLimits> limits, HeifBackend backend) {
     super(provider);
     this.limits = limits;
     this.backend = backend;
@@ -87,7 +88,7 @@ final class HeicImageReader extends ImageReader {
 
   @Override
   public BufferedImage read(int imageIndex, ImageReadParam param) throws IOException {
-    HeicDecoder.Info info = info(imageIndex);
+    HeifImageInfo info = info(imageIndex);
     int width = info.width();
     int height = info.height();
 
@@ -134,7 +135,7 @@ final class HeicImageReader extends ImageReader {
     double ky = (double) decoded.getHeight() / height;
 
     // Target size: exact ImageIO semantics (ceil(region / subsampling)) when the decoded image has enough resolution
-    // for the requested subsampling (allowing for ImageIO.framework rounding by one pixel), else the decoded scale.
+    // for the requested subsampling (allowing for the decoder rounding by one pixel), else the decoded scale.
     boolean xExact = decoded.getWidth() >= ceilDiv(width, xSub) - 1;
     boolean yExact = decoded.getHeight() >= ceilDiv(height, ySub) - 1;
     int targetW = xExact ? ceilDiv(region.width, xSub) : Math.max(1, (int) Math.round(region.width * kx));
@@ -177,7 +178,7 @@ final class HeicImageReader extends ImageReader {
     }
   }
 
-  private HeicDecoder.Info info(int imageIndex) throws IOException {
+  private HeifImageInfo info(int imageIndex) throws IOException {
     checkIndex(imageIndex);
     if (info == null) {
       try {

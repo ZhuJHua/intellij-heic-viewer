@@ -2,8 +2,6 @@ package cn.yooss.heic;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -26,8 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Registration in the process-wide IIORegistry, as done by the application/dynamic-plugin listeners. */
-@EnabledOnOs(OS.MAC)
+/**
+ * Registration in the process-wide IIORegistry, as done by the application/dynamic-plugin listeners. Runs on every OS:
+ * the reader is registered everywhere, and finding it for a HEIC file only sniffs bytes (no decoding).
+ */
 class HeicSupportTest {
   private final List<ImageReaderSpi> extra = new ArrayList<>();
 

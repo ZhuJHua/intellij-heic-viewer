@@ -35,13 +35,34 @@ final class HeicFileTypeMappingRepair {
   }
 
   /**
-   * Schedules the repair on the EDT (a write action is required to change file type associations). It runs when no
+   * Checks the mappings right away (read-only, any thread) and, only if an extension has lost its mapping, schedules
+   * the repair on the EDT (a write action is required to change file type associations). The repair runs when no
    * modal dialog is open; until then it stays queued, e.g. while Settings | Plugins is open after an installation.
+   * <p>
+   * A normal start posts nothing to the EDT: on Java 17 (IntelliJ 2024.1) an EDT event created by plugin code captures
+   * an {@code AccessControlContext} with the plugin's protection domain, and threads the platform starts while handling
+   * it (the welcome screen, ForkJoin workers) inherit that context and keep the plugin class loader alive, so the plugin
+   * could not be updated or removed without a restart.
    */
   static void schedule() {
     Application application = ApplicationManager.getApplication();
     if (application == null || application.isDisposed()) return;
+    List<String> unmapped = unmappedExtensions();
+    if (unmapped.isEmpty()) return;
+    LOG.info("File type mapping of " + unmapped + " is missing; re-associating them with the Image file type");
     application.invokeLater(HeicFileTypeMappingRepair::runNow, ModalityState.nonModal(), expired(application));
+  }
+
+  /** Our extensions that currently resolve to no file type at all. Read-only. */
+  static List<String> unmappedExtensions() {
+    FileTypeManager fileTypeManager = FileTypeManager.getInstance();
+    List<String> unmapped = new ArrayList<>();
+    for (String extension : HeicImageReaderSpi.SUFFIXES) {
+      if (fileTypeManager.getFileTypeByExtension(extension) instanceof UnknownFileType) {
+        unmapped.add(extension);
+      }
+    }
+    return unmapped;
   }
 
   /**
@@ -55,16 +76,11 @@ final class HeicFileTypeMappingRepair {
   }
 
   private static void runNow() {
-    if (!HeicSupport.isRegistered()) return; // the plugin was unloaded in the meantime, or the platform is unsupported
-    FileTypeManager fileTypeManager = FileTypeManager.getInstance();
-    List<String> unmapped = new ArrayList<>();
-    for (String extension : HeicImageReaderSpi.SUFFIXES) {
-      if (fileTypeManager.getFileTypeByExtension(extension) instanceof UnknownFileType) {
-        unmapped.add(extension);
-      }
-    }
+    if (!HeicSupport.isRegistered()) return; // the plugin was unloaded in the meantime
+    List<String> unmapped = unmappedExtensions(); // again: the user may have mapped them in the meantime
     if (unmapped.isEmpty()) return;
 
+    FileTypeManager fileTypeManager = FileTypeManager.getInstance();
     FileType imageFileType = ImageFileTypeManager.getInstance().getImageFileType();
     WriteAction.run(() -> {
       for (String extension : unmapped) {

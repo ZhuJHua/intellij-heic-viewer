@@ -1,6 +1,7 @@
 package cn.yooss.heic.mac;
 
 import cn.yooss.heic.Fixtures;
+import cn.yooss.heic.backend.HeifImageInfo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -28,8 +29,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** The macOS decoder (ImageIO.framework through the IDE's JNA) itself; see HeifBackendContractTest for the backend API. */
 @EnabledOnOs(OS.MAC)
 class HeicDecoderTest {
+  @Test
+  void nativeBridgeIsJna() throws IOException {
+    String bridge = HeicDecoder.nativeBridge();
+    assertTrue(bridge.startsWith("JNA 5."), bridge);
+    String arch = System.getProperty("os.arch");
+    assertTrue(bridge.endsWith(arch.equals("aarch64") ? "(arm64 HFA)" : "(x86_64 stack)"), bridge);
+  }
 
   @ParameterizedTest
   @CsvSource({
@@ -50,7 +59,7 @@ class HeicDecoderTest {
   })
   void readInfo(String name, int rawWidth, int rawHeight, int orientation, int width, int height, boolean alpha, int depth)
       throws IOException {
-    HeicDecoder.Info info = HeicDecoder.readInfo(Fixtures.bytes(name));
+    HeifImageInfo info = HeicDecoder.readInfo(Fixtures.bytes(name));
     assertEquals(rawWidth, info.rawWidth(), "rawWidth");
     assertEquals(rawHeight, info.rawHeight(), "rawHeight");
     assertEquals(orientation, info.orientation(), "orientation");
@@ -135,13 +144,6 @@ class HeicDecoderTest {
     for (int shift = 0; shift < 24; shift += 8) {
       assertTrue(Math.abs(((expected >> shift) & 255) - ((actual >> shift) & 255)) <= colorTolerance, message);
     }
-  }
-
-  @Test
-  void unpremultiply() {
-    int[] pixels = {0xFFFF0000, 0x00FFFFFF, 0x80800000, 0x40004000, 0x01010101};
-    HeicDecoder.unpremultiply(pixels, pixels.length);
-    assertArrayEquals(new int[]{0xFFFF0000, 0x00000000, 0x80FF0000, 0x4000FF00, 0x01FFFFFF}, pixels);
   }
 
   @ParameterizedTest

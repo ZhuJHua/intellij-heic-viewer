@@ -6,9 +6,8 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.testFramework.BinaryLightVirtualFile;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 import java.lang.reflect.Proxy;
 
@@ -18,7 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@EnabledOnOs(OS.MAC)
+/**
+ * Needs IDE classes (Project, FileEditorProvider, BinaryLightVirtualFile) that are Java 21 bytecode in 261; the class
+ * cannot even be loaded without them, so testJdk17 excludes it by name.
+ */
+@Tag("platform")
 class HeicReaderRegistrarTest {
   @AfterEach
   void cleanUp() {

@@ -216,6 +216,6 @@ class ThumbnailLoaderTest {
     }, () -> {});
     executor.runAll();
     assertEquals(1, errors.size());
-    assertInstanceOf(IllegalStateException.class, errors.getFirst());
+    assertInstanceOf(IllegalStateException.class, errors.get(0));
   }
 }

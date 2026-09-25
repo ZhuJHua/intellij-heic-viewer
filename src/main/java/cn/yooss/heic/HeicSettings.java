@@ -3,7 +3,7 @@ package cn.yooss.heic;
 import com.intellij.openapi.options.advanced.AdvancedSettings;
 
 /**
- * Plugin settings, shown under Settings | Advanced Settings | HEIC Viewer (declared in heic-viewer-macos.xml, texts in
+ * Plugin settings, shown under Settings | Advanced Settings | HEIC Viewer (declared in plugin.xml, texts in
  * {@code messages/HeicBundle.properties}).
  */
 public final class HeicSettings {

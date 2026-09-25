@@ -1,26 +1,21 @@
 package cn.yooss.heic.mac;
 
-import cn.yooss.heic.HeifSniffer;
+import cn.yooss.heic.backend.HeifImageInfo;
+import cn.yooss.heic.backend.HeifInput;
+import cn.yooss.heic.backend.PixelPipeline;
+import cn.yooss.heic.mac.jna.JnaMacApi;
 
 import java.awt.image.BufferedImage;
-import java.awt.image.WritableRaster;
 import java.io.IOException;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.util.ArrayDeque;
-import java.util.Locale;
 import java.util.Set;
-
-import static cn.yooss.heic.mac.MacImageIO.isNull;
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 /**
  * Decodes HEIC/HEIF files into {@link BufferedImage}s with macOS ImageIO.framework.
  * <p>
  * ImageIO.framework picks the codec by content, so only HEIF data may reach it, whoever the caller is (the image
- * reader, whatever way it was looked up, or the thumbnail icons): {@link #checkInput} rejects anything whose header is
- * not a HEIC/HEIF {@code ftyp} box ({@link HeifSniffer}, pure Java) before any native call, and the image source must
+ * reader, whatever way it was looked up, or the thumbnail icons): {@link HeifInput#check} rejects anything whose header
+ * is not a HEIC/HEIF {@code ftyp} box (pure Java) and truncated files before any native call, and the image source must
  * report a HEIF-family type.
  * <p>
  * Algorithm (see README): {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} ->
@@ -30,15 +25,12 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  * 8-bit sRGB bitmap context -> copied into a {@code TYPE_INT_RGB} image, or a non-premultiplied
  * {@code TYPE_INT_ARGB} image when the file has alpha.
  * <p>
- * Every call is self-contained (own autorelease pool, own confined arena, every CF object released in
- * {@code finally}), so the class is thread-safe. All failures, including a missing native layer, surface as
+ * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
+ * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
+ * in {@code finally}), so the class is thread-safe. All failures, including a missing native layer, surface as
  * {@link IOException}; only {@link OutOfMemoryError} and other VM errors propagate.
  */
 public final class HeicDecoder {
-  /** Pixels per rendered strip: bounds the native scratch buffer to 4 MB. */
-  private static final int STRIP_PIXELS = 1 << 20;
-  /** A {@code TYPE_INT_*} {@link BufferedImage} is backed by a single {@code int[]}. */
-  private static final long MAX_IMAGE_PIXELS = Integer.MAX_VALUE - 16;
   /** Type identifiers of ImageIO.framework's ISO-BMFF image formats (the HEIF family). */
   private static final Set<String> HEIF_TYPES =
       Set.of("public.heic", "public.heics", "public.heif", "public.avci", "public.avif", "public.avis");
@@ -46,37 +38,15 @@ public final class HeicDecoder {
   private HeicDecoder() {
   }
 
-  /**
-   * Cheap image metadata of the primary image (no pixel decoding).
-   *
-   * @param typeIdentifier UTI reported by ImageIO.framework, e.g. {@code public.heic} or {@code public.heics}
-   * @param rawWidth       width as stored, before orientation
-   * @param rawHeight      height as stored, before orientation
-   * @param orientation    EXIF-style orientation 1..8 (HEIF {@code irot}/{@code imir} are reported the same way)
-   * @param bitDepth       bits per component as reported by the file, or -1 if unknown
-   */
-  public record Info(String typeIdentifier, int imageCount, int primaryIndex, int rawWidth, int rawHeight,
-                     int orientation, int bitDepth, boolean hasAlpha) {
-    /** Orientations 5..8 rotate by 90 degrees, so the displayed image has width and height swapped. */
-    public boolean swapsAxes() {
-      return orientation >= 5 && orientation <= 8;
-    }
-
-    /** Display width (orientation applied). */
-    public int width() {
-      return swapsAxes() ? rawHeight : rawWidth;
-    }
-
-    /** Display height (orientation applied). */
-    public int height() {
-      return swapsAxes() ? rawWidth : rawHeight;
-    }
+  /** Name of the native binding, e.g. {@code "JNA 5.17.0 (arm64 HFA)"}; initializes it if needed. */
+  public static String nativeBridge() throws IOException {
+    return bound().api.name();
   }
 
   /** Reads the size, orientation and alpha of the primary image without decoding pixels. */
-  public static Info readInfo(byte[] data) throws IOException {
-    checkInput(data);
-    try (Session session = new Session()) {
+  public static HeifImageInfo readInfo(byte[] data) throws IOException {
+    HeifInput.check(data);
+    try (Session session = new Session(bound())) {
       session.open(data);
       return session.info();
     }
@@ -93,7 +63,7 @@ public final class HeicDecoder {
    */
   public static BufferedImage decode(byte[] data, int maxPixelSize) throws IOException {
     if (maxPixelSize < 0) throw new IllegalArgumentException("maxPixelSize must be >= 0: " + maxPixelSize);
-    return decode(data, maxPixelSize, false, STRIP_PIXELS);
+    return decode(data, maxPixelSize, false, PixelPipeline.STRIP_PIXELS);
   }
 
   /**
@@ -105,16 +75,16 @@ public final class HeicDecoder {
    */
   public static BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
     if (maxPixelSize <= 0) throw new IllegalArgumentException("maxPixelSize must be > 0: " + maxPixelSize);
-    return decode(data, maxPixelSize, true, STRIP_PIXELS);
+    return decode(data, maxPixelSize, true, PixelPipeline.STRIP_PIXELS);
   }
 
   /** @param stripPixels pixels rendered per strip (tests use other values to compare strip layouts) */
   static BufferedImage decode(byte[] data, int maxPixelSize, boolean allowEmbeddedThumbnail, int stripPixels) throws IOException {
-    checkInput(data);
-    try (Session session = new Session()) {
+    HeifInput.check(data);
+    try (Session session = new Session(bound())) {
       session.open(data);
-      Info info = session.info();
-      MemorySegment image = session.createThumbnail(thumbnailSide(info, maxPixelSize), allowEmbeddedThumbnail);
+      HeifImageInfo info = session.info();
+      long image = session.createThumbnail(thumbnailSide(info, maxPixelSize), allowEmbeddedThumbnail);
       return session.render(image, info.hasAlpha(), stripPixels);
     }
     catch (RuntimeException | LinkageError e) {
@@ -127,19 +97,12 @@ public final class HeicDecoder {
    * size, but large enough that the shorter side stays at least 2 pixels (ImageIO.framework returns no image for
    * smaller thumbnails) and never larger than the image.
    */
-  static int thumbnailSide(Info info, int maxPixelSize) {
+  static int thumbnailSide(HeifImageInfo info, int maxPixelSize) {
     int longest = Math.max(info.rawWidth(), info.rawHeight());
     if (maxPixelSize <= 0 || maxPixelSize >= longest) return longest;
     int shortest = Math.max(1, Math.min(info.rawWidth(), info.rawHeight()));
     long minimum = Math.max(3, (2L * longest + shortest - 1) / shortest);
     return (int) Math.min(longest, Math.max(maxPixelSize, minimum));
-  }
-
-  private static void checkInput(byte[] data) throws IOException {
-    if (data == null || data.length == 0) throw new IOException("Empty image data");
-    if (!HeifSniffer.isHeif(data, data.length)) throw new IOException("Not a HEIC/HEIF file");
-    String truncation = IsoBoxes.findTruncation(data);
-    if (truncation != null) throw new IOException("Truncated or corrupt HEIF file: " + truncation);
   }
 
   /** Whether ImageIO.framework read the data as a HEIF-family image (and not with another codec). */
@@ -151,176 +114,225 @@ public final class HeicDecoder {
     return new IOException("macOS ImageIO.framework is not available or failed: " + t, t);
   }
 
-  /** One decode: an autorelease pool, a confined arena and the CF objects to release, in that nesting. */
-  private static final class Session implements AutoCloseable {
-    private final Arena arena;
-    private final MemorySegment pool;
-    private final ArrayDeque<MemorySegment> owned = new ArrayDeque<>();
-    private MemorySegment source;
-    private String type;
-    private MemorySegment properties;
-    private long count;
-    private long index;
-    private Info info;
+  private static Bound bound() throws IOException {
+    try {
+      return Default.BOUND;
+    }
+    catch (LinkageError e) { // ExceptionInInitializerError / NoClassDefFoundError of the lazy holder
+      throw nativeFailure(e);
+    }
+  }
 
-    Session() {
-      pool = MacImageIO.autoreleasePoolPush(); // first touch of MacImageIO: may throw LinkageError
-      arena = Arena.ofConfined();
+  /** Lazy holder: the JNA binding is created (and the frameworks are opened) on the first decode. */
+  private static final class Default {
+    static final Bound BOUND = new Bound(new JnaMacApi());
+  }
+
+  static final int kCGImageAlphaNone = 0;
+  static final int kCGImageAlphaPremultipliedFirst = 2;
+  static final int kCGImageAlphaNoneSkipLast = 5;
+  static final int kCGImageAlphaNoneSkipFirst = 6;
+  static final int kCGBitmapByteOrder32Little = 2 << 12;
+  static final int kCGBlendModeCopy = 17;
+
+  /** A {@link MacApi} plus the constants the algorithm needs, resolved once. */
+  static final class Bound {
+    final MacApi api;
+    final long kCFBooleanTrue;
+    final long kCFBooleanFalse;
+    final long kCGImageSourceShouldCache;
+    final long kCGImageSourceShouldCacheImmediately;
+    final long kCGImageSourceCreateThumbnailFromImageAlways;
+    final long kCGImageSourceCreateThumbnailFromImageIfAbsent;
+    final long kCGImageSourceCreateThumbnailWithTransform;
+    final long kCGImageSourceThumbnailMaxPixelSize;
+    final long kCGImagePropertyPixelWidth;
+    final long kCGImagePropertyPixelHeight;
+    final long kCGImagePropertyOrientation;
+    final long kCGImagePropertyDepth;
+    final long kCGImagePropertyHasAlpha;
+    final long kCGColorSpaceSRGB;
+
+    Bound(MacApi api) {
+      this.api = api;
+      kCFBooleanTrue = api.constant(MacApi.Framework.CORE_FOUNDATION, "kCFBooleanTrue");
+      kCFBooleanFalse = api.constant(MacApi.Framework.CORE_FOUNDATION, "kCFBooleanFalse");
+      kCGImageSourceShouldCache = imageIO("kCGImageSourceShouldCache");
+      kCGImageSourceShouldCacheImmediately = imageIO("kCGImageSourceShouldCacheImmediately");
+      kCGImageSourceCreateThumbnailFromImageAlways = imageIO("kCGImageSourceCreateThumbnailFromImageAlways");
+      kCGImageSourceCreateThumbnailFromImageIfAbsent = imageIO("kCGImageSourceCreateThumbnailFromImageIfAbsent");
+      kCGImageSourceCreateThumbnailWithTransform = imageIO("kCGImageSourceCreateThumbnailWithTransform");
+      kCGImageSourceThumbnailMaxPixelSize = imageIO("kCGImageSourceThumbnailMaxPixelSize");
+      kCGImagePropertyPixelWidth = imageIO("kCGImagePropertyPixelWidth");
+      kCGImagePropertyPixelHeight = imageIO("kCGImagePropertyPixelHeight");
+      kCGImagePropertyOrientation = imageIO("kCGImagePropertyOrientation");
+      kCGImagePropertyDepth = imageIO("kCGImagePropertyDepth");
+      kCGImagePropertyHasAlpha = imageIO("kCGImagePropertyHasAlpha");
+      kCGColorSpaceSRGB = api.constant(MacApi.Framework.CORE_GRAPHICS, "kCGColorSpaceSRGB");
     }
 
-    private MemorySegment own(MemorySegment ref) {
-      if (!isNull(ref)) owned.push(ref);
+    private long imageIO(String symbol) {
+      return api.constant(MacApi.Framework.IMAGE_IO, symbol);
+    }
+  }
+
+  /** One decode: an autorelease pool and the CF objects / native buffer to release, in that nesting. */
+  private static final class Session implements AutoCloseable {
+    private final Bound k;
+    private final MacApi api;
+    private final long pool;
+    private final ArrayDeque<Long> owned = new ArrayDeque<>();
+    private long buffer;
+    private long source;
+    private String type;
+    private long properties;
+    private long count;
+    private long index;
+    private HeifImageInfo info;
+
+    Session(Bound bound) {
+      k = bound;
+      api = bound.api;
+      pool = api.autoreleasePoolPush();
+    }
+
+    private long own(long ref) {
+      if (ref != 0) owned.push(ref);
       return ref;
     }
 
     void open(byte[] bytes) throws IOException {
-      MemorySegment nativeBytes = arena.allocateFrom(JAVA_BYTE, bytes);
-      MemorySegment data = own(MacImageIO.cfDataCreate(nativeBytes, bytes.length));
-      if (isNull(data)) throw new IOException("CFDataCreate failed");
+      long data = own(api.cfDataCreate(bytes));
+      if (data == 0) throw new IOException("CFDataCreate failed");
 
-      MemorySegment options = dictionary(MacImageIO.kCGImageSourceShouldCache, Boolean.FALSE);
-      source = own(MacImageIO.cgImageSourceCreateWithData(data, options));
-      if (isNull(source)) throw new IOException("Not an image that ImageIO.framework can read");
-      type = MacImageIO.cfString(arena, MacImageIO.cgImageSourceGetType(source));
+      long options = dictionary(k.kCGImageSourceShouldCache, Boolean.FALSE);
+      source = own(api.cgImageSourceCreateWithData(data, options));
+      if (source == 0) throw new IOException("Not an image that ImageIO.framework can read");
+      type = api.cfString(api.cgImageSourceGetType(source));
       if (!isHeifType(type)) throw new IOException("Not a HEIF image (ImageIO.framework type " + type + ")");
 
-      count = MacImageIO.cgImageSourceGetCount(source);
-      if (count < 1) throw new IOException("No image found (image source status " + MacImageIO.cgImageSourceGetStatus(source) + ")");
-      long primary = MacImageIO.cgImageSourceGetPrimaryImageIndex(source);
+      count = api.cgImageSourceGetCount(source);
+      if (count < 1) throw new IOException("No image found (image source status " + api.cgImageSourceGetStatus(source) + ")");
+      long primary = api.cgImageSourceGetPrimaryImageIndex(source);
       index = primary >= 0 && primary < count ? primary : 0;
 
-      properties = own(MacImageIO.cgImageSourceCopyPropertiesAtIndex(source, index, MemorySegment.NULL));
-      if (isNull(properties)) {
-        throw new IOException("Cannot read image properties (image source status " + MacImageIO.cgImageSourceGetStatus(source) + ")");
+      properties = own(api.cgImageSourceCopyPropertiesAtIndex(source, index, 0));
+      if (properties == 0) {
+        throw new IOException("Cannot read image properties (image source status " + api.cgImageSourceGetStatus(source) + ")");
       }
     }
 
-    Info info() throws IOException {
+    HeifImageInfo info() throws IOException {
       if (info != null) return info;
-      long width = property(MacImageIO.kCGImagePropertyPixelWidth, -1);
-      long height = property(MacImageIO.kCGImagePropertyPixelHeight, -1);
+      long width = property(k.kCGImagePropertyPixelWidth, -1);
+      long height = property(k.kCGImagePropertyPixelHeight, -1);
       if (width <= 0 || height <= 0 || width > Integer.MAX_VALUE || height > Integer.MAX_VALUE) {
         throw new IOException("Invalid image size " + width + "x" + height);
       }
-      long orientation = property(MacImageIO.kCGImagePropertyOrientation, 1);
+      long orientation = property(k.kCGImagePropertyOrientation, 1);
       if (orientation < 1 || orientation > 8) orientation = 1;
-      int depth = (int) property(MacImageIO.kCGImagePropertyDepth, -1);
+      int depth = (int) property(k.kCGImagePropertyDepth, -1);
       // kCGImagePropertyHasAlpha is only present when the file has alpha. Thumbnails are always RGBA, so when the
       // property is missing, ask a lazily created (not yet decoded) image for its alpha info instead.
-      long hasAlpha = property(MacImageIO.kCGImagePropertyHasAlpha, -1);
+      long hasAlpha = property(k.kCGImagePropertyHasAlpha, -1);
       boolean alpha = hasAlpha >= 0 ? hasAlpha != 0 : lazyImageHasAlpha();
-      info = new Info(type, (int) Math.min(count, Integer.MAX_VALUE), (int) index, (int) width, (int) height,
-                      (int) orientation, depth, alpha);
+      info = new HeifImageInfo(type, (int) Math.min(count, Integer.MAX_VALUE), (int) index, (int) width, (int) height,
+                               (int) orientation, depth, alpha);
       return info;
     }
 
-    private long property(MemorySegment key, long defaultValue) {
-      return MacImageIO.cfLongValue(arena, MacImageIO.cfDictionaryGetValue(properties, key), defaultValue);
+    private long property(long key, long defaultValue) {
+      return api.cfLongValue(api.cfDictionaryGetValue(properties, key), defaultValue);
     }
 
     private boolean lazyImageHasAlpha() {
-      MemorySegment lazy = MacImageIO.cgImageSourceCreateImageAtIndex(source, index, MemorySegment.NULL);
-      if (isNull(lazy)) return false;
+      long lazy = api.cgImageSourceCreateImageAtIndex(source, index, 0);
+      if (lazy == 0) return false;
       try {
-        int alphaInfo = MacImageIO.cgImageGetAlphaInfo(lazy);
-        return alphaInfo != MacImageIO.kCGImageAlphaNone
-               && alphaInfo != MacImageIO.kCGImageAlphaNoneSkipLast
-               && alphaInfo != MacImageIO.kCGImageAlphaNoneSkipFirst;
+        int alphaInfo = api.cgImageGetAlphaInfo(lazy);
+        return alphaInfo != kCGImageAlphaNone && alphaInfo != kCGImageAlphaNoneSkipLast && alphaInfo != kCGImageAlphaNoneSkipFirst;
       }
       finally {
-        MacImageIO.cfRelease(lazy);
+        api.cfRelease(lazy);
       }
     }
 
-    MemorySegment createThumbnail(int maxPixelSize, boolean allowEmbeddedThumbnail) throws IOException {
-      MemorySegment options = dictionary(
-          allowEmbeddedThumbnail ? MacImageIO.kCGImageSourceCreateThumbnailFromImageIfAbsent
-                                 : MacImageIO.kCGImageSourceCreateThumbnailFromImageAlways, Boolean.TRUE,
-          MacImageIO.kCGImageSourceCreateThumbnailWithTransform, Boolean.TRUE,
-          MacImageIO.kCGImageSourceThumbnailMaxPixelSize, (long) maxPixelSize,
-          MacImageIO.kCGImageSourceShouldCacheImmediately, Boolean.TRUE);
-      MemorySegment image = own(MacImageIO.cgImageSourceCreateThumbnailAtIndex(source, index, options));
-      if (isNull(image)) {
+    long createThumbnail(int maxPixelSize, boolean allowEmbeddedThumbnail) throws IOException {
+      long options = dictionary(
+          allowEmbeddedThumbnail ? k.kCGImageSourceCreateThumbnailFromImageIfAbsent
+                                 : k.kCGImageSourceCreateThumbnailFromImageAlways, Boolean.TRUE,
+          k.kCGImageSourceCreateThumbnailWithTransform, Boolean.TRUE,
+          k.kCGImageSourceThumbnailMaxPixelSize, (long) maxPixelSize,
+          k.kCGImageSourceShouldCacheImmediately, Boolean.TRUE);
+      long image = own(api.cgImageSourceCreateThumbnailAtIndex(source, index, options));
+      if (image == 0) {
         throw new IOException("ImageIO.framework could not decode the image (image source status "
-                              + MacImageIO.cgImageSourceGetStatus(source) + ")");
+                              + api.cgImageSourceGetStatus(source) + ")");
       }
       return image;
     }
 
     /** Draws {@code image} into sRGB 8-bit strips and copies them into a new {@link BufferedImage}. */
-    BufferedImage render(MemorySegment image, boolean alpha, int stripPixels) throws IOException {
-      long w = MacImageIO.cgImageGetWidth(image);
-      long h = MacImageIO.cgImageGetHeight(image);
-      if (w <= 0 || h <= 0 || w * h > MAX_IMAGE_PIXELS) {
-        throw new IOException(String.format(Locale.ROOT, "Decoded image size %dx%d is not supported", w, h));
-      }
-      int width = (int) w;
-      int height = (int) h;
-      BufferedImage out = new BufferedImage(width, height, alpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+    BufferedImage render(long image, boolean alpha, int stripPixels) throws IOException {
+      BufferedImage out = PixelPipeline.newImage(api.cgImageGetWidth(image), api.cgImageGetHeight(image), alpha);
+      int width = out.getWidth();
+      int height = out.getHeight();
 
-      int stripRows = Math.max(1, Math.min(height, stripPixels / width));
+      int stripRows = PixelPipeline.stripRows(width, height, stripPixels);
       long bytesPerRow = 4L * width;
-      MemorySegment buffer = arena.allocate(bytesPerRow * stripRows, 16);
+      buffer = api.malloc(bytesPerRow * stripRows);
+      if (buffer == 0) throw new IOException("Cannot allocate " + bytesPerRow * stripRows + " bytes of native memory");
 
-      MemorySegment colorSpace = own(MacImageIO.cgColorSpaceCreateWithName(MacImageIO.kCGColorSpaceSRGB));
-      if (isNull(colorSpace)) throw new IOException("Cannot create the sRGB color space");
+      long colorSpace = own(api.cgColorSpaceCreateWithName(k.kCGColorSpaceSRGB));
+      if (colorSpace == 0) throw new IOException("Cannot create the sRGB color space");
       // Little-endian 32-bit BGRA == int 0xAARRGGBB, i.e. the TYPE_INT_ARGB_PRE / TYPE_INT_RGB layouts.
-      int bitmapInfo = (alpha ? MacImageIO.kCGImageAlphaPremultipliedFirst : MacImageIO.kCGImageAlphaNoneSkipFirst)
-                       | MacImageIO.kCGBitmapByteOrder32Little;
-      MemorySegment context = own(MacImageIO.cgBitmapContextCreate(buffer, width, stripRows, 8, bytesPerRow, colorSpace, bitmapInfo));
-      if (isNull(context)) throw new IOException("Cannot create a " + width + "x" + stripRows + " bitmap context");
-      MacImageIO.cgContextSetBlendMode(context, MacImageIO.kCGBlendModeCopy); // overwrite, never blend with stale rows
+      int bitmapInfo = (alpha ? kCGImageAlphaPremultipliedFirst : kCGImageAlphaNoneSkipFirst) | kCGBitmapByteOrder32Little;
+      long context = own(api.cgBitmapContextCreate(buffer, width, stripRows, 8, bytesPerRow, colorSpace, bitmapInfo));
+      if (context == 0) throw new IOException("Cannot create a " + width + "x" + stripRows + " bitmap context");
+      api.cgContextSetBlendMode(context, kCGBlendModeCopy); // overwrite, never blend with stale rows
 
-      MemorySegment rect = arena.allocate(MacImageIO.CG_RECT);
       int[] pixels = new int[width * stripRows];
-      WritableRaster raster = out.getRaster();
       for (int y0 = 0; y0 < height; y0 += stripRows) {
         int rows = Math.min(stripRows, height - y0);
         if (stripRows < height) {
           // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped
           // view (it shares the already decoded pixels) into the top `rows` rows of the context instead.
-          MacImageIO.setRect(rect, 0, y0, width, rows); // image space, origin top-left
-          MemorySegment strip = MacImageIO.cgImageCreateWithImageInRect(image, rect);
-          if (isNull(strip)) throw new IOException("CGImageCreateWithImageInRect failed");
+          long strip = api.cgImageCreateWithImageInRect(image, 0, y0, width, rows); // image space, origin top-left
+          if (strip == 0) throw new IOException("CGImageCreateWithImageInRect failed");
           try {
-            MacImageIO.setRect(rect, 0, stripRows - rows, width, rows); // context space, origin bottom-left
-            MacImageIO.cgContextDrawImage(context, rect, strip);
+            api.cgContextDrawImage(context, 0, stripRows - rows, width, rows, strip); // context space, origin bottom-left
           }
           finally {
-            MacImageIO.cfRelease(strip);
+            api.cfRelease(strip);
           }
         }
         else {
-          MacImageIO.setRect(rect, 0, 0, width, height);
-          MacImageIO.cgContextDrawImage(context, rect, image);
+          api.cgContextDrawImage(context, 0, 0, width, height, image);
         }
-        int count = width * rows;
-        MemorySegment.copy(buffer, JAVA_INT, 0, pixels, 0, count);
-        if (alpha) unpremultiply(pixels, count);
-        // setDataElements keeps the image "managed" (unlike wrapping our own array in a DataBuffer).
-        raster.setDataElements(0, y0, width, rows, pixels);
+        api.readInts(buffer, pixels, width * rows);
+        PixelPipeline.writeArgbRows(out, y0, rows, pixels, alpha); // un-premultiplies images with alpha
       }
       return out;
     }
 
     /** Builds a CFDictionary from key/value pairs; values are {@link Boolean} or {@link Long}. Released on close. */
-    private MemorySegment dictionary(Object... keyValues) {
-      MemorySegment dictionary = own(MacImageIO.cfDictionaryCreateMutable(keyValues.length / 2));
-      if (isNull(dictionary)) throw new IllegalStateException("CFDictionaryCreateMutable failed");
+    private long dictionary(Object... keyValues) {
+      long dictionary = own(api.cfDictionaryCreateMutable(keyValues.length / 2));
+      if (dictionary == 0) throw new IllegalStateException("CFDictionaryCreateMutable failed");
       for (int i = 0; i < keyValues.length; i += 2) {
-        MemorySegment key = (MemorySegment) keyValues[i];
+        long key = (Long) keyValues[i];
         Object value = keyValues[i + 1];
-        if (value instanceof Boolean b) {
-          MacImageIO.cfDictionarySetValue(dictionary, key, b ? MacImageIO.kCFBooleanTrue : MacImageIO.kCFBooleanFalse);
+        if (value instanceof Boolean) {
+          api.cfDictionarySetValue(dictionary, key, (Boolean) value ? k.kCFBooleanTrue : k.kCFBooleanFalse);
         }
-        else if (value instanceof Long l) {
-          MemorySegment number = MacImageIO.cfNumberCreateSInt64(arena, l);
-          if (isNull(number)) throw new IllegalStateException("CFNumberCreate failed");
+        else if (value instanceof Long) {
+          long number = api.cfNumberCreateSInt64((Long) value);
+          if (number == 0) throw new IllegalStateException("CFNumberCreate failed");
           try {
-            MacImageIO.cfDictionarySetValue(dictionary, key, number); // the dictionary retains the number
+            api.cfDictionarySetValue(dictionary, key, number); // the dictionary retains the number
           }
           finally {
-            MacImageIO.cfRelease(number);
+            api.cfRelease(number);
           }
         }
         else {
@@ -334,35 +346,17 @@ public final class HeicDecoder {
     public void close() {
       try {
         while (!owned.isEmpty()) {
-          MacImageIO.cfRelease(owned.pop());
+          api.cfRelease(owned.pop()); // the bitmap context is released before the buffer it draws into
         }
       }
       finally {
         try {
-          MacImageIO.autoreleasePoolPop(pool);
+          api.free(buffer);
         }
         finally {
-          arena.close(); // after the bitmap context that points into the arena has been released
+          api.autoreleasePoolPop(pool);
         }
       }
-    }
-  }
-
-  /** Converts premultiplied 0xAARRGGBB to straight alpha in place. */
-  static void unpremultiply(int[] pixels, int count) {
-    for (int i = 0; i < count; i++) {
-      int p = pixels[i];
-      int a = p >>> 24;
-      if (a == 255) continue;
-      if (a == 0) {
-        pixels[i] = 0;
-        continue;
-      }
-      int half = a >> 1;
-      int r = Math.min(255, (((p >> 16) & 0xFF) * 255 + half) / a);
-      int g = Math.min(255, (((p >> 8) & 0xFF) * 255 + half) / a);
-      int b = Math.min(255, ((p & 0xFF) * 255 + half) / a);
-      pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
     }
   }
 }

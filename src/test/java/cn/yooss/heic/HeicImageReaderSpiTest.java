@@ -1,6 +1,8 @@
 package cn.yooss.heic;
 
-import cn.yooss.heic.mac.HeicDecoder;
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifBackendStatus;
+import cn.yooss.heic.backend.HeifImageInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -183,7 +185,7 @@ class HeicImageReaderSpiTest {
   @Test
   void readerUsesTheLimitsSupplier() throws IOException {
     List<Integer> requested = new ArrayList<>();
-    HeicBackend recording = new FakeBackend(600, 400, false) {
+    HeifBackend recording = new FakeBackend(600, 400, false) {
       @Override
       public BufferedImage decode(byte[] data, int maxPixelSize) {
         requested.add(maxPixelSize);
@@ -233,7 +235,7 @@ class HeicImageReaderSpiTest {
     assertEquals(32, pixelSize(new FakeBackend(10, 10, true)));
   }
 
-  private static int pixelSize(HeicBackend backend) throws IOException {
+  private static int pixelSize(HeifBackend backend) throws IOException {
     ImageReader reader = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, backend).createReaderInstance();
     try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")))) {
       reader.setInput(stream, true);
@@ -285,8 +287,36 @@ class HeicImageReaderSpiTest {
     return out.toByteArray();
   }
 
-  /** Renders the 600x400 quadrant layout at the size the reader asks for, like ImageIO.framework would. */
-  static class FakeBackend implements HeicBackend {
+  /** A backend without native code; decodeThumbnail delegates to decode. */
+  abstract static class TestBackend implements HeifBackend {
+    @Override
+    public String id() {
+      return "test";
+    }
+
+    @Override
+    public String displayName() {
+      return "test backend";
+    }
+
+    @Override
+    public HeifBackendStatus status() {
+      return HeifBackendStatus.available("test");
+    }
+
+    @Override
+    public HeifBackendStatus recheckStatus() {
+      return status();
+    }
+
+    @Override
+    public BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
+      return decode(data, maxPixelSize);
+    }
+  }
+
+  /** Renders the 600x400 quadrant layout at the size the reader asks for, like a system decoder would. */
+  static class FakeBackend extends TestBackend {
     private final int width, height;
     private final boolean alpha;
 
@@ -297,8 +327,8 @@ class HeicImageReaderSpiTest {
     }
 
     @Override
-    public HeicDecoder.Info readInfo(byte[] data) {
-      return new HeicDecoder.Info("public.heic", 1, 0, width, height, 1, 8, alpha);
+    public HeifImageInfo readInfo(byte[] data) {
+      return new HeifImageInfo("public.heic", 1, 0, width, height, 1, 8, alpha);
     }
 
     @Override
@@ -322,7 +352,7 @@ class HeicImageReaderSpiTest {
     }
   }
 
-  static final class FailingBackend implements HeicBackend {
+  static final class FailingBackend extends TestBackend {
     private final Supplier<Throwable> failure;
     int calls;
 
@@ -345,7 +375,7 @@ class HeicImageReaderSpiTest {
     }
 
     @Override
-    public HeicDecoder.Info readInfo(byte[] data) throws IOException {
+    public HeifImageInfo readInfo(byte[] data) throws IOException {
       throw fail();
     }
 

@@ -1,5 +1,7 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifBackends;
 import com.intellij.openapi.diagnostic.Logger;
 
 import javax.imageio.ImageReader;
@@ -21,13 +23,18 @@ import java.util.function.Supplier;
  * loads, so it only runs the pure-Java {@link HeifSniffer} and never throws; native code is touched only when a
  * HEIC image is actually read.
  * <p>
+ * Decoding is delegated to the {@link HeifBackend} of the running OS ({@link HeifBackends#current()}: macOS
+ * ImageIO.framework, Windows WIC, Linux libheif). The provider is registered on every OS; whether the system decoder is
+ * available is decided by the backend when an image is read (an unavailable decoder fails that read with an
+ * {@link java.io.IOException}, the IDE then shows "Image not loaded").
+ * <p>
  * The provider is registered programmatically by {@link HeicSupport}; there is deliberately no
  * {@code META-INF/services} entry (HeicSupport offers one to {@code ImageIO.scanForPlugins()} only when ImageIO uses a
  * registry other than {@code IIORegistry.getDefaultInstance()}).
  */
 public final class HeicImageReaderSpi extends ImageReaderSpi {
   static final String[] FORMAT_NAMES = {"heic", "HEIC", "heif", "HEIF"};
-  /** File extensions mapped to the "Image" file type (see META-INF/heic-viewer-macos.xml). */
+  /** File extensions mapped to the "Image" file type (see META-INF/plugin.xml). */
   public static final String[] SUFFIXES = {"heic", "heif", "hif", "heics"};
   static final String[] MIME_TYPES = {"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"};
   /** Larger inputs are left to other readers (and would not be worth decoding into an IDE preview). */
@@ -38,7 +45,8 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
   private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
   private final Supplier<DecodeLimits> limits;
-  private final HeicBackend backend;
+  /** {@code null}: the backend of the running OS, looked up for every reader ({@link HeifBackends#current()}). */
+  private final HeifBackend backend;
   /** The registry this provider was last registered in (see {@link #onRegistration}). */
   private volatile ServiceRegistry registry;
 
@@ -53,21 +61,21 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
 
   /** @param limits queried on every read, so a changed setting applies to the next image */
   public HeicImageReaderSpi(Supplier<DecodeLimits> limits) {
-    this(limits, HeicBackend.MAC_IMAGE_IO);
+    this(limits, null);
   }
 
-  HeicImageReaderSpi(Supplier<DecodeLimits> limits, HeicBackend backend) {
+  /** @param backend the decoder (tests), or {@code null} for {@link HeifBackends#current()} */
+  public HeicImageReaderSpi(Supplier<DecodeLimits> limits, HeifBackend backend) {
     super("ZhuJHua", "1.0", FORMAT_NAMES.clone(), SUFFIXES.clone(), MIME_TYPES.clone(),
           HeicImageReader.class.getName(), new Class<?>[]{ImageInputStream.class},
           null, false, null, null, null, null, false, null, null, null, null);
     this.limits = Objects.requireNonNull(limits, "limits");
-    this.backend = Objects.requireNonNull(backend, "backend");
+    this.backend = backend;
   }
 
-  /** The decoder needs macOS ImageIO.framework and the FFM API (Java 22+). */
-  public static boolean isSupportedPlatform() {
-    String os = System.getProperty("os.name", "");
-    return os.toLowerCase(Locale.ROOT).startsWith("mac") && Runtime.version().feature() >= 22;
+  /** The decoder readers of this provider use. Never loads native code. */
+  HeifBackend backend() {
+    return backend != null ? backend : HeifBackends.current();
   }
 
   @Override
@@ -130,7 +138,7 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
 
   @Override
   public ImageReader createReaderInstance(Object extension) {
-    return new HeicImageReader(this, limits, backend);
+    return new HeicImageReader(this, limits, backend());
   }
 
   /** Remembers the registry, so that {@link HeicSupport} can deregister an instance ImageIO created itself. */
@@ -151,6 +159,13 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
 
   @Override
   public String getDescription(Locale locale) {
-    return "HEIC/HEIF image reader (macOS ImageIO.framework)";
+    String decoder;
+    try {
+      decoder = backend().displayName();
+    }
+    catch (RuntimeException | LinkageError e) {
+      decoder = "system decoder";
+    }
+    return "HEIC/HEIF image reader (" + decoder + ")";
   }
 }

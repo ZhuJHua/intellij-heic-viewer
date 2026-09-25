@@ -2,6 +2,7 @@ package cn.yooss.heic;
 
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.util.Condition;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -10,6 +11,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** Needs the IDE's Application interface (Java 21 bytecode in 261). */
+@Tag("platform")
 class HeicFileTypeMappingRepairTest {
   /**
    * The repair waits in the EDT queue while a modal dialog (Settings | Plugins) is open. It must expire as soon as

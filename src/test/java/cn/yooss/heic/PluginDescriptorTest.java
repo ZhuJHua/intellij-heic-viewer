@@ -1,5 +1,6 @@
 package cn.yooss.heic;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -21,15 +22,14 @@ import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Keeps the plugin descriptors, the Java constants and the message bundles consistent: a mismatch would not fail the
- * build, but silently break dynamic loading (plugin id), settings (ids, texts) or the macOS-only part.
+ * Keeps the plugin descriptor, the Java constants and the message bundles consistent: a mismatch would not fail the
+ * build, but silently break dynamic loading (plugin id), settings (ids, texts) or loading on some operating systems.
  */
 class PluginDescriptorTest {
-  private static final String MACOS_CONFIG = "heic-viewer-macos.xml";
-
   @Test
   void pluginIdMatchesTheConstantUsedByTheDynamicPluginListener() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");
@@ -38,31 +38,39 @@ class PluginDescriptorTest {
     assertEquals("HEIC Viewer", text(plugin, "name"));
   }
 
+  /**
+   * Everything is declared in plugin.xml and loads on every OS (the backend decides at runtime whether a system decoder
+   * is available). An OS dependency, even an optional one, makes IntelliJ 2024.1-2025.1 refuse the plugin on the other
+   * systems, and an optional config file of an OS module that does not exist in the IDE is silently skipped.
+   */
   @Test
-  void everythingIsContributedThroughTheOptionalMacOsDependency() throws Exception {
+  void noOsDependencyAndNoOptionalConfigFiles() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");
-    List<Element> optional = new ArrayList<>();
+    List<String> dependencies = new ArrayList<>();
     for (Element depends : elements(plugin, "depends")) {
-      if ("true".equals(depends.getAttribute("optional"))) optional.add(depends);
+      dependencies.add(depends.getTextContent().trim());
+      assertEquals("", depends.getAttribute("optional"), "no optional dependencies: " + depends.getTextContent());
+      assertEquals("", depends.getAttribute("config-file"), "no config files: " + depends.getTextContent());
     }
-    assertEquals(1, optional.size(), "exactly one optional dependency");
-    assertEquals("com.intellij.modules.os.mac", optional.getFirst().getTextContent().trim());
-    assertEquals(MACOS_CONFIG, optional.getFirst().getAttribute("config-file"));
-    assertEquals(0, plugin.getElementsByTagName("extensions").getLength(), "extensions belong into " + MACOS_CONFIG);
-    assertEquals(0, plugin.getElementsByTagName("applicationListeners").getLength(), "listeners belong into " + MACOS_CONFIG);
+    assertEquals(List.of("com.intellij.modules.platform", "com.intellij.platform.images"), dependencies);
+    assertEquals(1, plugin.getElementsByTagName("extensions").getLength());
+    assertEquals(1, plugin.getElementsByTagName("applicationListeners").getLength());
+    assertNull(PluginDescriptorTest.class.getClassLoader().getResource("META-INF/heic-viewer-macos.xml"),
+               "the former macOS-only config file must be gone");
   }
 
   @Test
   void fileTypeExtensionsMatchTheReaderSuffixes() throws Exception {
-    List<Element> fileTypes = elements(parse("META-INF/" + MACOS_CONFIG), "fileType");
+    List<Element> fileTypes = elements(parse("META-INF/plugin.xml"), "fileType");
     assertEquals(1, fileTypes.size());
-    assertEquals("Image", fileTypes.getFirst().getAttribute("name"));
-    assertEquals(String.join(";", HeicImageReaderSpi.SUFFIXES), fileTypes.getFirst().getAttribute("extensions"));
+    assertEquals("Image", fileTypes.get(0).getAttribute("name"));
+    assertEquals("", fileTypes.get(0).getAttribute("implementationClass"), "merged into the platform's Image file type");
+    assertEquals(String.join(";", HeicImageReaderSpi.SUFFIXES), fileTypes.get(0).getAttribute("extensions"));
   }
 
   @Test
   void advancedSettingsMatchTheConstantsAndHaveTextsInEveryBundle() throws Exception {
-    List<Element> settings = elements(parse("META-INF/" + MACOS_CONFIG), "advancedSetting");
+    List<Element> settings = elements(parse("META-INF/plugin.xml"), "advancedSetting");
     Set<String> ids = new TreeSet<>();
     for (Element setting : settings) {
       ids.add(setting.getAttribute("id"));
@@ -83,27 +91,46 @@ class PluginDescriptorTest {
     }
   }
 
+  /** Loads the listener and extension classes, whose IDE supertypes are Java 21 bytecode in the IDE compiled against. */
   @Test
+  @Tag("platform")
   void referencedClassesExist() throws Exception {
-    Document config = parse("META-INF/" + MACOS_CONFIG);
     List<String> classes = new ArrayList<>();
-    for (Element listener : elements(config, "listener")) classes.add(listener.getAttribute("class"));
-    for (Element provider : elements(config, "fileIconProvider")) classes.add(provider.getAttribute("implementation"));
-    for (Element provider : elements(config, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
+    for (String name : implementationClasses(parse("META-INF/plugin.xml"))) {
+      classes.add(name);
+      Class.forName(name, false, getClass().getClassLoader());
+    }
+    assertEquals(6, classes.size(), classes::toString);
+  }
+
+  @Test
+  void referencedClassesArePluginClasses() throws Exception {
+    List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
     assertEquals(6, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
-      Class.forName(name, false, getClass().getClassLoader());
+      assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);
     }
+  }
+
+  private static List<String> implementationClasses(Document plugin) {
+    List<String> classes = new ArrayList<>();
+    for (Element listener : elements(plugin, "listener")) classes.add(listener.getAttribute("class"));
+    for (Element provider : elements(plugin, "fileIconProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element provider : elements(plugin, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element group : elements(plugin, "notificationGroup")) {
+      if (!group.getAttribute("implementation").isEmpty()) classes.add(group.getAttribute("implementation"));
+    }
+    return classes;
   }
 
   /** The reader registration hook only runs for Image files (the file type the HEIC extensions are merged into). */
   @Test
   void readerRegistrarIsAskedForImageFilesOnly() throws Exception {
-    List<Element> providers = elements(parse("META-INF/" + MACOS_CONFIG), "fileEditorProvider");
+    List<Element> providers = elements(parse("META-INF/plugin.xml"), "fileEditorProvider");
     assertEquals(1, providers.size());
-    assertEquals(HeicReaderRegistrar.class.getName(), providers.getFirst().getAttribute("implementation"));
-    assertEquals("Image", providers.getFirst().getAttribute("fileType"));
+    assertEquals("cn.yooss.heic.HeicReaderRegistrar", providers.get(0).getAttribute("implementation"));
+    assertEquals("Image", providers.get(0).getAttribute("fileType"));
   }
 
   private static Document parse(String resource) throws Exception {
@@ -126,12 +153,13 @@ class PluginDescriptorTest {
     ClassLoader loader = PluginDescriptorTest.class.getClassLoader();
     URL url;
     if (resource.equals("META-INF/plugin.xml")) {
-      // The IDE's own jars on the test classpath contain META-INF/plugin.xml files as well: take ours, next to the
-      // (uniquely named) macOS config file.
-      URL config = loader.getResource("META-INF/" + MACOS_CONFIG);
-      assertNotNull(config, MACOS_CONFIG);
-      String location = config.toString(); // file:... or jar:file:...!/META-INF/heic-viewer-macos.xml
-      url = URI.create(location.substring(0, location.length() - MACOS_CONFIG.length()) + "plugin.xml").toURL();
+      // The IDE's own jars on the test class path contain META-INF/plugin.xml files as well: take ours, from the
+      // resource root that holds our (uniquely named) message bundle.
+      String bundle = "messages/HeicBundle.properties";
+      URL anchor = loader.getResource(bundle);
+      assertNotNull(anchor, bundle);
+      String location = anchor.toString(); // file:... or jar:file:...!/messages/HeicBundle.properties
+      url = URI.create(location.substring(0, location.length() - bundle.length()) + resource).toURL();
     }
     else {
       url = loader.getResource(resource);
@@ -143,7 +171,7 @@ class PluginDescriptorTest {
   private static String text(Document document, String tag) {
     List<Element> found = elements(document, tag);
     assertEquals(1, found.size(), tag);
-    return found.getFirst().getTextContent().trim();
+    return found.get(0).getTextContent().trim();
   }
 
   private static List<Element> elements(Document document, String tag) {

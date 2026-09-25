@@ -3,7 +3,9 @@ package cn.yooss.heic.thumbnail;
 import cn.yooss.heic.HeicImageReaderSpi;
 import cn.yooss.heic.HeicSettings;
 import cn.yooss.heic.HeifSniffer;
-import cn.yooss.heic.mac.HeicDecoder;
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifBackendStatus;
+import cn.yooss.heic.backend.HeifBackends;
 import com.intellij.ide.ui.VirtualFileAppearanceListener;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
@@ -112,7 +114,6 @@ public final class HeicThumbnails {
   private static @Nullable HeicThumbnails getInstance() {
     HeicThumbnails result = instance;
     if (result != null || shutDown) return result;
-    if (!HeicImageReaderSpi.isSupportedPlatform()) return null;
     synchronized (LOCK) {
       if (instance == null && !shutDown) instance = new HeicThumbnails();
       return instance;
@@ -134,18 +135,23 @@ public final class HeicThumbnails {
    */
   private @Nullable Icon load(@NotNull VirtualFile file, @NotNull ThumbnailKey key) throws IOException {
     if (disposed || !file.isValid() || !HeicSettings.projectViewThumbnails()) return null;
+    // The first call probes the system decoder (here, off the EDT). Without one the file is not even read; the failure
+    // is cached per file until refreshAll() (e.g. after the missing decoder was installed).
+    HeifBackend backend = HeifBackends.current();
+    HeifBackendStatus status = backend.status();
+    if (!status.isAvailable()) throw new IOException(backend.displayName() + " is not available: " + status);
     byte[] data = readHeifFile(file.toNioPath());
     if (disposed) return null; // the plugin is being unloaded: skip the native decode
-    BufferedImage decoded = HeicDecoder.decodeThumbnail(data, key.decodeSize());
+    BufferedImage decoded = backend.decodeThumbnail(data, key.decodeSize());
     Image image = ThumbnailRenderer.renderIcon(decoded, key.iconSize(), key.scales());
     return new JBImageIcon(image);
   }
 
   /**
    * Reads the file directly (not through the VFS, whose content cache must not fill up with photos), but only if its
-   * header is a HEIC/HEIF {@code ftyp} box: ImageIO.framework picks the codec by content, and a file that is merely
-   * named {@code *.heic} (really a PSD, TIFF, TGA ...) must not reach other native codecs just because its folder is
-   * shown. The image viewer applies the same check ({@link HeicImageReaderSpi#canDecodeInput}). Anything else is read
+   * header is a HEIC/HEIF {@code ftyp} box: system decoders (ImageIO.framework, WIC) pick the codec by content, and a
+   * file that is merely named {@code *.heic} (really a PSD, TIFF, TGA ...) must not reach other native codecs just
+   * because its folder is shown. The image viewer applies the same check ({@link HeicImageReaderSpi#canDecodeInput}). Anything else is read
    * no further than the header and fails with an {@link IOException}.
    */
   static byte[] readHeifFile(Path path) throws IOException {
@@ -205,6 +211,14 @@ public final class HeicThumbnails {
    * the project view, editor tabs and navigation bar switch between thumbnails and the default icon right away.
    */
   static void settingChanged() {
+    refreshAll();
+  }
+
+  /**
+   * Drops all icons and cached failures and refreshes every file whose icon was asked for: after the thumbnails
+   * setting was toggled, or after the system decoder became available (see {@code HeicDecoderAvailability}).
+   */
+  public static void refreshAll() {
     HeicThumbnails thumbnails = instance;
     if (thumbnails == null || thumbnails.disposed) return;
     thumbnails.loader.clear();

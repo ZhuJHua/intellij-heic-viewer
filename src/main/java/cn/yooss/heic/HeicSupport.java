@@ -10,7 +10,6 @@ import javax.imageio.spi.ServiceRegistry;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
@@ -57,15 +56,14 @@ public final class HeicSupport {
   private HeicSupport() {
   }
 
-  /** Registers the reader if it is not registered yet. Returns {@code true} if the reader is registered afterwards. */
+  /**
+   * Registers the reader if it is not registered yet, on every OS: whether the system decoder can be used is decided
+   * by the backend when an image is read ({@link cn.yooss.heic.backend.HeifBackend#status()}). Returns {@code true} if
+   * the reader is registered afterwards ({@code false} only after {@link #shutDown()}).
+   */
   public static synchronized boolean register() {
     if (registered != null) return true;
     if (shutDown) return false; // this class loader is being unloaded: a new registration would pin it
-    if (!HeicImageReaderSpi.isSupportedPlatform()) {
-      LOG.info("HEIC Viewer is not available: requires macOS and Java 22+ (os.name=" + System.getProperty("os.name")
-               + ", java=" + Runtime.version() + ")");
-      return false;
-    }
     register(new HeicImageReaderSpi(HeicSettings::decodeLimits));
     return true;
   }
@@ -78,8 +76,19 @@ public final class HeicSupport {
     registered = spi;
     registeredIn = registry;
     List<String> others = preferOverOtherHeifReaders(registry, spi);
-    LOG.info("HEIC ImageReaderSpi registered" + (others.isEmpty() ? "" : "; preferred over " + others));
+    LOG.info("HEIC ImageReaderSpi registered (decoder: " + decoderName(spi) + ", " + System.getProperty("os.name") + " "
+             + System.getProperty("os.arch") + ", Java " + System.getProperty("java.version") + ")"
+             + (others.isEmpty() ? "" : "; preferred over " + others));
     makeVisibleToImageIO(registry);
+  }
+
+  private static String decoderName(HeicImageReaderSpi spi) {
+    try {
+      return spi.backend().displayName();
+    }
+    catch (RuntimeException | LinkageError e) {
+      return "unknown (" + e + ")";
+    }
   }
 
   /** Deregisters the reader (idempotent), from ImageIO's own registry as well if it had to be added there. */
@@ -217,7 +226,8 @@ public final class HeicSupport {
         }
       };
       try {
-        serviceFile = URL.of(URI.create("heic-viewer:/" + SERVICE_FILE), inMemory);
+        // new URL(context, spec, handler): URL.of(URI, handler) needs Java 20.
+        serviceFile = new URL(null, "heic-viewer:/" + SERVICE_FILE, inMemory);
       }
       catch (MalformedURLException e) {
         throw new IllegalStateException(e);
