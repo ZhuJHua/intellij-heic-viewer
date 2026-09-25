@@ -16,7 +16,7 @@
 - Supports IntelliJ-based IDEs 2024.1 and newer (Android Studio Koala 2024.1.1 and newer; previously 2026.1.4 / Android Studio Quail 3): the macOS decoder is called through the JNA library that comes with the IDE instead of the Java FFM API, and the plugin is compiled for Java 17.
 - The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime, in the background. The plugin still bundles no decoder and no native code.
 
-## [0.1.0]
+## [0.1.0] - 2026-09-25
 
 ### Added
 
@@ -28,3 +28,6 @@
 - Installs, updates and uninstalls without an IDE restart.
 - Repairs the `.heic` file type mapping if the IDE dropped it while the plugin was unloaded (IJPL-39443).
 - Robust reader registration: HEIC images also load when a startup race in `javax.imageio` leaves the IDE with two image reader registries; the condition is logged.
+
+[Unreleased]: https://github.com/ZhuJHua/intellij-heic-viewer/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/ZhuJHua/intellij-heic-viewer/commits/0.1.0
