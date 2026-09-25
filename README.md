@@ -141,7 +141,8 @@ the commands above for the other distributions.
   App, a tarball or a Snap (JetBrains' Snaps use classic confinement, so the system's libraries are found as usual), or
   set the path below to a libheif inside the sandbox.
 - **Other locations** (a libheif you built, another prefix): *Settings | Advanced Settings | HEIC Viewer | libheif
-  library* takes the path of `libheif.so.1` or of the directory that contains it.
+  library* takes the path of `libheif.so.1` or of the directory that contains it. Once a libheif is loaded, a
+  different one is only used after an IDE restart: two libheif versions in one process could crash the IDE.
 - `idea.log` tells what was found: `HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with
   libde265 HEVC decoder ...`, or which libraries were tried, or the plugin directories searched for an HEVC decoder.
 
@@ -164,7 +165,7 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 |---|---|---|
 | Maximum decoded image size (megapixels, 1–512). Larger images are downscaled while decoding; the longer side is also limited to 16384 pixels. The image viewer always asks for full resolution and the diff decodes two images at once, so this bounds memory use. | `heic.viewer.max.megapixels` | 64 |
 | Show thumbnails as HEIC file icons. Applies as soon as the settings dialog is closed. | `heic.viewer.project.view.thumbnails` | on |
-| Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start or with *Check Again* in the banner or notification. | `heic.viewer.libheif.path` | empty: the system's libheif |
+| Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start; *Check Again* in the banner or notification applies it only while no libheif has been loaded in the IDE. | `heic.viewer.libheif.path` | empty: the system's libheif |
 
 ## Limitations and known issues
 

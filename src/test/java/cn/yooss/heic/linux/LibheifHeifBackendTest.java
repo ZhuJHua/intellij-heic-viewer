@@ -15,7 +15,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -136,6 +138,51 @@ class LibheifHeifBackendTest {
     assertTrue(status.detail().contains("has no HEVC decoder") && status.detail().contains("plugin directories"), status.detail());
     IOException e = assertThrows(IOException.class, () -> TestLibheif.backend().decode(Fixtures.bytes("rgb_libheif.heic"), 0));
     assertTrue(e.getMessage().contains("LINUX_HEVC_PLUGIN_MISSING"), e.getMessage());
+  }
+
+  /**
+   * Once a libheif is mapped in the process, a configured libheif that is another file is never opened: JNA opens
+   * libraries with RTLD_GLOBAL, so a second libheif would bind its plugins and its own functions to the first one and
+   * mix the objects of two versions. The loaded one stays in use, and the detail says that the configured one is used
+   * after a restart. The same file under another name is opened (dlopen returns the loaded library).
+   */
+  @Test
+  @EnabledIf("cn.yooss.heic.linux.TestLibheif#isLoadable")
+  void aSecondLibheifIsNeverOpenedNextToTheLoadedOne(@TempDir Path directory) throws IOException {
+    Path mapped = Files.createFile(directory.resolve("libheif.so.1")); // stands for the libheif mapped in the process
+    Path other = Files.createFile(Files.createDirectories(directory.resolve("other")).resolve("libheif.so.1"));
+    Path link = Files.createSymbolicLink(directory.resolve("libheif-link.so.1"), mapped);
+    String testLibrary = TestLibheif.candidates().get(0);
+    List<String> opened = new ArrayList<>();
+    Function<String, Libheif> opener = name -> {
+      opened.add(name);
+      if (name.equals(mapped.toString()) || name.equals(link.toString())) return Libheif.open(testLibrary);
+      throw new UnsatisfiedLinkError("a second libheif must not be opened: " + name);
+    };
+
+    LibheifHeifBackend backend = new LibheifHeifBackend(() -> List.of(other.toString()), () -> UBUNTU, false, opener, () -> mapped);
+    HeifBackendStatus status = backend.status();
+    assertEquals(List.of(mapped.toString()), opened, "only the loaded library itself");
+    assertTrue(status.isAvailable() || status.reason() == Reason.LINUX_HEVC_PLUGIN_MISSING, status.toString());
+    assertTrue(status.detail().contains(other + " is used after an IDE restart"), status.detail());
+    Libheif lib = backend.library();
+    assertNotNull(lib);
+    HeifBackendStatus again = backend.recheckStatus(); // "Check Again": the same library, not opened again
+    assertSame(lib, backend.library());
+    assertEquals(1, opened.size(), opened.toString());
+    assertTrue(again.detail().contains("is used after an IDE restart"), again.detail());
+
+    opened.clear();
+    LibheifHeifBackend sameFile = new LibheifHeifBackend(() -> List.of(link.toString()), () -> UBUNTU, false, opener, () -> mapped);
+    HeifBackendStatus sameStatus = sameFile.status();
+    assertEquals(List.of(link.toString()), opened);
+    assertFalse(sameStatus.detail().contains("IDE restart"), sameStatus.detail());
+
+    // Nothing mapped yet (the first load in the process): the configured path is opened.
+    opened.clear();
+    LibheifHeifBackend first = new LibheifHeifBackend(() -> List.of(other.toString()), () -> UBUNTU, false, opener, () -> null);
+    assertEquals(Reason.LINUX_LIBHEIF_MISSING, first.status().reason());
+    assertEquals(List.of(other.toString()), opened);
   }
 
   @Test

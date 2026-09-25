@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -36,7 +37,8 @@ import java.util.function.Supplier;
  *   <li>load libheif: the path configured in <i>Advanced Settings</i> ({@link HeicSettings#LIBHEIF_PATH}) if set,
  *   otherwise {@code libheif.so.1} and {@code heif} through the dynamic linker's search, then (NixOS) the system and
  *   user profiles; only a libheif 1.x is accepted (the ABI of {@code libheif.so.1}). If none loads:
- *   {@code LINUX_LIBHEIF_MISSING} with the attempts and errors in the detail;</li>
+ *   {@code LINUX_LIBHEIF_MISSING} with the attempts and errors in the detail. Once a libheif is loaded in the IDE
+ *   process, no other libheif file is opened (see below);</li>
  *   <li>{@code heif_init(NULL)} once (libheif 1.13+; it loads the codec plugins in 1.14+);</li>
  *   <li>{@code heif_have_decoder_for_format(heif_compression_HEVC)}. If there is none, the plugin directories are
  *   scanned again ({@code heif_load_plugins}, libheif 1.14+), so that "Check Again" finds a plugin installed after the
@@ -53,6 +55,15 @@ import java.util.function.Supplier;
  * one reference count per plugin load; the plugins stay loaded until the process ends (so after a reinstall of this
  * plugin, {@code dlopen} returns the same, still initialized library). {@link #dispose()} only drops the references to
  * JNA's objects.
+ * <p>
+ * <b>One libheif per process.</b> A loaded libheif can never really be unloaded (it is initialized, its plugins depend
+ * on it, and JNA may keep it), and JNA opens libraries with {@code RTLD_GLOBAL}. A second, different
+ * {@code libheif.so.1} opened next to it (the setting changed to another libheif, then "Check Again", or the plugin
+ * reloaded after that) would bind its plugins and its own exported functions to the first one, which mixes the objects
+ * of two versions and can crash the IDE. So once a libheif is mapped in the process ({@code /proc/self/maps}), a
+ * configured path that is another file is not opened: the loaded libheif stays in use, and the detail says that the
+ * configured one is used after an IDE restart. (Opening the same file, or a name without a slash, returns the loaded
+ * library.)
  */
 public final class LibheifHeifBackend extends AbstractHeifBackend {
   private static final String[] SYSTEM_LIBRARY_NAMES = {"libheif.so.1", "heif"};
@@ -60,6 +71,8 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
   private final Supplier<List<String>> candidates;
   private final Supplier<LinuxDistribution> distribution;
   private final boolean requireLinux;
+  private final Function<String, Libheif> opener;
+  private final Supplier<Path> mappedLibheif;
 
   // Guarded by the status lock of AbstractHeifBackend (probe); read by the decoding threads.
   private volatile @Nullable Libheif library;
@@ -79,9 +92,20 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
    */
   LibheifHeifBackend(@NotNull Supplier<List<String>> candidates, @NotNull Supplier<LinuxDistribution> distribution,
                      boolean requireLinux) {
+    this(candidates, distribution, requireLinux, Libheif::open, LibheifHeifBackend::mappedLibheif);
+  }
+
+  /**
+   * @param opener        opens a library ({@link Libheif#open}; tests record the calls)
+   * @param mappedLibheif the libheif file already mapped in the process, or {@code null} ({@link #mappedLibheif()})
+   */
+  LibheifHeifBackend(@NotNull Supplier<List<String>> candidates, @NotNull Supplier<LinuxDistribution> distribution,
+                     boolean requireLinux, @NotNull Function<String, Libheif> opener, @NotNull Supplier<Path> mappedLibheif) {
     this.candidates = candidates;
     this.distribution = distribution;
     this.requireLinux = requireLinux;
+    this.opener = opener;
+    this.mappedLibheif = mappedLibheif;
   }
 
   @Override
@@ -113,12 +137,36 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
 
     List<String> tried = candidates.get();
     Libheif lib = library;
+    String restartNote = null;
     if (lib == null || !tried.equals(libraryCandidates)) {
+      // Never a second, different libheif next to one that is loaded already (see the class comment).
+      Path mapped = mappedLibheif.get();
       List<String> failures = new ArrayList<>();
-      lib = null;
+      List<String> openable = new ArrayList<>();
       for (String candidate : tried) {
+        if (mapped != null && candidate.indexOf('/') >= 0 && !sameFile(mapped, candidate)) {
+          failures.add(candidate + " (not loaded: " + mapped + " is loaded in this IDE process already)");
+        }
+        else {
+          openable.add(candidate);
+        }
+      }
+      boolean deferred = openable.isEmpty() && mapped != null;
+      if (deferred) {
+        // Every candidate is another libheif: keep using the loaded one (dlopen of its own file returns it).
+        restartNote = String.join(", ", tried) + " is used after an IDE restart: " + mapped + " is loaded in this IDE "
+                      + "process already, and a second libheif next to it could crash the IDE";
+        openable.add(mapped.toString());
+      }
+      Libheif current = lib;
+      lib = null;
+      for (String candidate : openable) {
+        if (deferred && current != null) {
+          lib = current; // the loaded library itself: no second heif_init
+          break;
+        }
         try {
-          Libheif opened = Libheif.open(candidate);
+          Libheif opened = opener.apply(candidate);
           if (opened.majorVersion() == 1) {
             lib = opened;
             break;
@@ -137,18 +185,21 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
                        "Cannot load libheif on " + distro.prettyName() + ", tried: " + String.join("; ", failures)
                        + (note != null ? ". " + note : ""));
       }
-      initError = null;
-      try {
-        lib.init();
-      }
-      catch (LibheifException e) {
-        initError = e.getMessage(); // e.g. a plugin that cannot be loaded; the built-in codecs still work
+      if (lib != current) {
+        initError = null;
+        try {
+          lib.init();
+        }
+        catch (LibheifException e) {
+          initError = e.getMessage(); // e.g. a plugin that cannot be loaded; the built-in codecs still work
+        }
       }
       library = lib;
-      libraryCandidates = tried;
+      // Deferred: not remembered as loaded from the configured candidates, so every probe says it again.
+      libraryCandidates = deferred ? null : tried;
     }
 
-    String description = describe(lib);
+    String description = describe(lib) + (restartNote != null ? " (" + restartNote + ")" : "");
     boolean hevc = lib.hasHevcDecoder();
     if (!hevc && lib.canLoadPlugins()) {
       // "Check Again" after installing a plugin package: heif_init loaded the plugins only once.
@@ -245,13 +296,26 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
   }
 
   /** E.g. {@code "libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6)"}. */
-  private static String describe(Libheif lib) {
-    Path file = loadedFile(lib);
+  private String describe(Libheif lib) {
+    Path file = mappedLibheif.get();
     return "libheif " + lib.version() + " (" + (file != null ? file : lib.source) + ")";
   }
 
-  /** The file the library was loaded from ({@code /proc/self/maps}), or {@code null}. */
-  static @Nullable Path loadedFile(Libheif lib) {
+  /** Whether {@code candidate} is the file {@code mapped} (through symbolic links); {@code false} if unknown. */
+  static boolean sameFile(@NotNull Path mapped, @NotNull String candidate) {
+    try {
+      return Files.isSameFile(mapped, Paths.get(candidate));
+    }
+    catch (IOException | RuntimeException e) {
+      return false;
+    }
+  }
+
+  /**
+   * The libheif file mapped in this process ({@code /proc/self/maps}): loaded by this plugin, an earlier instance of
+   * it, or anything else in the IDE; {@code null} if there is none or this is not Linux.
+   */
+  static @Nullable Path mappedLibheif() {
     Path maps = Paths.get("/proc/self/maps");
     if (!Files.isReadable(maps)) return null;
     try (BufferedReader reader = Files.newBufferedReader(maps, StandardCharsets.UTF_8)) {
@@ -284,7 +348,7 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
       }
       return result;
     }
-    Path file = loadedFile(lib);
+    Path file = mappedLibheif();
     Path parent = file != null ? file.getParent() : null;
     if (parent != null) result.add(parent.resolve("libheif").resolve("plugins").toString());
     return result;

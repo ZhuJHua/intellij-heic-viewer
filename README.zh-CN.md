@@ -124,7 +124,8 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 - **Flatpak** 版 IDE 只能看到其 Flatpak 运行时中的库。请使用 JetBrains Toolbox App、tar.gz 包或 Snap 安装的 IDE
   （JetBrains 的 Snap 使用 classic 模式，照常能找到系统的库），或把下面的路径设置为沙箱内的 libheif。
 - **其它位置**（自行编译的 libheif、其它安装前缀）：在 *Settings | Advanced Settings | HEIC Viewer | libheif 库* 中填写
-  `libheif.so.1` 或其所在目录的路径。
+  `libheif.so.1` 或其所在目录的路径。一旦加载了某个 libheif，另一个 libheif 要在重启 IDE 后才会使用：同一进程中的两个 libheif
+  版本可能导致 IDE 崩溃。
 - `idea.log` 中会记录查找结果：`HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with
   libde265 HEVC decoder ...`，或者尝试过哪些库、在哪些插件目录中查找过 HEVC 解码器。
 
@@ -148,7 +149,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 - **用缩略图作为 HEIC 文件图标**（`heic.viewer.project.view.thumbnails`），默认开启。关闭后所有 HEIC 文件恢复为普通图片图标。
   修改在点击 OK/Apply 后生效：已显示的图标在设置对话框关闭后立即刷新（不需要重新打开项目）。
 - **libheif 库**（`heic.viewer.libheif.path`，仅 Linux），默认为空（使用系统的 libheif）。填写 `libheif.so.1` 或其所在目录的路径，
-  用于不在系统库路径中的 libheif（见 [Linux: libheif](#linux-libheif)）。下次启动 IDE 或点击横幅/通知中的“重新检测”后生效。
+  用于不在系统库路径中的 libheif（见 [Linux: libheif](#linux-libheif)）。下次启动 IDE 后生效；只有在 IDE 尚未加载任何 libheif 时，点击横幅/通知中的“重新检测”也会生效。
 
 ## 限制与已知问题
 
