@@ -114,6 +114,15 @@ jobs:
           ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
+      # The light-IDE tests (*PlatformIntegrationTest: the plugin inside the IntelliJ test framework, e.g. the decoder
+      # banner and notifications) need the `test` task, which only runs where the IDE compiled against has a build for
+      # the runner: not on the arm64 jobs, which compile against IntelliJ IDEA's x64 download.
+      - name: Light-IDE tests
+        if: ${{ !cancelled() && !matrix.platform }}
+        run: >
+          ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
+
       # Which native JNA directories the IDE provides (JNA can only be used in tests on the runner's architecture).
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}
