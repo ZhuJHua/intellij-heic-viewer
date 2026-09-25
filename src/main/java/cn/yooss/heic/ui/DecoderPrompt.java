@@ -101,7 +101,16 @@ public final class DecoderPrompt {
     HeifRemedy remedy = HeifRemedies.forStatus(status);
     if (remedy == null) return;
     String content = "<b>" + HeicBundle.message(remedy.titleKey()) + "</b><br>" + content(remedy);
+    if (isStoreExtension(remedy.reason())) {
+      // Whether a running process sees a Store package installed after it started is not verified: say what else helps.
+      content += "<br>" + HeicBundle.message("remedy.check.missing.restart");
+    }
     show(HeicBundle.message("remedy.check.missing.title"), content, NotificationType.WARNING, remedy, false, project);
+  }
+
+  private static boolean isStoreExtension(HeifBackendStatus.Reason reason) {
+    return reason == HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING
+           || reason == HeifBackendStatus.Reason.WINDOWS_HEVC_EXTENSION_MISSING;
   }
 
   /** Notification content: the explanation (HTML) and, if there is one, the command that installs the component. */

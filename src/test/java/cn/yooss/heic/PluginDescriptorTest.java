@@ -111,7 +111,8 @@ class PluginDescriptorTest {
                         "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
                         "remedy.action.copy.command", "remedy.action.open.settings", "remedy.action.check.again",
                         "remedy.action.learn.more", "remedy.action.report", "remedy.action.dont.show.again", "remedy.action.more",
-                        "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title"));
+                        "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title",
+                        "remedy.check.missing.restart"));
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
       for (String key : keys) {

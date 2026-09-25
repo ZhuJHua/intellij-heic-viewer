@@ -295,6 +295,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertEquals(HeicBundle.message("remedy.check.missing.title"), result.getTitle());
     assertEquals(NotificationType.WARNING, result.getType());
     assertTrue(result.getContent(), result.getContent().contains(HeicBundle.message(HeifRemedy.titleKey(Reason.WINDOWS_HEVC_EXTENSION_MISSING))));
+    assertTrue("a Store package may need a restart: " + result.getContent(),
+               result.getContent().contains(HeicBundle.message("remedy.check.missing.restart")));
     List<String> actions = new ArrayList<>();
     result.getActions().forEach(action -> actions.add(action.getTemplateText()));
     assertTrue(actions.toString(), actions.contains(HeicBundle.message("remedy.action.check.again")));
@@ -303,6 +305,12 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     EditorNotificationPanel panel = banner(file, editor);
     assertNotNull(panel);
     assertTrue(panel.getText(), panel.getText().contains("HEVC Video Extensions"));
+
+    // No restart hint where a re-check finds what was installed (Linux rescans the plugin directories).
+    notifications.clear();
+    DecoderPrompt.showStillMissing(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test"), getProject());
+    assertEquals(1, notifications.size());
+    assertFalse(notifications.get(0).getContent(), notifications.get(0).getContent().contains(HeicBundle.message("remedy.check.missing.restart")));
   }
 
   public void testMissingBalloonOncePerSessionAndNotWhenDismissed() {

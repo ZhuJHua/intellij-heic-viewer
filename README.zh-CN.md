@@ -31,8 +31,8 @@ JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework
 - 不需要重启即可安装、更新、卸载（0.1.0 已在 AS 2026.1.4 和 2026.2.2 Canary 1 的沙盒里验证：卸载时类加载器被回收；
   0.2.0 的单元测试在 JDK 17、21、25 上验证同样的事情）。
 - 缺少系统解码组件时（Windows 未安装扩展、Linux 未安装 libheif 或其 HEVC 解码器），HEIC 图片上方的横幅（差异对比和缩略图则是
-  每个会话最多一次的通知）会说明需要安装什么，提供 Microsoft Store 页面或安装命令、“重新检测”（安装后无需重启即可显示 HEIC）
-  和“了解详情”。
+  每个会话最多一次的通知）会说明需要安装什么，提供 Microsoft Store 页面或安装命令、“重新检测”（安装后无需重启即可显示 HEIC；
+  Windows 上如果刚安装后仍提示缺少扩展，请重启 IDE）和“了解详情”。
 - 不收集、不发送任何数据。
 
 ## 截图
@@ -80,7 +80,8 @@ Git 中修改过的 HEIC 文件左右对比：
 缺少其中之一时，HEIC 图片上方的横幅会说明缺少哪个，并提供“打开 Microsoft Store”和“重新检测”；“更多”中还有商店网页（适用于没有
 Store 应用的系统）、“了解详情”（本节），以及 HEIF 图像扩展的安装命令
 `winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements`（可复制）。安装后点“重新检测”，或直接切回 IDE，
-无需重启即可显示 HEIC 图片。
+无需重启即可显示 HEIC 图片。如果刚安装后“重新检测”仍提示缺少扩展，请重启 IDE：Windows 是否让已在运行的 IDE 使用之后安装的商店包，
+尚未验证。
 
 - 是否预装取决于 Windows 镜像和电脑厂商（GitHub Actions 的 Windows 11 25H2 镜像两者都有，Windows Server 2025 都没有）。
   在 PowerShell 中执行 `Get-AppxPackage *HEIFImageExtension*; Get-AppxPackage *HEVCVideoExtension*` 可以查看已安装的包。
@@ -153,7 +154,8 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 
 - 解码依赖操作系统自带的解码器。没有它时（Windows / Linux 未安装[环境要求](#环境要求)中的组件，或其它操作系统），HEIC 文件仍以图片类型打开，
   但显示 “Image not loaded”；图片上方的横幅（差异对比和缩略图则是每个会话最多一次的通知）会说明需要安装什么。点“重新检测”，
-  或打开商店页面/复制安装命令后回到 IDE，已打开的 HEIC 图片无需重启即可显示；已打开的差异对比需要重新打开。
+  或打开商店页面/复制安装命令后回到 IDE，已打开的 HEIC 图片无需重启即可显示（Windows 上如果仍提示缺少扩展，请重启 IDE）；
+  已打开的差异对比需要重新打开。
 - 颜色统一转换到 **sRGB**：Display P3 照片中超出 sRGB 的颜色会被裁剪。
 - **HDR 增益图（gain map）被忽略**，显示的是标准动态范围的基础图像。
 - 只显示文件的**主图**；多图文件、`.heics` 序列的其它帧、深度图等辅助图像不显示。

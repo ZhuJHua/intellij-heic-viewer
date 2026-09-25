@@ -33,7 +33,8 @@ native code, and does not send any data.
 - **Linux**: libheif 1.x with its HEVC decoder (libde265) from the distribution's packages.
 
 If a component is missing, a banner above the image says what to install, with a link to the Microsoft Store or the
-install command for your Linux distribution; *Check Again* then shows the images without restarting the IDE. The pixel
+install command for your Linux distribution; *Check Again* then shows the images without restarting the IDE (on
+Windows, restart the IDE if it still reports the extension as missing right after installing it). The pixel
 limit and the thumbnails can be changed in *Settings | Advanced Settings | HEIC Viewer*.
 
 Limitations: only the primary image of a file is shown, colors are converted to sRGB, and HDR gain maps are ignored.
@@ -89,7 +90,9 @@ On Windows, HEIC images are decoded by the Windows Imaging Component (WIC) with 
 If one is missing, the banner above a HEIC image names it, with *Open Microsoft Store* and *Check Again*; under *More*
 are the Store's web page (for systems without the Store app), *Learn More* (this section) and, for the HEIF Image
 Extension, `winget install --id 9PMMSR1CGPWG --source msstore --accept-package-agreements` to copy. After installing,
-*Check Again*, or simply switching back to the IDE, shows the HEIC images without a restart.
+*Check Again*, or simply switching back to the IDE, shows the HEIC images without a restart. If *Check Again* still
+reports the extension as missing right after you installed it, restart the IDE: whether Windows makes a Store package
+installed after the IDE started available to it has not been verified yet.
 
 - Whether the packages are preinstalled depends on the Windows image and the PC maker (the Windows 11 25H2 image of
   GitHub Actions has both, Windows Server 2025 has neither). In PowerShell,
@@ -169,7 +172,8 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
   [Requirements](#requirements), or another OS) HEIC files open as images but show "Image not loaded"; a banner above
   the image (and, for the diff and the thumbnails, a notification once per session) tells you what to install.
   *Check Again*, or coming back to the IDE after opening the Store page or copying the install command, loads the open
-  HEIC images without a restart; diffs that are already open have to be opened again.
+  HEIC images without a restart (on Windows, restart the IDE if it still reports the extension as missing); diffs that
+  are already open have to be opened again.
 - Colors are converted to **sRGB**; Display P3 colors outside sRGB are clipped.
 - **HDR gain maps are ignored**: the standard dynamic range base image is shown.
 - Only the **primary image** is shown (no other images of collections, frames of `.heics` sequences, depth maps, …).
