@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -36,6 +37,20 @@ class NclxTransferTest {
     }
     assertTrue(changed >= 1, path);
     assertNull(NclxTransfer.asSrgb(result), "nothing left to change");
+    byte[] copy = data.clone();
+    assertTrue(NclxTransfer.asSrgbInPlace(copy));
+    assertArrayEquals(result, copy, "in place: the same bytes");
+    // WicDecoder rewrites the grid first and sets the curves in place: the same meta box (the old one, now a free
+    // box, keeps its bytes)
+    byte[] grid = SingleImageGrid.wrap(data);
+    if (grid != null) {
+      assertTrue(NclxTransfer.asSrgbInPlace(grid));
+      assertNull(NclxTransfer.asSrgb(grid));
+      byte[] other = SingleImageGrid.wrap(result);
+      assertNotNull(other);
+      assertArrayEquals(java.util.Arrays.copyOfRange(other, data.length, other.length),
+                        java.util.Arrays.copyOfRange(grid, data.length, grid.length));
+    }
   }
 
   /** sRGB already (libheif), ICC profiles only (iPhone-style), and not HEIF at all: nothing to do. */

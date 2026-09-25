@@ -33,6 +33,18 @@ final class NclxTransfer {
 
   /** A copy with those transfer characteristics set to sRGB, or {@code null} if there are none (or no HEIF meta box). */
   static byte @Nullable [] asSrgb(byte[] data) {
+    return patch(data, false);
+  }
+
+  /**
+   * Sets those transfer characteristics to sRGB in {@code data} itself (a copy the caller owns); returns whether there
+   * were any.
+   */
+  static boolean asSrgbInPlace(byte[] data) {
+    return patch(data, true) != null;
+  }
+
+  private static byte @Nullable [] patch(byte[] data, boolean inPlace) {
     try {
       int[] meta = child(data, 0, data.length, "meta", true);
       if (meta == null) return null;
@@ -49,7 +61,7 @@ final class NclxTransfer {
         if (type(data, at + 4).equals("colr") && end - payload >= 11 && type(data, payload).equals("nclx")) {
           int transfer = u16(data, payload + 6);
           if (convertedByWindows(transfer)) {
-            if (result == null) result = data.clone();
+            if (result == null) result = inPlace ? data : data.clone();
             result[payload + 6] = 0;
             result[payload + 7] = SRGB;
           }

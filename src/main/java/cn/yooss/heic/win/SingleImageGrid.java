@@ -36,6 +36,9 @@ import java.util.Set;
  *   <li>the grid gets an {@code ispe} of the image's size, shares the tile's {@code colr} and {@code pixi} properties
  *   and takes over the transformative properties ({@code irot}, {@code imir}, {@code clap}), which apply to the
  *   derived image;</li>
+ *   <li>if the tile's {@code hvcC} record has {@code general_progressive_source_flag} set (Apple's encoder sets it),
+ *   the tile gets a copy with the flag cleared: otherwise the decoder decodes a tile that fills the grid exactly (no
+ *   cropping) with its single-image path again ({@link #withoutProgressiveSource});</li>
  *   <li>the grid's {@code ImageGrid} payload (8 bytes) goes into an {@code mdat} box at the end.</li>
  * </ul>
  * Nothing in the file moves: the old {@code meta} box becomes a {@code free} box of the same size and the new one is
@@ -202,13 +205,22 @@ final class SingleImageGrid {
       if (width == 0 || height == 0) return null;
 
       int ispeIndex = properties.size() + 1;
-      if (ispeIndex > 0x7FFF) return null;
+      // The tile's decoder configuration without general_progressive_source_flag (a copy, as a new property).
+      byte[] tileConfig = withoutProgressiveSource(Arrays.copyOfRange(data, hvcC.payload, hvcC.end));
+      int configIndex = tileConfig != null ? ispeIndex + 1 : -1;
+      if (Math.max(ispeIndex, configIndex) > 0x7FFF) return null;
+      if (tileConfig != null) {
+        for (int i = 0; i < tile.size(); i++) {
+          Association a = tile.get(i);
+          if (properties.get(a.index - 1) == hvcC) tile.set(i, new Association(configIndex, a.essential));
+        }
+      }
       grid.add(0, new Association(ispeIndex, false));
       grid.addAll(moved); // transformative properties last, in their order
       associations.set(primaryIndex, grid);
       ipmaIds.add(tileId); // IDs stay in increasing order: the tile's is the largest
       associations.add(tile);
-      boolean wideIndices = (ipmaFlags & 1) != 0 || ispeIndex > 0x7F;
+      boolean wideIndices = (ipmaFlags & 1) != 0 || Math.max(ispeIndex, configIndex) > 0x7F;
 
       // iref: the grid's tile (all other references keep their IDs, so they refer to the grid now)
       int irefVersion = iref != null ? u8(iref.payload) : wideIds ? 1 : 0;
@@ -304,6 +316,7 @@ final class SingleImageGrid {
               writeN(ispeBody, width, 4);
               writeN(ispeBody, height, 4);
               writeBox(props, "ispe", ispeBody.toByteArray());
+              if (tileConfig != null) writeBox(props, "hvcC", tileConfig);
               writeBox(b, "ipco", props.toByteArray());
             }
             else if (c == ipma) {
@@ -449,6 +462,21 @@ final class SingleImageGrid {
     private void check(int at, int n) {
       if (at < 0 || at > data.length - n) throw new IndexOutOfBoundsException(at);
     }
+  }
+
+  /**
+   * The {@code hvcC} payload with {@code general_progressive_source_flag} cleared in the record's
+   * {@code general_constraint_indicator_flags}, or {@code null} if it is clear already. With the flag set (as Apple's
+   * encoder writes it), the decoder takes its single-image path for a tile that fills the whole grid, which has the
+   * BT.709 matrix error; with it clear (as libheif writes the record, whatever x265 put in the SPS) it converts the
+   * tile itself. The decoder goes by the record: the parameter sets are left as they are. The flag describes the source
+   * and does not change how a picture is decoded.
+   */
+  static byte @Nullable [] withoutProgressiveSource(byte[] config) {
+    if (config.length < 23 || (config[6] & 0x80) == 0) return null;
+    byte[] result = config.clone();
+    result[6] &= 0x7F;
+    return result;
   }
 
   private static @Nullable Box only(List<Box> boxes, String type) {

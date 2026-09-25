@@ -269,8 +269,9 @@ class WicDecoderTest {
     FakeWinApi api = fake();
     new WicDecoder(api, true).decode(heic, 0, true, 7);
     assertEquals(1, api.streams.size());
-    byte[] expected = SingleImageGrid.wrap(NclxTransfer.asSrgb(heic));
+    byte[] expected = SingleImageGrid.wrap(heic);
     assertNotNull(expected);
+    assertTrue(NclxTransfer.asSrgbInPlace(expected));
     assertArrayEquals(expected, api.streams.get(0));
     api.assertClean();
 

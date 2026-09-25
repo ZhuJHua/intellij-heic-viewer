@@ -131,6 +131,40 @@ class SingleImageGridTest {
     assertNull(SingleImageGrid.wrap(new byte[0]));
   }
 
+  /**
+   * macOS writes general_progressive_source_flag = 1 into the decoder configuration record, and the decoder then takes
+   * its single-image path for a tile that fills the grid: the tile gets a copy of the record with the flag cleared.
+   */
+  @Test
+  void progressiveSourceFlagIsCleared() {
+    byte[] data = resource("fixtures/rgb_sips.heic");
+    Iso original = new Iso(data);
+    Iso.Box config = original.property(original.primary(), "hvcC");
+    byte[] payload = Arrays.copyOfRange(data, config.payload, config.end);
+    assertTrue((payload[6] & 0x80) != 0, "macOS sets the flag");
+    byte[] cleared = SingleImageGrid.withoutProgressiveSource(payload);
+    assertNotNull(cleared);
+    byte[] expected = payload.clone();
+    expected[6] &= 0x7F;
+    assertArrayEquals(expected, cleared, "only the flag changes");
+    assertNull(SingleImageGrid.withoutProgressiveSource(cleared), "nothing left to clear");
+
+    // the rewritten file: the tile has the new record (a new property), the grid none
+    byte[] grid = SingleImageGrid.wrap(data);
+    Iso result = new Iso(grid);
+    Iso.Box tileConfig = result.property(result.maxItemId(), "hvcC");
+    assertArrayEquals(cleared, Arrays.copyOfRange(grid, tileConfig.payload, tileConfig.end));
+    assertEquals(original.properties().size() + 2, result.properties().size(), "ispe and hvcC added");
+
+    // libheif leaves the flag clear in the record: the tile keeps its configuration
+    byte[] libheif = resource("fixtures/rgb_libheif.heic");
+    Iso lh = new Iso(libheif);
+    Iso.Box lhConfig = lh.property(lh.primary(), "hvcC");
+    assertNull(SingleImageGrid.withoutProgressiveSource(Arrays.copyOfRange(libheif, lhConfig.payload, lhConfig.end)));
+    Iso lhResult = new Iso(SingleImageGrid.wrap(libheif));
+    assertEquals(lh.properties().size() + 1, lhResult.properties().size(), "ispe added");
+  }
+
   /** The last box may extend to the end of the file (size 0); it gets its real size, since boxes are appended. */
   @Test
   void lastBoxUpToTheEndOfTheFile() {

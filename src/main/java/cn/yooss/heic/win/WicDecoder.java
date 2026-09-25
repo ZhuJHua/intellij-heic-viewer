@@ -87,12 +87,13 @@ public final class WicDecoder {
    */
   byte @NotNull [] forDecoder(byte @NotNull [] data) {
     if (!colorFixes) return data;
-    byte[] result = data;
-    byte[] srgb = NclxTransfer.asSrgb(result);
-    if (srgb != null) result = srgb;
-    byte[] grid = SingleImageGrid.wrap(result);
-    if (grid != null) result = grid;
-    return result;
+    byte[] grid = SingleImageGrid.wrap(data); // a copy: the transfer curves are then set in place (one copy at most)
+    if (grid != null) {
+      NclxTransfer.asSrgbInPlace(grid);
+      return grid;
+    }
+    byte[] srgb = NclxTransfer.asSrgb(data);
+    return srgb != null ? srgb : data;
   }
 
   public @NotNull WinApi api() {
