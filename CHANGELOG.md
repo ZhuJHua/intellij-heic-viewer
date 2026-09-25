@@ -6,6 +6,18 @@
 
 ### Added
 
+- Windows and Linux: HEIC/HEIF images are decoded by the operating system's own decoder (Windows: WIC with the *HEIF Image Extensions* and *HEVC Video Extensions* from the Microsoft Store; Linux: libheif with its libde265 HEVC plugin). Nothing is bundled.
+- A notification tells what to install when the system decoder is missing, with the install page or command, *Check Again* (HEIC files then load without a restart) and *Don't Show Again*.
+
+### Changed
+
+- Supports IntelliJ-based IDEs 2024.1 and newer (Android Studio Koala 2024.1.1 and newer; previously 2026.1.4 / Android Studio Quail 3): the macOS decoder is called through the JNA library that comes with the IDE instead of the Java FFM API, and the plugin is compiled for Java 17.
+- The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime.
+
+## [0.1.0]
+
+### Added
+
 - HEIC/HEIF files (`.heic`, `.heif`, `.hif`, `.heics`) open in the built-in image viewer and in the side-by-side VCS image diff (macOS only), also in the diff and merge windows started from the command line (`studio diff`, `idea merge`, git difftool/mergetool …) while the IDE is not running.
 - Decoding through the HEIF decoder built into macOS via the Java FFM API: EXIF and HEIF (`irot`/`imir`) orientation, transparency, 10-bit and grid images; the primary image of collections and `.heics` sequences.
 - Thumbnails of local HEIC files as their icons in the Project view, editor tabs and file lists, decoded in the background and cached.

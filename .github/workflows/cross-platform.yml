@@ -47,15 +47,19 @@ jobs:
             os: ubuntu-24.04
             libheif: remove
             expect: NOT_IMPLEMENTED
+          # Android Studio has no Linux/Windows arm64 build: compile against IntelliJ IDEA there (its arm64 build ships
+          # JNA's native library for arm64, which the Linux and Windows backends need).
           - name: Linux arm64, libheif
             os: ubuntu-24.04-arm
             libheif: install
+            platform: -PplatformType=IU -PplatformVersion=2026.2.3
             expect: NOT_IMPLEMENTED
           - name: Windows x64
             os: windows-latest
             expect: NOT_IMPLEMENTED
           - name: Windows arm64
             os: windows-11-arm
+            platform: -PplatformType=IU -PplatformVersion=2026.2.3
             expect: NOT_IMPLEMENTED
     env:
       HEIC_EXPECT_BACKEND: ${{ matrix.expect }}
@@ -93,16 +97,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # The downloaded IDE archive (about 1.5 GB), per OS/architecture and gradle.properties.
+      # The downloaded IDE archive (about 1.5 GB), per OS/architecture, platform override and gradle.properties.
       - name: Cache IDE
         uses: actions/cache@v6
         with:
-          path: ~/.gradle/caches/modules-2/files-2.1/com.google.android.studio
-          key: ide-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle.properties') }}
+          path: |
+            ~/.gradle/caches/modules-2/files-2.1/com.google.android.studio
+            ~/.gradle/caches/modules-2/files-2.1/idea
+          key: ide-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('gradle.properties') }}
 
+      # testJdk25 rather than `test`, which the IntelliJ Platform Gradle Plugin only runs on the IDE's architectures.
       - name: Build and test
         run: >
-          ./gradlew buildPlugin test testJdk21 testJdk17 --continue
+          ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
       - name: Show the IDE's JNA native directories

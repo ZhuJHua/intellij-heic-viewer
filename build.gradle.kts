@@ -245,8 +245,8 @@ val jnaNativeDir: Provider<String> = platformDir.map { platform ->
     val jna = platform.resolve("lib/jna")
     val arch = System.getProperty("os.arch").lowercase()
     val preferred = if (arch == "aarch64" || arch == "arm64") "aarch64" else "amd64"
-    val dir = jna.resolve(preferred).takeIf { it.isDirectory } ?: jna.listFiles()?.singleOrNull { it.isDirectory }
-    dir?.absolutePath ?: ""
+    // Not another architecture's directory: e.g. Android Studio for Linux and Windows ships x64 only.
+    jna.resolve(preferred).takeIf { it.isDirectory }?.absolutePath ?: ""
 }
 
 /** JVM arguments that make JNA load its native library from the IDE, if the IDE has one for this architecture. */
@@ -278,7 +278,10 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// The same tests on the older runtimes the plugin supports; `check` runs all three.
+// The same tests on the runtimes of the supported IDEs; `check` runs test, testJdk21 and testJdk17. These are plain Test
+// tasks: unlike `test`, which the IntelliJ Platform Gradle Plugin prepares for IDE tests (and which therefore refuses to
+// run on a CPU architecture the IDE compiled against has no build for, e.g. Android Studio on Linux/Windows arm64), they
+// only reuse its class path. testJdk25 is `test` as such a plain task (CI runs testJdk25, testJdk21 and testJdk17).
 fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(taskName) {
     group = "verification"
     description = "Runs the unit tests on JDK $javaVersion."
@@ -288,6 +291,8 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     systemProperty("heic.test.javaVersion", javaVersion)
     shouldRunAfter(tasks.test)
 }
+// JBR 25: IDEs 2026.1.3+, Android Studio Quail 3+.
+registerTestOn("testJdk25", 25)
 // JBR 21: IDEs 2024.2 - 2025.3 and 2026.1 - 2026.1.2, Android Studio Ladybug - Quail 2.
 val testJdk21 = registerTestOn("testJdk21", 21)
 // JBR 17: IDEs 2024.1.x, Android Studio Koala.
