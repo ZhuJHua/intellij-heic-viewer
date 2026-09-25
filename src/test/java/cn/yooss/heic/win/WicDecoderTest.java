@@ -119,6 +119,52 @@ class WicDecoderTest {
     api.assertClean();
   }
 
+  /**
+   * An image with an alpha plane is downscaled alpha-weighted, not by WIC's scaler, which scales the colors and the
+   * alpha plane separately: the black under transparent pixels (what HEIC files store there) must not darken the edge.
+   */
+  @Test
+  void alphaImagesAreDownscaledAlphaWeighted() throws IOException {
+    FakeWinApi api = fake();
+    int width = 60, height = 30;
+    int[] pixels = new int[width * height];
+    api.alphaPlane = new byte[width * height];
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        boolean opaque = x >= 20; // columns 0-19 transparent (black underneath), 20-59 opaque red
+        pixels[y * width + x] = opaque ? 0xFFFF0000 : 0xFF000000;
+        api.alphaPlane[y * width + x] = (byte) (opaque ? 255 : 0);
+      }
+    }
+    api.setImage(width, height, pixels);
+    BufferedImage image = new WicDecoder(api).decode(DATA, 20, true, 7); // 3x3 boxes: columns 18-20 are 1/3 opaque
+    assertEquals("20x10", image.getWidth() + "x" + image.getHeight());
+    assertEquals(BufferedImage.TYPE_INT_ARGB, image.getType());
+    assertFalse(api.calls.contains("CreateBitmapScaler"), "not scaled by WIC");
+    int[] raw = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+    for (int y = 0; y < 10; y++) {
+      assertEquals(0, raw[y * 20 + 5], "transparent");
+      assertEquals(0x55FF0000, raw[y * 20 + 6], "the edge: red at a third of the alpha, not darkened"); // WIC: 0x55550000
+      assertEquals(0xFFFF0000, raw[y * 20 + 7], "opaque red");
+    }
+    api.assertClean();
+  }
+
+  /** Without the alpha plane at full size (another decoder), the image is scaled by WIC and the plane at the target size. */
+  @Test
+  void alphaImagesAreScaledByWicWithoutAFullSizeAlphaPlane() throws IOException {
+    FakeWinApi api = fake();
+    api.setImage(40, 20, new int[800]);
+    api.alphaPlane = new byte[800];
+    java.util.Arrays.fill(api.alphaPlane, (byte) 0x80);
+    api.alphaPlaneOnlyScaled = true;
+    BufferedImage image = new WicDecoder(api).decode(DATA, 10, true, 7);
+    assertEquals("10x5", image.getWidth() + "x" + image.getHeight());
+    assertTrue(api.calls.contains("CreateBitmapScaler"));
+    assertEquals(0x80, image.getRGB(3, 3) >>> 24);
+    api.assertClean();
+  }
+
   @Test
   void targetSizeLikePixelPipeline() {
     assertArrayEquals(new int[]{600, 400}, WicDecoder.targetSize(600, 400, 0));
@@ -227,6 +273,23 @@ class WicDecoderTest {
     FakeWinApi api = fake();
     api.setImage(40, 20, new int[800]);
     api.alphaPlane = new byte[800];
+    api.alphaPlaneOnlyScaled = true; // scaled by WIC, alpha plane at the target size
+    assertFailureReleasesEverything(api, method);
+  }
+
+  /** The same for the alpha-weighted downscaling of an image with an alpha plane (no scaler). */
+  @ParameterizedTest
+  @ValueSource(strings = {"CoCreateInstance", "SHCreateMemStream", "CreateDecoderFromStream", "GetContainerFormat",
+      "GetFrameCount", "GetFrame", "GetSize", "GetPixelFormat", "CreateFormatConverter", "IWICFormatConverter::Initialize",
+      "CreateBitmapFromSource", "CopyPixels", "malloc", "IWICBitmapSourceTransform::CopyPixels"})
+  void everyFailureOfTheAlphaWeightedDownscalingIsAnIOException(String method) {
+    FakeWinApi api = fake();
+    api.setImage(40, 20, new int[800]);
+    api.alphaPlane = new byte[800];
+    assertFailureReleasesEverything(api, method);
+  }
+
+  private static void assertFailureReleasesEverything(FakeWinApi api, String method) {
     api.failures.put(method, Hresult.E_FAIL);
     IOException e = assertThrows(IOException.class, () -> new WicDecoder(api).decode(DATA, 10, true, 7));
     if (!method.equals("SHCreateMemStream") && !method.equals("malloc")) {

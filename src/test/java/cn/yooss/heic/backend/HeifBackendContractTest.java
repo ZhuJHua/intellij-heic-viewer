@@ -197,6 +197,27 @@ class HeifBackendContractTest {
     assertTrue(Math.max(image.getWidth(), image.getHeight()) <= Math.max(maxPixelSize, 3));
   }
 
+  /**
+   * Downscaling an image with alpha weights the colors by alpha: the color under the transparent pixels (black in HEIC
+   * files) must not darken the edges (Windows scaled the colors and the alpha plane separately).
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
+  void downscaledAlphaEdgesAreNotDarkened(String name) throws IOException {
+    assumeTrue(available(), "no system decoder");
+    BufferedImage image = BACKEND.decode(Fixtures.bytes(name), 90);
+    assertEquals("90x68", image.getWidth() + "x" + image.getHeight());
+    // x = 22 covers the source columns 97.8 to 102.2: half transparent, half red at alpha 128
+    int edge = image.getRGB(22, 34);
+    String message = name + " (" + BACKEND.id() + "): " + Integer.toHexString(edge);
+    assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
+    // Alpha-weighted: red stays red (about 255). macOS ImageIO's own thumbnail scaler (the decoder downscales there)
+    // darkens such an edge a little (0x44bf0000 on macOS 26); scaling colors and alpha separately gives about 150.
+    int minRed = BACKEND.id().startsWith("macos") ? 170 : 220;
+    assertTrue(((edge >> 16) & 0xFF) >= minRed, message);
+    assertTrue(((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
+  }
+
   @Test
   void downscaledImageKeepsTheLayout() throws IOException {
     assumeTrue(available(), "no system decoder");

@@ -163,6 +163,9 @@ class LibheifDecodingTest {
     assertEquals(BufferedImage.TYPE_INT_ARGB, alpha.getType());
     int redAt128 = alpha.getRGB(37, 37);
     assertTrue(Math.abs((redAt128 >>> 24) - 128) <= 4 && ((redAt128 >> 16) & 0xFF) > 240, Integer.toHexString(redAt128));
+    // The edge between the transparent column (black underneath) and the red one is not darkened (alpha-weighted).
+    int edge = backend().decode(Fixtures.bytes("alpha_libheif.heic"), 90).getRGB(22, 34); // 90x68, factor 4 + bilinear
+    assertTrue(Math.abs((edge >>> 24) - 64) <= 16 && ((edge >> 16) & 0xFF) >= 220, Integer.toHexString(edge));
   }
 
   /**

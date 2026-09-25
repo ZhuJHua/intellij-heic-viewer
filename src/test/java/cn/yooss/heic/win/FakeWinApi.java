@@ -44,6 +44,8 @@ final class FakeWinApi implements WinApi {
   int[] pixels = new int[width * height];
   String framePixelFormat = Guids.GUID_WICPixelFormat32bppBGR;
   @Nullable byte[] alphaPlane;
+  /** {@code GetClosestSize} answers half the size when asked for the full size (the alpha plane only comes scaled). */
+  boolean alphaPlaneOnlyScaled;
   /** {@code System.Photo.Orientation}, or 0 for a frame without metadata. */
   int orientation = 1;
   @Nullable byte[] iccProfile;
@@ -442,7 +444,12 @@ final class FakeWinApi implements WinApi {
   public int getClosestSize(long transform, int[] size) {
     get(transform, Kind.TRANSFORM);
     Integer f = failure("GetClosestSize");
-    return f != null ? f : Hresult.S_OK;
+    if (f != null) return f;
+    if (alphaPlaneOnlyScaled && size[0] == width && size[1] == height) {
+      size[0] = Math.max(1, width / 2);
+      size[1] = Math.max(1, height / 2);
+    }
+    return Hresult.S_OK;
   }
 
   @Override
@@ -518,7 +525,7 @@ final class FakeWinApi implements WinApi {
     Integer f = failure("malloc");
     if (f != null) return 0;
     long handle = next;
-    next += 0x10;
+    next += (size + 0x1F) & ~0xFL; // the block's addresses: reads may start inside it (readBytes)
     memory.put(handle, new byte[(int) size]);
     return handle;
   }
@@ -539,6 +546,14 @@ final class FakeWinApi implements WinApi {
 
   @Override
   public void readBytes(long address, byte[] target, int count) {
-    System.arraycopy(memory.get(address), 0, target, 0, count);
+    for (Map.Entry<Long, byte[]> block : memory.entrySet()) {
+      long offset = address - block.getKey();
+      if (offset >= 0 && offset < block.getValue().length) {
+        if (offset + count > block.getValue().length) throw new AssertionError("read beyond the end of a native buffer");
+        System.arraycopy(block.getValue(), (int) offset, target, 0, count);
+        return;
+      }
+    }
+    throw new AssertionError("read of unknown memory 0x" + Long.toHexString(address));
   }
 }

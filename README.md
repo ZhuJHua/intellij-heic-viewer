@@ -272,7 +272,10 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    orientation is applied anyway). Its frames are 32-bit BGR: the alpha of an image comes as a separate 8-bit plane
    through `IWICBitmapSourceTransform`. The frame goes through `IWICBitmapScaler` (Fant, only when the image is larger
    than requested), `IWICFormatConverter` and `CreateBitmapFromSource` (decoded once) and is copied into the
-   `BufferedImage` in strips; an embedded ICC profile (e.g. Display P3) is converted to sRGB with `PixelPipeline`. Every
+   `BufferedImage` in strips. An image with alpha (up to 64 megapixels) is not scaled by WIC, which would scale its
+   colors and its alpha plane separately and darken the edges with the black under the transparent pixels: its
+   full-size frame and alpha plane are combined strip by strip and downscaled alpha-weighted by `PlaneConverter`, like
+   on Linux. An embedded ICC profile (e.g. Display P3) is converted to sRGB with `PixelPipeline`. Every
    COM object and buffer is released on every path. `WinApi` is the list of native calls and `jna.JnaWinApi` implements
    them as COM vtable calls through JNA's `Function`, with the vtable slots of the Windows SDK's `wincodec.idl` (checked
    against the mingw-w64 headers); `MFTEnumEx` takes a GUID by value, passed as a pointer to a copy on x64 and in two

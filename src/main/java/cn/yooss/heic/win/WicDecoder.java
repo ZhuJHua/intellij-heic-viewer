@@ -2,6 +2,8 @@ package cn.yooss.heic.win;
 
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.PixelPipeline;
+import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
+import cn.yooss.heic.backend.PlaneConverter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -33,7 +35,10 @@ import java.util.Locale;
  *   <li>{@code IWICBitmapScaler} (Fant) when the image is larger than requested, {@code IWICFormatConverter} to
  *   {@code 32bppBGR} ({@code 32bppBGRA}, straight alpha, for other formats with alpha), {@code CreateBitmapFromSource}
  *   with {@code WICBitmapCacheOnLoad} (decodes once), then {@code CopyPixels} in strips into the
- *   {@link BufferedImage}; the alpha plane is merged in.</li>
+ *   {@link BufferedImage}; the alpha plane is merged in. An image with an alpha plane is not scaled by WIC (up to
+ *   {@link #ALPHA_WEIGHTED_MAX_PIXELS}): WIC would scale its colors and its alpha plane separately, so the color of the
+ *   transparent pixels (black in HEIC files) would darken every edge. Its full-size frame and alpha plane are
+ *   combined strip by strip and downscaled with an alpha-weighted filter ({@link PlaneConverter}) instead.</li>
  *   <li>An embedded ICC profile ({@code IWICColorContext} of type profile, e.g. Display P3 of iPhone photos) is
  *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.
  *   The YCbCr to RGB conversion is the decoder's, with two workarounds for HEIF Image Extension 1.2.36, applied to a
@@ -55,6 +60,12 @@ public final class WicDecoder {
   static final int WICBitmapTransformRotate0 = 0;
   static final int WICColorContextProfile = 1;
   static final int WICColorContextExifColorSpace = 2;
+  /**
+   * Largest image with an alpha plane that is downscaled with the alpha-weighted filter rather than with WIC's scaler
+   * (the default pixel budget, 64 MP): that needs the full-size frame and alpha plane in native memory (5 bytes per
+   * pixel), so larger images, which the pixel budget downscales anyway, keep WIC's scaler and its darker edges.
+   */
+  static final long ALPHA_WEIGHTED_MAX_PIXELS = 64_000_000L;
   /** {@code System.Photo.Orientation} photo metadata policy: the EXIF-style orientation still to be applied. */
   static final String ORIENTATION_POLICY = "System.Photo.Orientation";
   /**
@@ -389,26 +400,22 @@ public final class WicDecoder {
       long factory = factory();
       int[] target = targetSize(opened.width, opened.height, maxPixelSize);
       int width = target[0], height = target[1];
+      boolean scaled = width != opened.width || height != opened.height;
+      if (scaled && opened.alpha == Alpha.PLANE && (long) opened.width * opened.height <= ALPHA_WEIGHTED_MAX_PIXELS) {
+        BufferedImage image = renderAlphaWeighted(opened, maxPixelSize);
+        if (image != null) return image;
+      }
       BufferedImage image = PixelPipeline.newImage(width, height, opened.alpha != Alpha.NONE);
 
       long source = opened.frame;
-      if (width != opened.width || height != opened.height) {
+      if (scaled) {
         long scaler = create("IWICImagingFactory::CreateBitmapScaler", out -> api.createBitmapScaler(factory, out));
         check(api.initializeBitmapScaler(scaler, source, width, height, WICBitmapInterpolationModeFant),
               "IWICBitmapScaler::Initialize");
         source = scaler;
       }
-      long converter = create("IWICImagingFactory::CreateFormatConverter", out -> api.createFormatConverter(factory, out));
       String format = opened.alpha == Alpha.IN_PIXELS ? Guids.GUID_WICPixelFormat32bppBGRA : Guids.GUID_WICPixelFormat32bppBGR;
-      check(api.initializeFormatConverter(converter, source, format), "IWICFormatConverter::Initialize");
-      // Decodes (and scales and converts) once; the strips below are then plain copies.
-      long bitmap = create("IWICImagingFactory::CreateBitmapFromSource",
-                           out -> api.createBitmapFromSource(factory, converter, WICBitmapCacheOnLoad, out));
-      int[] bitmapSize = new int[2];
-      check(api.getSize(bitmap, bitmapSize), "IWICBitmap::GetSize");
-      if (bitmapSize[0] != width || bitmapSize[1] != height) {
-        throw new IOException("WIC produced a " + bitmapSize[0] + "x" + bitmapSize[1] + " image instead of " + width + "x" + height);
-      }
+      long bitmap = decodedBitmap(source, format, width, height);
 
       byte[] alphaPlane = opened.alpha == Alpha.PLANE ? alphaPlane(opened.transform, width, height) : null;
 
@@ -431,6 +438,74 @@ public final class WicDecoder {
         PixelPipeline.writeArgbRows(image, y0, rows, pixels, false); // straight alpha
       }
       return image;
+    }
+
+    /**
+     * {@code source} converted to {@code format} and decoded (and scaled and converted) once, with
+     * {@code WICBitmapCacheOnLoad}: copying strips of the bitmap is then a plain copy. It must be {@code width x height}.
+     */
+    private long decodedBitmap(long source, String format, int width, int height) throws IOException {
+      long factory = factory();
+      long converter = create("IWICImagingFactory::CreateFormatConverter", out -> api.createFormatConverter(factory, out));
+      check(api.initializeFormatConverter(converter, source, format), "IWICFormatConverter::Initialize");
+      long bitmap = create("IWICImagingFactory::CreateBitmapFromSource",
+                           out -> api.createBitmapFromSource(factory, converter, WICBitmapCacheOnLoad, out));
+      int[] bitmapSize = new int[2];
+      check(api.getSize(bitmap, bitmapSize), "IWICBitmap::GetSize");
+      if (bitmapSize[0] != width || bitmapSize[1] != height) {
+        throw new IOException("WIC produced a " + bitmapSize[0] + "x" + bitmapSize[1] + " image instead of " + width + "x" + height);
+      }
+      return bitmap;
+    }
+
+    /**
+     * An image with an alpha plane, downscaled to {@code maxPixelSize} with alpha-weighted averaging: the full-size
+     * frame ({@code 32bppBGR}) and alpha plane, both in native memory, are read strip by strip as straight RGBA and
+     * reduced by {@link PlaneConverter}, so the Java heap holds only a strip and the result. {@code null} if the decoder
+     * cannot produce the alpha plane at full size (the caller then scales with WIC).
+     */
+    private @Nullable BufferedImage renderAlphaWeighted(Opened opened, int maxPixelSize) throws IOException {
+      int width = opened.width, height = opened.height;
+      long alpha = fullSizeAlphaPlane(opened.transform, width, height);
+      if (alpha == 0) return null;
+      long bitmap = decodedBitmap(opened.frame, Guids.GUID_WICPixelFormat32bppBGR, width, height);
+      int stride = 4 * width;
+      long[] buffer = {0};
+      int[] bufferRows = {0};
+      byte[][] alphaRows = {null};
+      return PlaneConverter.convert(width, height, stride, ByteLayout.RGBA, false, true, maxPixelSize, (y0, rows, strip) -> {
+        if (rows > bufferRows[0]) { // the first strip is the largest
+          buffer[0] = allocate((long) stride * rows);
+          bufferRows[0] = rows;
+          alphaRows[0] = new byte[width * rows];
+        }
+        check(api.copyPixels(bitmap, 0, y0, width, rows, stride, stride * rows, buffer[0]), "IWICBitmap::CopyPixels");
+        api.readBytes(buffer[0], strip, stride * rows);
+        api.readBytes(alpha + (long) y0 * width, alphaRows[0], width * rows);
+        byte[] a = alphaRows[0];
+        for (int i = 0, at = 0; i < width * rows; i++, at += 4) {
+          byte blue = strip[at]; // BGRX to RGBA, with the alpha of the plane
+          strip[at] = strip[at + 2];
+          strip[at + 2] = blue;
+          strip[at + 3] = a[i];
+        }
+      });
+    }
+
+    /**
+     * The {@code 8bppAlpha} plane of the HEIF image at its full size {@code width x height}, row-major, in native memory
+     * that is freed on {@link #close()}; {@code 0} if the decoder offers the plane only at another size.
+     */
+    private long fullSizeAlphaPlane(long transform, int width, int height) throws IOException {
+      int[] size = {width, height};
+      if (Hresult.succeeded(api.getClosestSize(transform, size)) && (size[0] != width || size[1] != height)) return 0;
+      long bytes = (long) width * height;
+      if (bytes > Integer.MAX_VALUE - 16) return 0;
+      long buffer = allocate(bytes);
+      check(api.copyTransformedPixels(transform, width, height, Guids.GUID_WICPixelFormat8bppAlpha,
+                                      WICBitmapTransformRotate0, width, (int) bytes, buffer),
+            "IWICBitmapSourceTransform::CopyPixels(8bppAlpha)");
+      return buffer;
     }
 
     /** The {@code 8bppAlpha} plane of the HEIF image at {@code width x height}, row-major. */

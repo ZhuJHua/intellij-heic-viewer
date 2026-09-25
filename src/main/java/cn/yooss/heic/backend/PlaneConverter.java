@@ -1,6 +1,5 @@
-package cn.yooss.heic.linux;
+package cn.yooss.heic.backend;
 
-import cn.yooss.heic.backend.PixelPipeline;
 import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
 import org.jetbrains.annotations.NotNull;
 
@@ -12,22 +11,25 @@ import java.io.IOException;
 import java.util.Arrays;
 
 /**
- * Turns an 8-bit interleaved RGB or RGBA plane (libheif's decoded image, read row by row from native memory) into the
- * backend's {@link BufferedImage}, downscaled to at most {@code maxPixelSize} on the longer side without ever holding
- * the full-size image in the Java heap. libheif always decodes at full resolution, so downscaling happens here:
+ * Turns an 8-bit interleaved RGB or RGBA plane, read row by row from native memory, into the backend's
+ * {@link BufferedImage}, downscaled to at most {@code maxPixelSize} on the longer side without ever holding the
+ * full-size image in the Java heap: libheif's decoded image (libheif always decodes at full resolution), and on Windows
+ * the full-size frame of an image with alpha together with its alpha plane (scaling the colors of such an image with
+ * WIC would mix in the black of its transparent pixels). Downscaling:
  * <ol>
- *   <li>an integer box filter (area average, alpha-weighted) reduces the plane by the largest factor {@code k} that
- *   keeps the result at least as large as the target, while the rows are streamed in strips;</li>
+ *   <li>an integer box filter (area average, alpha-weighted, so that transparent pixels do not darken their neighbors)
+ *   reduces the plane by the largest factor {@code k} that keeps the result at least as large as the target, while the
+ *   rows are streamed in strips;</li>
  *   <li>one bilinear step (less than a factor of two, so no aliasing) scales that to the exact target size.</li>
  * </ol>
  * Pure Java (tests feed it byte arrays).
  */
-final class PlaneConverter {
+public final class PlaneConverter {
   /** Bytes of plane rows read per strip (bounds the scratch buffer). */
   static final int STRIP_BYTES = 4 << 20;
 
   /** Reads rows of the plane. */
-  interface Rows {
+  public interface Rows {
     /** Copies rows {@code y0 .. y0+rows-1} ({@code stride} bytes each) into {@code target} from index 0. */
     void read(int y0, int rows, byte[] target) throws IOException;
   }
@@ -44,8 +46,10 @@ final class PlaneConverter {
    * @param alpha          whether the result is {@code TYPE_INT_ARGB} (else {@code TYPE_INT_RGB}, alpha dropped)
    * @param maxPixelSize   0 for full size, else the maximum length of the longer side of the result
    */
-  static @NotNull BufferedImage convert(int width, int height, int stride, @NotNull ByteLayout layout, boolean premultiplied,
-                                        boolean alpha, int maxPixelSize, @NotNull Rows rows) throws IOException {
+  public static @NotNull BufferedImage convert(int width, int height, int stride, @NotNull ByteLayout layout,
+                                               boolean premultiplied, boolean alpha, int maxPixelSize, @NotNull Rows rows)
+    throws IOException {
+    if (layout != ByteLayout.RGB && layout != ByteLayout.RGBA) throw new IllegalArgumentException("RGB or RGBA: " + layout);
     if (width <= 0 || height <= 0) throw new IOException("Invalid decoded image size " + width + "x" + height);
     if (stride < (long) width * layout.bytesPerPixel()) {
       throw new IOException("Invalid stride " + stride + " for " + width + " pixels of " + layout);

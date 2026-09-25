@@ -3,6 +3,7 @@ package cn.yooss.heic.linux;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.PixelPipeline;
 import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
+import cn.yooss.heic.backend.PlaneConverter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

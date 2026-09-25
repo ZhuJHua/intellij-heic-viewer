@@ -1,4 +1,4 @@
-package cn.yooss.heic.linux;
+package cn.yooss.heic.backend;
 
 import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
 import org.junit.jupiter.api.Test;
@@ -15,7 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** libheif's interleaved plane to {@link BufferedImage}, with streaming downscaling (pure Java, runs on every OS). */
+/**
+ * An interleaved plane (libheif's decoded image, WIC's frame with its alpha plane) to {@link BufferedImage}, with streaming
+ * downscaling (pure Java, runs on every OS).
+ */
 class PlaneConverterTest {
   /** A plane with padded rows; {@code pixel(x, y)} gives the RGBA bytes. */
   private static final class Plane implements PlaneConverter.Rows {

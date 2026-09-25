@@ -240,7 +240,9 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    自己应用 HEIF 的 `irot`/`imir`，并报告 `System.Photo.Orientation` = 1（按 HEIF 标准忽略 EXIF 方向；插件仍会应用报告的方向）。
    它的帧总是 32 位 BGR：透明通道通过 `IWICBitmapSourceTransform` 以单独的 8 位平面提供。帧依次经过 `IWICBitmapScaler`
    （Fant，仅在图片大于请求尺寸时）、`IWICFormatConverter` 和 `CreateBitmapFromSource`（只解码一次），再按条带复制到
-   `BufferedImage`；内嵌的 ICC 配置文件（例如 Display P3）由 `PixelPipeline` 转换到 sRGB。所有 COM 对象和缓冲区在任何路径上都会释放。
+   `BufferedImage`。带透明通道的图片（不超过 6400 万像素）不由 WIC 缩放：WIC 会分别缩放颜色和透明平面，透明像素下的黑色会让边缘变暗；
+   插件把全尺寸的帧和透明平面逐条合并，由 `PlaneConverter` 按透明度加权缩小（与 Linux 相同）。内嵌的 ICC 配置文件（例如 Display P3）
+   由 `PixelPipeline` 转换到 sRGB。所有 COM 对象和缓冲区在任何路径上都会释放。
    `WinApi` 列出所需的本地调用，由 `jna.JnaWinApi` 通过 JNA 的 `Function` 以 COM 虚表调用实现（虚表槽位取自 Windows SDK 的
    `wincodec.idl`，并与 mingw-w64 头文件核对）；`MFTEnumEx` 按值接收 GUID，在 x64 上以指向副本的指针传递，在 arm64 上用两个寄存器传递。
    `WicProbe` 通过解码一个 428 字节的内嵌 HEIC 并向 Media Foundation 查询 HEVC 解码器来确定状态：没有 HEIF 解码器
