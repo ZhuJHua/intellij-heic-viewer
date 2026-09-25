@@ -159,7 +159,7 @@ class HeifBackendContractTest {
     int[] raw = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
     int w = image.getWidth();
     assertPixel(0x00000000, raw[150 * w + 50], 0, 255);  // transparent (color undefined)
-    int colors = (int) SystemDecoder.colorTolerance(0, 24);
+    int colors = (int) SystemDecoder.colorTolerance(0, 44); // Windows: green at alpha 64 decodes as 0x4000D700
     assertPixel(0x80FF0000, raw[150 * w + 150], 3, 8 + colors);  // red at alpha 128
     assertPixel(0xFF0000FF, raw[150 * w + 250], 3, 8 + colors);  // opaque blue
     assertPixel(0x4000FF00, raw[150 * w + 350], 3, 12 + colors); // green at alpha 64
