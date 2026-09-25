@@ -27,15 +27,19 @@ import java.util.function.Supplier;
 public final class WicHeifBackend extends AbstractHeifBackend {
   private final Object lock = new Object();
   private final Supplier<WicDecoder> decoderFactory;
+  private final String osName;
+  private final String osArch;
   private volatile WicDecoder decoder;
 
   public WicHeifBackend() {
-    this(() -> new WicDecoder(new JnaWinApi()));
+    this(() -> new WicDecoder(new JnaWinApi()), System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
   }
 
-  /** Tests: a decoder on another {@link WinApi}. */
-  WicHeifBackend(@NotNull Supplier<WicDecoder> decoderFactory) {
+  /** Tests: a decoder on another {@link WinApi}, as if running on {@code osName} and {@code osArch}. */
+  WicHeifBackend(@NotNull Supplier<WicDecoder> decoderFactory, @NotNull String osName, @NotNull String osArch) {
     this.decoderFactory = decoderFactory;
+    this.osName = osName;
+    this.osArch = osArch;
   }
 
   @Override
@@ -50,14 +54,13 @@ public final class WicHeifBackend extends AbstractHeifBackend {
 
   @Override
   protected @NotNull HeifBackendStatus probe() {
-    String os = System.getProperty("os.name", "");
-    String arch = System.getProperty("os.arch", "");
-    if (!os.toLowerCase(Locale.ROOT).startsWith("windows")) {
-      return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.UNSUPPORTED_OS, "Not Windows: " + os);
+    // Nothing native is loaded before these checks.
+    if (!osName.toLowerCase(Locale.ROOT).startsWith("windows")) {
+      return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.UNSUPPORTED_OS, "Not Windows: " + osName);
     }
-    if (!isSupportedArchitecture(arch)) {
+    if (!isSupportedArchitecture(osArch)) {
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.UNSUPPORTED_OS,
-                                           "Unsupported processor architecture " + arch + " (64-bit x64 or arm64 only)");
+                                           "Unsupported processor architecture " + osArch + " (64-bit x64 or arm64 only)");
     }
     if (!JnaLibraries.isPresent()) {
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR, "The IDE does not provide JNA (com.sun.jna)");

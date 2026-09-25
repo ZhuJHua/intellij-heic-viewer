@@ -63,7 +63,7 @@ class HeifBackendsTest {
     }
   }
 
-  /** The Windows backend only probes the system on Windows (x64 or arm64); see WicHeifBackendTest. */
+  /** The Windows backend only probes the system on Windows (x64 or arm64); see WicProbeTest. */
   @Test
   void windowsBackendProbeElsewhere() {
     assumeFalse(HeifBackends.Os.current() == HeifBackends.Os.WINDOWS, "runs on Windows");

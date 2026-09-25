@@ -7,6 +7,9 @@ import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.HeifInput;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -14,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -178,15 +182,28 @@ class WicProbeTest {
   }
 
   /** The backend on the fake: status, readInfo and decode go through the same decoder. */
-  @Test
-  void backendOnTheFake() throws IOException {
-    assumeTrue(HeifBackends.Os.current() == HeifBackends.Os.WINDOWS && WicHeifBackend.isSupportedArchitecture(
-      System.getProperty("os.arch", "")), "the probe only runs on 64-bit Windows");
+  @ParameterizedTest
+  @ValueSource(strings = {"amd64", "aarch64"})
+  void backendOnTheFake(String arch) throws IOException {
     FakeWinApi api = sampleLike();
-    WicHeifBackend backend = new WicHeifBackend(() -> new WicDecoder(api));
+    WicHeifBackend backend = new WicHeifBackend(() -> new WicDecoder(api), "Windows 11", arch);
     assertTrue(backend.status().isAvailable(), backend.status().toString());
     BufferedImage image = backend.decode(Fixtures.bytes("rgb_sips.heic"), 0);
     assertEquals("64x128", image.getWidth() + "x" + image.getHeight());
+    HeifImageInfo info = backend.readInfo(Fixtures.bytes("rgb_sips.heic"));
+    assertEquals("64x128", info.width() + "x" + info.height());
     api.assertClean();
+  }
+
+  /** Elsewhere the backend reports UNSUPPORTED_OS without creating its decoder (no native library is loaded). */
+  @ParameterizedTest
+  @CsvSource({"Mac OS X, aarch64", "Linux, amd64", "Windows 11, x86", "Windows 10, arm"})
+  void unsupportedPlatforms(String os, String arch) {
+    WicHeifBackend backend = new WicHeifBackend(() -> {
+      throw new AssertionError("the decoder must not be created on " + os + " " + arch);
+    }, os, arch);
+    HeifBackendStatus status = backend.status();
+    assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, status.reason(), status.toString());
+    assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
   }
 }
