@@ -525,7 +525,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 - `.github/workflows/build.yml` runs on every push to `main` and on pull requests: build and tests (`check`: JDK 25, 21
   and 17) on `macos-latest`, Plugin Verifier on `ubuntu-latest` against `pluginVerificationIdes`, and a draft GitHub
   release (from the `[Unreleased]` section of `CHANGELOG.md`) for pushes to `main`.
-- `.github/workflows/cross-platform.yml` runs on pushes to `dev/**` branches and manually: build and the tests on JDK 25,
+- `.github/workflows/cross-platform.yml` runs on pushes to `dev/**` branches, on pull requests to `main` and manually
+  (run it on `main` before publishing a draft release that was not made from a pull request): build and the tests on JDK 25,
   21 and 17 on macOS arm64 and x86_64, Linux x64 (libheif 1.17 with and without its HEVC plugin, libheif 1.12 on
   Ubuntu 22.04, no libheif), Linux arm64 (libheif 1.17) and Windows x64 and arm64 (the IDE to compile against is
   downloaded for each OS and cached; on arm64 Linux and Windows, which Android Studio has no build for, IntelliJ IDEA),

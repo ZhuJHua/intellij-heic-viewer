@@ -15,13 +15,18 @@
 # The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded for the runner's OS and
 # cached. Plugin Verifier runs against pluginVerificationIdes in a separate job (like the Build workflow).
 #
-# Triggered by pushes to dev/** branches and manually.
+# Triggered by pushes to dev/** branches, by pull requests to main (so that nothing reaches main, and the release draft
+# that build.yml makes from it, without the Windows and Linux backends having been tested; no secrets are used, so
+# Dependabot and fork pull requests can run it), and manually (e.g. on main before a draft release is published).
+# The concurrency group of a pull request is its own (github.ref is refs/pull/<number>/merge).
 
 name: Cross-platform
 
 on:
   push:
     branches: [ 'dev/**' ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 concurrency:

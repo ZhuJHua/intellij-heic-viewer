@@ -481,7 +481,8 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 - `.github/workflows/build.yml`：每次推送到 `main` 和每个 Pull Request 时运行。在 `macos-latest` 上构建并运行测试
   （`check`：JDK 25、21、17），在 `ubuntu-latest` 上针对 `pluginVerificationIdes` 运行 Plugin Verifier，推送到 `main` 时再根据
   `CHANGELOG.md` 的 `[Unreleased]` 小节创建一个 GitHub Release 草稿。
-- `.github/workflows/cross-platform.yml`：推送到 `dev/**` 分支时或手动运行。在 macOS arm64 与 x86_64、Linux x64（libheif 1.17
+- `.github/workflows/cross-platform.yml`：推送到 `dev/**` 分支时、向 `main` 提交 Pull Request 时或手动运行（发布并非来自
+  Pull Request 的 Release 草稿之前，请在 `main` 上手动运行一次）。在 macOS arm64 与 x86_64、Linux x64（libheif 1.17
   带/不带 HEVC 插件、Ubuntu 22.04 上的 libheif 1.12、未安装 libheif）、Linux arm64（libheif 1.17）、Windows x64 与 arm64 上构建并在
   JDK 25、21、17 上运行测试（按操作系统下载并缓存编译所用的 IDE；Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用
   IntelliJ IDEA），在 IDE 有对应架构版本的任务上还用 `test` 运行轻量 IDE 测试，另有一个 Plugin Verifier 任务。每个任务通过
