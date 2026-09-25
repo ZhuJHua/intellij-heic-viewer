@@ -247,13 +247,19 @@ tasks {
 // <IDE>/lib/jna/<arch>; point JNA there exactly like the IDE launcher does (product-info.json: -Djna.boot.library.path,
 // -Djna.nosys=true, -Djna.noclasspath=true). Directory names as in the IDE distributions: aarch64 or amd64, on macOS,
 // Windows and Linux alike. Evaluated only when a test task runs (resolving platformPath needs the IDE).
+// -PjnaNativeDir=<directory with jnidispatch> is used where the IDE has no directory for this architecture (CI: the
+// IntelliJ IDEA download on Windows arm64 is the x64 build; the workflow extracts win32-aarch64/jnidispatch.dll from the
+// JNA release of the same version).
 val platformDir: Provider<File> = providers.provider { intellijPlatform.platformPath.toFile() }
+val jnaNativeDirFallback: Provider<String> = providers.gradleProperty("jnaNativeDir")
 val jnaNativeDir: Provider<String> = platformDir.map { platform ->
     val jna = platform.resolve("lib/jna")
     val arch = System.getProperty("os.arch").lowercase()
     val preferred = if (arch == "aarch64" || arch == "arm64") "aarch64" else "amd64"
     // Not another architecture's directory: e.g. Android Studio for Linux and Windows ships x64 only.
-    jna.resolve(preferred).takeIf { it.isDirectory }?.absolutePath ?: ""
+    jna.resolve(preferred).takeIf { it.isDirectory }?.absolutePath
+        ?: jnaNativeDirFallback.orNull?.takeIf { File(it).isDirectory }?.let { File(it).absolutePath }
+        ?: ""
 }
 
 /** JVM arguments that make JNA load its native library from the IDE, if the IDE has one for this architecture. */

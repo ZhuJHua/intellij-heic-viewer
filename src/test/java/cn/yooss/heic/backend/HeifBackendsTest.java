@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /** Backend selection by OS. Pure Java: creating a backend never loads native code, so this runs on every OS. */
 class HeifBackendsTest {
@@ -62,9 +63,17 @@ class HeifBackendsTest {
     }
   }
 
-  /** Placeholders until the Windows and Linux backends are implemented. */
+  /** The Windows backend only probes the system on Windows (x64 or arm64); see WicHeifBackendTest. */
+  @Test
+  void windowsBackendProbeElsewhere() {
+    assumeFalse(HeifBackends.Os.current() == HeifBackends.Os.WINDOWS, "runs on Windows");
+    HeifBackendStatus status = new WicHeifBackend().status();
+    assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, status.reason(), status.toString());
+  }
+
+  /** Placeholders until the Linux backend is implemented. */
   @ParameterizedTest
-  @EnumSource(value = HeifBackends.Os.class, names = {"WINDOWS", "LINUX"})
+  @EnumSource(value = HeifBackends.Os.class, names = {"LINUX"})
   void placeholderBackends(HeifBackends.Os os) {
     HeifBackend backend = HeifBackends.create(os);
     assertEquals(HeifBackendStatus.Reason.NOT_IMPLEMENTED, backend.status().reason(), backend.status().toString());
