@@ -7,8 +7,10 @@
 # The workflow is triggered on pushes to the 'main' branch and on pull_request events.
 #
 # Adapted from the IntelliJ Platform Plugin Template (https://github.com/JetBrains/intellij-platform-plugin-template):
-# - Build and tests run on macOS: the decoder tests call the system's ImageIO framework through the FFM API.
-# - Java 25: the plugin is compiled with a JDK 25 toolchain (--release 22).
+# - Build and tests run on macOS: the macOS decoder tests call the system's ImageIO framework through the IDE's JNA.
+#   The Cross-platform workflow (cross-platform.yml) runs the tests on Linux and Windows as well.
+# - Java 25: the plugin is compiled with a JDK 25 toolchain (--release 17); `check` runs the tests on JDK 25, 21 and 17
+#   (test, testJdk21, testJdk17), the runtimes of the supported IDEs.
 # - Plugin verification is OS-independent and downloads several IDEs (pluginVerificationIdes in gradle.properties), so it
 #   runs on Linux, where the disk space step below can free enough room.
 # - The IDE to compile against is downloaded from platformType/platformVersion (gradle.properties); the local.properties
@@ -73,12 +75,15 @@ jobs:
       - name: Fetch Sources
         uses: actions/checkout@v6
 
-      # Set up the Java environment for the next steps
+      # Set up the Java environment for the next steps: JDK 25 for Gradle, 17 and 21 for testJdk17 / testJdk21
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: zulu
-          java-version: 25
+          java-version: |
+            17
+            21
+            25
 
       # Setup Gradle
       - name: Setup Gradle
@@ -88,7 +93,9 @@ jobs:
 
       # Run tests
       - name: Run Tests
-        run: ./gradlew check
+        run: >
+          ./gradlew check
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
       # Collect Tests Result of failed tests
       - name: Collect Tests Result

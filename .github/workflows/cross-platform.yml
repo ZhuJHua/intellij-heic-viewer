@@ -1,0 +1,157 @@
+# GitHub Actions workflow that builds the plugin and runs the unit tests on every supported OS and architecture, on the
+# three Java runtimes the supported IDEs use (JDK 25: 2026.1.3+; JDK 21: 2024.2 - 2026.1.2; JDK 17: 2024.1):
+#   macOS arm64 and x86_64      ImageIO.framework through the IDE's JNA (x86_64 passes CGRect by value differently)
+#   Linux x64 / arm64           with the system libheif (libheif1 + libheif-plugin-libde265) and without it
+#   Windows x64 / arm64         WIC
+# HEIC_EXPECT_BACKEND is the status HeifBackendContractTest requires of the system decoder on that runner: "available",
+# or the HeifBackendStatus.Reason the backend must report (the Windows and Linux backends are placeholders so far:
+# NOT_IMPLEMENTED). Test reports are uploaded for every job.
+#
+# The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded for the runner's OS and
+# cached. Plugin Verifier runs against pluginVerificationIdes in a separate job (like the Build workflow).
+#
+# Triggered by pushes to dev/** branches and manually.
+
+name: Cross-platform
+
+on:
+  push:
+    branches: [ 'dev/**' ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-latest
+            expect: available
+          - name: macOS x86_64
+            os: macos-15-intel
+            expect: available
+          - name: Linux x64, libheif
+            os: ubuntu-24.04
+            libheif: install
+            expect: NOT_IMPLEMENTED
+          - name: Linux x64, no libheif
+            os: ubuntu-24.04
+            libheif: remove
+            expect: NOT_IMPLEMENTED
+          - name: Linux arm64, libheif
+            os: ubuntu-24.04-arm
+            libheif: install
+            expect: NOT_IMPLEMENTED
+          - name: Windows x64
+            os: windows-latest
+            expect: NOT_IMPLEMENTED
+          - name: Windows arm64
+            os: windows-11-arm
+            expect: NOT_IMPLEMENTED
+    env:
+      HEIC_EXPECT_BACKEND: ${{ matrix.expect }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Install libheif
+        if: ${{ matrix.libheif == 'install' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libheif1 libheif-plugin-libde265
+          ldconfig -p | grep -E 'libheif|libde265'
+
+      - name: Remove libheif
+        if: ${{ matrix.libheif == 'remove' }}
+        run: |
+          sudo apt-get purge -y 'libheif*' || true
+          if ldconfig -p | grep libheif; then echo "::error::libheif is still installed"; exit 1; fi
+
+      # JDK 25 runs Gradle and compiles (--release 17); the test tasks use JDK 25, 21 and 17 as Gradle toolchains.
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: |
+            17
+            21
+            25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # The downloaded IDE archive (about 1.5 GB), per OS/architecture and gradle.properties.
+      - name: Cache IDE
+        uses: actions/cache@v6
+        with:
+          path: ~/.gradle/caches/modules-2/files-2.1/com.google.android.studio
+          key: ide-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle.properties') }}
+
+      - name: Build and test
+        run: >
+          ./gradlew buildPlugin test testJdk21 testJdk17 --continue
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
+
+      - name: Show the IDE's JNA native directories
+        if: ${{ always() }}
+        run: find ~/.gradle/caches -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
+
+      - name: Upload test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || 'default' }}
+          path: |
+            build/reports/tests
+            build/test-results
+          if-no-files-found: ignore
+
+  verify:
+    name: Verify plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+
+      # The IDEs in pluginVerificationIdes need more disk space than a runner has free by default.
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          large-packages: false
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Run Plugin Verification tasks
+        run: ./gradlew verifyPlugin
+
+      - name: Collect Plugin Verifier Result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginVerifier-result
+          path: ${{ github.workspace }}/build/reports/pluginVerifier
