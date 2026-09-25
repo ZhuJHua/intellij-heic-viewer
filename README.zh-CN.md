@@ -51,9 +51,16 @@ Git 中修改过的 HEIC 文件左右对比：
   2026.1.3 起为 JBR 25）。
 - **macOS**（Apple Silicon 或 Intel）：无需安装任何东西（ImageIO.framework 是 macOS 的一部分）。在 macOS 26 / Apple Silicon 上验证；
   解码测试也在 CI 的 Intel Mac 上运行。
-- **Windows 10 / 11**（x64 或 arm64）：需要 Microsoft Store 中的 *HEIF 图像扩展*（HEIF Image Extensions）和 *HEVC 视频扩展*
-  （HEVC Video Extensions）。缺少时插件会给出链接。
-  <!-- TODO(windows backend)：Store 产品 ID、最低版本、Windows Server / LTSC 说明。 -->
+- **Windows 10（1809 或更新）/ 11**（x64 或 arm64）：需要 Microsoft Store 中的两个组件，缺少时插件会给出链接：
+  - *HEIF 图像扩展*（HEIF Image Extension，[9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG)，免费，
+    Windows 10 1809+），即 Windows 图像组件（WIC）的 HEIF 解码器。也可以用 `winget install --id 9PMMSR1CGPWG --source msstore` 安装。
+  - *HEVC 视频扩展*（HEVC Video Extensions，[9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7)，0.99 美元），
+    即 HEIC 照片使用的编码。部分电脑预装了免费的 *来自设备制造商的 HEVC 视频扩展*（HEVC Video Extensions from Device
+    Manufacturer，[9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ)，由电脑厂商预装，Store 中不能购买），效果相同。
+
+  是否预装取决于 Windows 镜像（GitHub Actions 的 Windows 11 25H2 镜像两者都有，Windows Server 2025 都没有）。没有
+  Microsoft Store 的版本（Windows Server、LTSC）无法从 Store 获得 HEVC 编码；在 Windows Server 2025 上 winget 可以安装
+  HEIF 图像扩展，但装不了 HEVC 编码。
 - **Linux**（x64 或 arm64）：libheif 1.x（`libheif.so.1`）及 HEVC 解码插件（libde265），例如 Debian/Ubuntu 上
   `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的安装命令。
   <!-- TODO(linux backend)：最低 libheif 版本，Fedora（RPM Fusion）、Arch、openSUSE 等的包名。 -->
@@ -96,7 +103,12 @@ Git 中修改过的 HEIC 文件左右对比：
   Recent Files、Search Everywhere 等）。非本地文件（jar/归档内、远程、Diff 中的历史版本）和超过 64 MB 的文件使用普通图片图标。
   第一次显示某个文件时会先短暂显示普通图标；一个目录下有大量 HEIC 文件时，缩略图按 2 个线程逐个出现。缓存最多 500 个图标，
   超出后最久未使用的会在需要时重新解码。
-- 尚未在真实 IDE 中验证：Intel Mac（解码测试在 CI 中通过）、macOS 26 以前的版本、Git LFS 管理的 HEIC。
+- **Windows 上的颜色**来自微软的 HEIF 解码器。HEIF 图像扩展 1.2.36（CI 中测试的版本）会把颜色信息标为 BT.601 的单图（非网格）
+  HEVC 图片（libheif 和 macOS 都这样写）按 BT.709 系数转换，饱和色会有偏差（纯红解码为 (255, 25, 0)）；网格图片（所有 iPhone
+  照片都是）颜色正确。插件显示的就是 Windows 解码的结果，与 Windows 自带应用一致。
+- **Windows**：IDE 启动后的第一张 HEIC 图片需要 1–2 秒（Windows 激活 Store 包）；可用性检测在启动时于后台承担这部分开销。
+- 尚未在真实 IDE 中验证：Intel Mac（解码测试在 CI 中通过）、macOS 26 以前的版本、Git LFS 管理的 HEIC、Windows（解码测试在 CI 的
+  Windows 11 arm64 和 Windows Server 2025 x64 上通过）。
 
 ## 工作原理
 
@@ -118,7 +130,7 @@ Git 中修改过的 HEIC 文件左右对比：
    | 操作系统 | 后端 | 系统解码器 |
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
-   | Windows | `win.WicHeifBackend` | WIC + Microsoft Store 的 HEIF/HEVC 扩展 <!-- TODO(windows backend) --> |
+   | Windows | `win.WicHeifBackend` | Windows 图像组件（WIC）+ Microsoft Store 的 HEIF 图像扩展和 HEVC 视频扩展 |
    | Linux | `linux.LibheifHeifBackend` | `libheif.so.1` + HEVC 解码插件 <!-- TODO(linux backend) --> |
 
    `AbstractHeifBackend` 实现各平台相同的部分：任何本地调用之前，数据必须通过 `HeifInput`（`HeifSniffer` 检查——系统解码器按内容选择
@@ -135,6 +147,19 @@ Git 中修改过的 HEIC 文件左右对比：
    复制到 `BufferedImage`。每次调用都有自己的 autorelease pool，所有 CF 对象和本地缓冲区在 `finally` 中释放，线程安全。
    ImageIO 报告的类型必须属于 HEIF 家族（`public.heic`、`public.heif` 等）。`MacApi` 列出它需要的本地调用，由 `jna.JnaMacApi` 实现；
    按值传递的 `CGRect` 在 arm64 上作为 4 个 double 传递，在 x86_64 上先用 8 个占位 double 填满 `xmm0`–`xmm7`，再把 4 个分量放到栈上。
+   **Windows 解码**（`win` 包）：`WicDecoder` 在调用线程上初始化 COM（`CoInitializeEx` 多线程套间，结束时用 `CoUninitialize`
+   配对；已经处于单线程套间的线程，例如 AWT 线程，按原样使用），创建 WIC 图像工厂、内存流（`SHCreateMemStream`）和解码器
+   （`CreateDecoderFromStream`，解码器报告的容器格式必须是 `GUID_ContainerFormatHeif`），取第 0 帧即主图。微软的 HEIF 解码器
+   自己应用 HEIF 的 `irot`/`imir`，并报告 `System.Photo.Orientation` = 1（按 HEIF 标准忽略 EXIF 方向；插件仍会应用报告的方向）。
+   它的帧总是 32 位 BGR：透明通道通过 `IWICBitmapSourceTransform` 以单独的 8 位平面提供。帧依次经过 `IWICBitmapScaler`
+   （Fant，仅在图片大于请求尺寸时）、`IWICFormatConverter` 和 `CreateBitmapFromSource`（只解码一次），再按条带复制到
+   `BufferedImage`；内嵌的 ICC 配置文件（例如 Display P3）由 `PixelPipeline` 转换到 sRGB。所有 COM 对象和缓冲区在任何路径上都会释放。
+   `WinApi` 列出所需的本地调用，由 `jna.JnaWinApi` 通过 JNA 的 `Function` 以 COM 虚表调用实现（虚表槽位取自 Windows SDK 的
+   `wincodec.idl`，并与 mingw-w64 头文件核对）；`MFTEnumEx` 按值接收 GUID，在 x64 上以指向副本的指针传递，在 arm64 上用两个寄存器传递。
+   `WicProbe` 通过解码一个 428 字节的内嵌 HEIC 并向 Media Foundation 查询 HEVC 解码器来确定状态：没有 HEIF 解码器
+   （`WINCODEC_ERR_COMPONENTINITIALIZEFAILURE`）为 `WINDOWS_HEIF_EXTENSION_MISSING`，没有 HEVC 编码
+   （`MF_E_TOPO_CODEC_NOT_FOUND`、没有 HEVC 解码器）为 `WINDOWS_HEVC_EXTENSION_MISSING`，并附上对应的 Microsoft Store 页面
+   （产品 ID 见 `WindowsCodecs`）。
 4. **注册时机**：`AppLifecycleListener.appFrameCreated`（正常启动，在恢复项目/编辑器标签之前）、
    `DynamicPluginListener.pluginLoaded/beforePluginUnload`（免重启安装/更新/卸载），以及 `HeicReaderRegistrar`：一个只针对
    Image 文件类型的 `fileEditorProvider`，它的 `accept` 注册读取器并始终返回 `false`。命令行启动的 Diff/合并窗口（IDE 未运行时执行
@@ -274,7 +299,8 @@ src/main/java/cn/yooss/heic/
   backend/                         HeifBackend、HeifBackendStatus、HeifBackends（按操作系统选择）、AbstractHeifBackend、HeifImageInfo、
                                    HeifInput + IsoBoxes（输入检查）、PixelPipeline、UnavailableHeifBackend；jna/JnaLibraries（JNA 规则、加载本地库）
   mac/                             MacHeifBackend、HeicDecoder（ImageIO.framework 解码流程）、MacApi、jna/JnaMacApi
-  win/WicHeifBackend.java          Windows Imaging Component  <!-- TODO(windows backend) -->
+  win/                             WicHeifBackend、WicDecoder（WIC 解码流程）、WicProbe（可用性检测）、WinApi、
+                                   jna/JnaWinApi（COM 虚表调用）、Guids、Hresult、WindowsCodecs（Store 产品 ID）
   linux/LibheifHeifBackend.java    libheif  <!-- TODO(linux backend) -->
   thumbnail/HeicThumbnailIconProvider.java   FileIconProvider（缩略图文件图标）
   thumbnail/HeicThumbnails.java              缓存、后台解码、刷新、卸载时清理（平台相关部分）
@@ -294,8 +320,9 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 
 ### 实现解码后端（Windows、Linux）
 
-- 在 `win.WicHeifBackend` / `linux.LibheifHeifBackend`（目前都是报告 `NOT_IMPLEMENTED` 的占位实现）中继承 `backend.AbstractHeifBackend`；
-  `HeifBackends` 已经按操作系统选择它们。
+- 在 `win.WicHeifBackend` / `linux.LibheifHeifBackend`（Windows 后端已实现；Linux 后端目前是报告 `NOT_IMPLEMENTED` 的占位实现）中继承
+  `backend.AbstractHeifBackend`；`HeifBackends` 已经按操作系统选择它们。Windows 后端可作参考：本地调用放在接口（`WinApi`）之后，
+  用它的假实现（`FakeWinApi`）在所有系统上检查每条路径都释放了资源，探测的判定表是纯 Java（`WicProbe`）。
 - `probe()`：通过 `backend.jna.JnaLibraries` 加载系统库，返回 `HeifBackendStatus.available(...)` 或 `unavailable(Reason, detail)`，
   并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。用户可以安装的原因会触发
   `HeicDecoderAvailability` 的通知，文案是两个资源包中的 `backend.status.<REASON>`。
@@ -322,7 +349,11 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
   Linux x64、Linux arm64、Windows x64 与 arm64 上构建并在 JDK 25、21、17 上运行测试（按操作系统下载并缓存编译所用的 IDE；
   Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用 IntelliJ IDEA），
   另有一个 Plugin Verifier 任务。每个任务通过 `HEIC_EXPECT_BACKEND` 指定 `HeifBackendContractTest` 在该环境中必须看到的解码器状态
-  （`available`，或 `LINUX_LIBHEIF_MISSING` 等 `HeifBackendStatus.Reason`）。测试报告作为 artifact 上传。
+  （`available`，或 `LINUX_LIBHEIF_MISSING` 等 `HeifBackendStatus.Reason`）。测试报告作为 artifact 上传。Windows：Windows 11 arm64
+  镜像自带 HEIF 和 HEVC 扩展（实际解码 HEIC，期望 `available`）；Windows Server 2025 x64 运行两次，一次保持原样
+  （`WINDOWS_HEIF_EXTENSION_MISSING`），一次用 winget 安装 HEIF 图像扩展（那里装不了 HEVC 编码：`WINDOWS_HEVC_EXTENSION_MISSING`）。
+  Windows arm64 上下载的 IntelliJ IDEA 是 x64 版本，所以 JNA 的 arm64 本地库取自同版本的 JNA 发行包：IDE 没有测试 JVM 所需的
+  `lib/jna/<arch>` 目录时，使用 `-PjnaNativeDir=<包含 jnidispatch.dll 的目录>`。
 - 在 GitHub 上发布该草稿会触发 `.github/workflows/release.yml`：把发布说明写入 `CHANGELOG.md` 的版本小节、签名并发布到
   JetBrains Marketplace、把 zip 附加到 Release，并创建一个更新 changelog 的 Pull Request。需要的仓库 Secrets：
   `PUBLISH_TOKEN`、`CERTIFICATE_CHAIN`、`PRIVATE_KEY`、`PRIVATE_KEY_PASSWORD`
@@ -342,7 +373,7 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 ## 路线图
 
 - 0.2：支持 IntelliJ 2024.1+ / Android Studio Koala+（用 JNA 取代 FFM，Java 17），并通过各系统自带的解码器支持 Windows（WIC）和
-  Linux（libheif），实现放在 `HeifBackend` 接口之后（进行中：Windows 和 Linux 后端目前是报告 `NOT_IMPLEMENTED` 的占位实现）。
+  Linux（libheif），实现放在 `HeifBackend` 接口之后（进行中：Windows 后端已实现，Linux 后端目前是报告 `NOT_IMPLEMENTED` 的占位实现）。
 
 ## 许可证
 

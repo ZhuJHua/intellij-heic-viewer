@@ -252,8 +252,8 @@ public final class WicDecoder {
       int hr = api.createDecoderFromStream(factory, stream, WICDecodeMetadataCacheOnDemand, result);
       long decoder = own(result[0]);
       if (Hresult.failed(hr) && requireHeif && isHeifDecoderMissing(hr)) {
-        throw new WicException("IWICImagingFactory::CreateDecoderFromStream (no HEIF decoder: are the HEIF Image "
-                               + "Extensions installed?)", hr);
+        throw new WicException("IWICImagingFactory::CreateDecoderFromStream (no HEIF decoder: is the HEIF Image "
+                               + "Extension installed?)", hr);
       }
       check(hr, "IWICImagingFactory::CreateDecoderFromStream");
       if (decoder == 0) throw new WicException("IWICImagingFactory::CreateDecoderFromStream", Hresult.E_POINTER);

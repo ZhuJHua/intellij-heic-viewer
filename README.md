@@ -26,7 +26,7 @@ Images are decoded by the operating system's own HEIF decoder, called through th
 The plugin bundles no decoder and no native code, and does not send any data.
 
 - **macOS**: built in (ImageIO.framework).
-- **Windows**: needs the *HEIF Image Extensions* and *HEVC Video Extensions* from the Microsoft Store.
+- **Windows**: needs the *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store.
 - **Linux**: needs libheif with its HEVC decoder plugin (libde265) from the distribution's packages.
 
 If a component is missing, the plugin tells you what to install. The pixel limit and the thumbnails can be changed in
@@ -54,9 +54,18 @@ Side-by-side image diff of a modified HEIC file:
   (JBR 17 in 2024.1, JBR 21 in 2024.2 – 2026.1.2, JBR 25 since 2026.1.3).
 - **macOS**, Apple silicon or Intel: nothing to install (ImageIO.framework is part of macOS). Tested on macOS 26 on
   Apple silicon; the decoder tests also run on Intel Macs in CI.
-- **Windows 10 or 11**, x64 or arm64: the *HEIF Image Extensions* and the *HEVC Video Extensions* from the Microsoft
-  Store. The plugin links to them when they are missing.
-  <!-- TODO(windows backend): Store product ids, minimum versions, Windows Server / LTSC notes. -->
+- **Windows 10 (1809 or newer) or 11**, x64 or arm64: two Microsoft Store packages, which the plugin links to when they
+  are missing:
+  - *HEIF Image Extension* ([9PMMSR1CGPWG](https://apps.microsoft.com/detail/9PMMSR1CGPWG), free, Windows 10 1809+),
+    the HEIF decoder of the Windows Imaging Component. Also `winget install --id 9PMMSR1CGPWG --source msstore`.
+  - *HEVC Video Extensions* ([9NMZLZ57R3T7](https://apps.microsoft.com/detail/9NMZLZ57R3T7), US$0.99), the codec of
+    HEIC photos. PCs can come with the free *HEVC Video Extensions from Device Manufacturer*
+    ([9N4WGH0Z6VHQ](https://apps.microsoft.com/detail/9N4WGH0Z6VHQ), preinstalled by PC makers, not offered for purchase),
+    which works the same.
+
+  Whether they are preinstalled depends on the Windows image (the Windows 11 25H2 image of GitHub Actions has both,
+  Windows Server 2025 has neither). Editions without the Microsoft Store (Windows Server, LTSC) cannot get the HEVC
+  codec from the Store; on Windows Server 2025 winget installs the HEIF Image Extension, but not the HEVC codec.
 - **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with an HEVC decoder plugin (libde265), for example
   `sudo apt install libheif1 libheif-plugin-libde265` on Debian/Ubuntu. The plugin shows the install command for the
   distribution when they are missing.
@@ -107,8 +116,14 @@ Side-by-side image diff of a modified HEIC file:
   Non-local files (inside archives, remote, historical revisions in the diff) and files over 64 MB keep the generic
   icon. The first time a file is shown, the generic icon appears briefly; folders with many HEIC files fill in two at a
   time. Up to 500 icons are cached.
+- **Windows colors** come from Microsoft's HEIF decoder. With the HEIF Image Extension 1.2.36 (tested in CI) it converts
+  single (non-grid) HEVC images whose color information says BT.601, which is what libheif and macOS write, with BT.709
+  coefficients, so saturated colors shift (pure red decodes as (255, 25, 0)); grid images, which all iPhone photos are,
+  come out right. The plugin shows what Windows decodes, like Windows' own apps.
+- **Windows**: the first HEIC image after the IDE starts takes one to two seconds while Windows activates the Store
+  packages; the availability check pays this in the background during startup.
 - Not verified in a real IDE yet: Intel Macs (the decoder tests pass on them in CI), macOS versions before 26, HEIC
-  files stored with Git LFS.
+  files stored with Git LFS, Windows (the decoder tests pass on Windows 11 arm64 and Windows Server 2025 x64 in CI).
 
 ## How it works
 
@@ -130,7 +145,7 @@ Side-by-side image diff of a modified HEIC file:
    | OS | Backend | System decoder |
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
-   | Windows | `win.WicHeifBackend` | Windows Imaging Component with the HEIF/HEVC Store extensions <!-- TODO(windows backend) --> |
+   | Windows | `win.WicHeifBackend` | Windows Imaging Component with the HEIF Image Extension and the HEVC Video Extensions (Microsoft Store) |
    | Linux | `linux.LibheifHeifBackend` | `libheif.so.1` with an HEVC decoder plugin <!-- TODO(linux backend) --> |
 
    `AbstractHeifBackend` implements what is the same everywhere: before any native call the data must pass
@@ -152,6 +167,24 @@ Side-by-side image diff of a modified HEIC file:
    `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a `CGRect` is
    passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by the four
    components on the stack on x86_64.
+
+   **Windows decoder** (`win` package): `WicDecoder` initializes COM on the calling thread (`CoInitializeEx`,
+   multithreaded, balanced by `CoUninitialize`; a thread that already is in a single-threaded apartment, such as an AWT
+   thread, is used as it is), creates the WIC imaging factory, a memory stream (`SHCreateMemStream`) and a decoder from
+   it (`CreateDecoderFromStream`; the decoder must report `GUID_ContainerFormatHeif`), and takes frame 0, the primary
+   image. Microsoft's HEIF decoder applies the HEIF `irot`/`imir` transformations itself and reports
+   `System.Photo.Orientation` = 1 (the EXIF orientation is ignored, as the HEIF standard requires; the reported
+   orientation is applied anyway). Its frames are 32-bit BGR: the alpha of an image comes as a separate 8-bit plane
+   through `IWICBitmapSourceTransform`. The frame goes through `IWICBitmapScaler` (Fant, only when the image is larger
+   than requested), `IWICFormatConverter` and `CreateBitmapFromSource` (decoded once) and is copied into the
+   `BufferedImage` in strips; an embedded ICC profile (e.g. Display P3) is converted to sRGB with `PixelPipeline`. Every
+   COM object and buffer is released on every path. `WinApi` is the list of native calls and `jna.JnaWinApi` implements
+   them as COM vtable calls through JNA's `Function`, with the vtable slots of the Windows SDK's `wincodec.idl` (checked
+   against the mingw-w64 headers); `MFTEnumEx` takes a GUID by value, passed as a pointer to a copy on x64 and in two
+   registers on arm64. `WicProbe` decides the status by decoding a 428-byte embedded HEIC and asking Media Foundation
+   for HEVC decoders: no HEIF decoder (`WINCODEC_ERR_COMPONENTINITIALIZEFAILURE`) is `WINDOWS_HEIF_EXTENSION_MISSING`,
+   no HEVC codec (`MF_E_TOPO_CODEC_NOT_FOUND`, no HEVC decoder) is `WINDOWS_HEVC_EXTENSION_MISSING`, each with its
+   Microsoft Store page (`WindowsCodecs`).
 5. **Registration**: `AppLifecycleListener.appFrameCreated` (normal start, before projects and editor tabs are
    restored), `DynamicPluginListener.pluginLoaded` / `beforePluginUnload` (installation, update and removal without
    restart), and `HeicReaderRegistrar`, a `fileEditorProvider` for the Image file type whose `accept` registers the
@@ -278,7 +311,8 @@ src/main/java/cn/yooss/heic/
                               HeifImageInfo, HeifInput + IsoBoxes (input checks), PixelPipeline,
                               UnavailableHeifBackend; jna/JnaLibraries (JNA rules, library loading)
   mac/                        MacHeifBackend, HeicDecoder (the ImageIO.framework algorithm), MacApi, jna/JnaMacApi
-  win/                        WicHeifBackend (Windows Imaging Component)  <!-- TODO(windows backend) -->
+  win/                        WicHeifBackend, WicDecoder (the WIC algorithm), WicProbe (availability), WinApi,
+                              jna/JnaWinApi (COM vtable calls), Guids, Hresult, WindowsCodecs (Store product ids)
   linux/                      LibheifHeifBackend (libheif)  <!-- TODO(linux backend) -->
   thumbnail/                  Thumbnail icons: provider, loader, cache, renderer, listeners
 src/main/resources/
@@ -294,8 +328,10 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 
 ### Implementing a decoder backend (Windows, Linux)
 
-- Extend `backend.AbstractHeifBackend` in `win.WicHeifBackend` / `linux.LibheifHeifBackend` (both are placeholders
-  that report `NOT_IMPLEMENTED`); `HeifBackends` already selects them by OS.
+- Extend `backend.AbstractHeifBackend` in `win.WicHeifBackend` / `linux.LibheifHeifBackend` (the Windows backend is
+  implemented; the Linux one is a placeholder that reports `NOT_IMPLEMENTED`); `HeifBackends` already selects them by
+  OS. The Windows backend shows the pattern: the native calls behind an interface (`WinApi`), a fake of it that checks
+  releases on every path on every OS (`FakeWinApi`), and the probe's decision table as plain Java (`WicProbe`).
 - `probe()`: load the system libraries through `backend.jna.JnaLibraries` and return
   `HeifBackendStatus.available(...)` or `unavailable(Reason, detail)` with `withInstallUrl` (e.g. a Microsoft Store
   link) or `withInstallCommand` (the distribution's package command). User-installable reasons show the notification of
@@ -327,7 +363,12 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
   IDE to compile against is downloaded for each OS and cached; on arm64 Linux and Windows, which Android Studio has no
   build for, IntelliJ IDEA), and Plugin Verifier. Each job sets `HEIC_EXPECT_BACKEND`
   to the decoder status `HeifBackendContractTest` must see on that runner (`available`, or a `HeifBackendStatus.Reason`
-  such as `LINUX_LIBHEIF_MISSING`). Test reports are uploaded as artifacts.
+  such as `LINUX_LIBHEIF_MISSING`). Test reports are uploaded as artifacts. Windows: the Windows 11 arm64 image has the
+  HEIF and HEVC extensions (HEIC is decoded, expected `available`); Windows Server 2025 x64 runs once as it is
+  (`WINDOWS_HEIF_EXTENSION_MISSING`) and once with the HEIF Image Extension installed by winget (the HEVC codec cannot
+  be installed there: `WINDOWS_HEVC_EXTENSION_MISSING`). The IntelliJ IDEA downloaded on Windows arm64 is the x64 build,
+  so JNA's arm64 library comes from the JNA release of the same version: `-PjnaNativeDir=<directory with
+  jnidispatch.dll>` is used when the IDE has no `lib/jna/<arch>` directory for the test JVM.
 - Publishing the draft release triggers `.github/workflows/release.yml`: it moves the release notes into a version
   section of `CHANGELOG.md`, signs and publishes the plugin to JetBrains Marketplace, attaches the zip to the release
   and opens a pull request with the updated changelog. Required repository secrets: `PUBLISH_TOKEN`,
@@ -350,8 +391,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 ## Roadmap
 
 - 0.2: IntelliJ 2024.1+ / Android Studio Koala+ (JNA instead of FFM, Java 17), and Windows (WIC) and Linux (libheif)
-  support through the systems' own decoders, behind the `HeifBackend` interface (in progress: the Windows and Linux
-  backends are placeholders that report `NOT_IMPLEMENTED`).
+  support through the systems' own decoders, behind the `HeifBackend` interface (in progress: the Windows backend is
+  implemented, the Linux backend is a placeholder that reports `NOT_IMPLEMENTED`).
 
 ## License
 

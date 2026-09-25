@@ -1,6 +1,7 @@
 package cn.yooss.heic.backend;
 
 import cn.yooss.heic.Fixtures;
+import cn.yooss.heic.SystemDecoder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -137,7 +138,8 @@ class HeifBackendContractTest {
   void colorsMatchTheSourcePng(String name) throws IOException {
     assumeTrue(available(), "no system decoder");
     double mean = Fixtures.meanDifference(BACKEND.decode(Fixtures.bytes(name), 0), Fixtures.png("rgb.png"));
-    assertTrue(mean < 2.5, "mean difference " + mean); // lossy HEVC with 4:2:0 chroma blurs the quadrant edges
+    // lossy HEVC with 4:2:0 chroma blurs the quadrant edges
+    assertTrue(mean < SystemDecoder.colorTolerance(2.5, 8.0), "mean difference " + mean);
   }
 
   @ParameterizedTest
@@ -145,7 +147,7 @@ class HeifBackendContractTest {
   void tenBitImagesDecodeToEightBitSrgb(String name) throws IOException {
     assumeTrue(available(), "no system decoder");
     double mean = Fixtures.meanDifference(BACKEND.decode(Fixtures.bytes(name), 0), Fixtures.png("rgb16.png"));
-    assertTrue(mean < 1.5, "mean difference to the 16-bit PNG source " + mean);
+    assertTrue(mean < SystemDecoder.colorTolerance(1.5, 12.0), "mean difference to the 16-bit PNG source " + mean);
   }
 
   /** Raw raster values (not getRGB) must be straight alpha. */
@@ -157,11 +159,12 @@ class HeifBackendContractTest {
     int[] raw = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
     int w = image.getWidth();
     assertPixel(0x00000000, raw[150 * w + 50], 0, 255);  // transparent (color undefined)
-    assertPixel(0x80FF0000, raw[150 * w + 150], 3, 8);  // red at alpha 128
-    assertPixel(0xFF0000FF, raw[150 * w + 250], 3, 8);  // opaque blue
-    assertPixel(0x4000FF00, raw[150 * w + 350], 3, 12); // green at alpha 64
+    int colors = (int) SystemDecoder.colorTolerance(0, 24);
+    assertPixel(0x80FF0000, raw[150 * w + 150], 3, 8 + colors);  // red at alpha 128
+    assertPixel(0xFF0000FF, raw[150 * w + 250], 3, 8 + colors);  // opaque blue
+    assertPixel(0x4000FF00, raw[150 * w + 350], 3, 12 + colors); // green at alpha 64
     double mean = Fixtures.meanDifference(image, Fixtures.png("alpha.png"));
-    assertTrue(mean < 3.0, "mean difference " + mean);
+    assertTrue(mean < SystemDecoder.colorTolerance(3.0, 12.0), "mean difference " + mean);
   }
 
   private static void assertPixel(int expected, int actual, int alphaTolerance, int colorTolerance) {

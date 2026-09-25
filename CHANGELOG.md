@@ -6,7 +6,7 @@
 
 ### Added
 
-- Windows and Linux: HEIC/HEIF images are decoded by the operating system's own decoder (Windows: WIC with the *HEIF Image Extensions* and *HEVC Video Extensions* from the Microsoft Store; Linux: libheif with its libde265 HEVC plugin). Nothing is bundled.
+- Windows and Linux: HEIC/HEIF images are decoded by the operating system's own decoder (Windows: WIC with the *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store; Linux: libheif with its libde265 HEVC plugin). Nothing is bundled.
 - A notification tells what to install when the system decoder is missing, with the install page or command, *Check Again* (HEIC files then load without a restart) and *Don't Show Again*.
 
 ### Changed
