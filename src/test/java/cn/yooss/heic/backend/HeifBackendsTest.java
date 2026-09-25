@@ -10,6 +10,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -38,6 +40,8 @@ class HeifBackendsTest {
     HeifBackend other = HeifBackends.create(HeifBackends.Os.OTHER);
     assertInstanceOf(UnavailableHeifBackend.class, other);
     assertEquals(HeifBackendStatus.Reason.UNSUPPORTED_OS, other.status().reason());
+    assertSame(other.status(), other.cachedStatus(), "a fixed status is known without probing");
+    assertNull(HeifBackends.create(HeifBackends.Os.MAC).cachedStatus(), "not probed yet");
     assertEquals("macos-imageio", HeifBackends.create(HeifBackends.Os.MAC).id());
     assertEquals("windows-wic", HeifBackends.create(HeifBackends.Os.WINDOWS).id());
     assertEquals("linux-libheif", HeifBackends.create(HeifBackends.Os.LINUX).id());
@@ -92,5 +96,49 @@ class HeifBackendsTest {
     HeifBackendStatus windows = HeifBackends.debugBackend("WINDOWS_HEIF_EXTENSION_MISSING|ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG").status();
     assertEquals("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG", windows.installUrl());
     assertNull(windows.installCommand());
+    assertSame(backend.status(), backend.cachedStatus());
+    assertSame(backend.status(), backend.recheckStatus(), "the forced status stays without -D" + HeifBackends.DEBUG_RECOVER_PROPERTY);
+  }
+
+  /** -Dheic.viewer.debug.backendStatus.recover=true: the first re-check switches to the real backend of this OS. */
+  @Test
+  void debugBackendCanRecoverOnRecheck() {
+    HeifBackendStatus forced = HeifBackendStatus.unavailable(HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING, "forced");
+    HeifBackend real = new UnavailableHeifBackend("real", "the real decoder", HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR, "real"));
+    AtomicInteger created = new AtomicInteger();
+    Supplier<HeifBackend> realBackend = () -> {
+      created.incrementAndGet();
+      return real;
+    };
+
+    DebugHeifBackend sticky = new DebugHeifBackend(forced, false, realBackend);
+    assertEquals(forced, sticky.status());
+    assertEquals(forced, sticky.recheckStatus());
+    assertEquals(0, created.get(), "the real backend is not even created");
+    assertThrows(IOException.class, () -> sticky.decode(Fixtures.bytes("rgb_sips.heic"), 0));
+
+    DebugHeifBackend recovering = new DebugHeifBackend(forced, true, realBackend);
+    assertEquals(forced, recovering.status());
+    assertEquals(forced, recovering.cachedStatus());
+    assertEquals(real.status(), recovering.recheckStatus());
+    assertEquals(real.status(), recovering.status());
+    assertEquals(real.status(), recovering.cachedStatus());
+    assertEquals("the real decoder", recovering.displayName());
+    recovering.recheckStatus();
+    assertEquals(1, created.get());
+    assertInstanceOf(DebugHeifBackend.class, HeifBackends.debugBackend("ERROR", true));
+  }
+
+  @Test
+  void backendCanBeReplacedForTests() {
+    HeifBackend stub = UnavailableHeifBackend.unsupportedOs("TestOS", "test");
+    HeifBackend previous = HeifBackends.replaceForTests(stub);
+    try {
+      assertSame(stub, HeifBackends.current());
+    }
+    finally {
+      HeifBackends.replaceForTests(previous);
+    }
+    assertEquals(HeifBackends.create(HeifBackends.Os.current()).getClass(), HeifBackends.current().getClass());
   }
 }

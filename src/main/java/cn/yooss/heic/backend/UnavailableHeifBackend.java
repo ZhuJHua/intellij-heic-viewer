@@ -42,6 +42,12 @@ public final class UnavailableHeifBackend implements HeifBackend {
     return status;
   }
 
+  /** The fixed status: nothing to probe. */
+  @Override
+  public @NotNull HeifBackendStatus cachedStatus() {
+    return status;
+  }
+
   @Override
   public @NotNull HeifBackendStatus recheckStatus() {
     return status;

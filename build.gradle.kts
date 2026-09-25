@@ -72,7 +72,7 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
-    // HeicPlatformIntegrationTest: a light IDE (BasePlatformTestCase, JUnit 4 style) in the `test` task only.
+    // *PlatformIntegrationTest: a light IDE (BasePlatformTestCase, JUnit 4 style) in the `test` task only.
     testImplementation(libs.junit4)
     testRuntimeOnly(libs.junit.vintage.engine)
 
@@ -300,8 +300,8 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
     systemProperty("heic.test.javaVersion", javaVersion)
     if (javaVersion >= 22) jvmArgs("--enable-native-access=ALL-UNNAMED")
-    // Needs the IDE test environment that only `test` sets up.
-    filter { excludeTestsMatching("cn.yooss.heic.HeicPlatformIntegrationTest") }
+    // Light-IDE tests (BasePlatformTestCase) need the IDE test environment that only `test` sets up.
+    filter { excludeTestsMatching("cn.yooss.heic.*PlatformIntegrationTest") }
     shouldRunAfter(tasks.test)
 }
 // JBR 25: IDEs 2026.1.3+, Android Studio Quail 3+.

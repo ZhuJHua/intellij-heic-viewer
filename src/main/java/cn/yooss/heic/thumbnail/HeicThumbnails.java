@@ -6,6 +6,7 @@ import cn.yooss.heic.HeifSniffer;
 import cn.yooss.heic.backend.HeifBackend;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifBackends;
+import cn.yooss.heic.ui.DecoderPrompt;
 import com.intellij.ide.ui.VirtualFileAppearanceListener;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
@@ -104,11 +105,7 @@ public final class HeicThumbnails {
   }
 
   static boolean hasThumbnailExtension(@Nullable String extension) {
-    if (extension == null) return false;
-    for (String suffix : HeicImageReaderSpi.SUFFIXES) {
-      if (suffix.equalsIgnoreCase(extension)) return true;
-    }
-    return false;
+    return HeicImageReaderSpi.isHeicExtension(extension);
   }
 
   private static @Nullable HeicThumbnails getInstance() {
@@ -139,7 +136,10 @@ public final class HeicThumbnails {
     // is cached per file until refreshAll() (e.g. after the missing decoder was installed).
     HeifBackend backend = HeifBackends.current();
     HeifBackendStatus status = backend.status();
-    if (!status.isAvailable()) throw new IOException(backend.displayName() + " is not available: " + status);
+    if (!status.isAvailable()) {
+      DecoderPrompt.thumbnailUnavailable(status, file); // once per session, unless an editor banner explains it
+      throw new IOException(backend.displayName() + " is not available: " + status);
+    }
     byte[] data = readHeifFile(file.toNioPath());
     if (disposed) return null; // the plugin is being unloaded: skip the native decode
     BufferedImage decoded = backend.decodeThumbnail(data, key.decodeSize());
@@ -216,7 +216,7 @@ public final class HeicThumbnails {
 
   /**
    * Drops all icons and cached failures and refreshes every file whose icon was asked for: after the thumbnails
-   * setting was toggled, or after the system decoder became available (see {@code HeicDecoderAvailability}).
+   * setting was toggled, or after the system decoder became available (see {@code cn.yooss.heic.ui.HeicViews}).
    */
   public static void refreshAll() {
     HeicThumbnails thumbnails = instance;

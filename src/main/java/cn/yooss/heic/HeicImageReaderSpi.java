@@ -73,6 +73,15 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
     this.backend = backend;
   }
 
+  /** Whether {@code extension} (without the dot, any case) is one of {@link #SUFFIXES}. */
+  public static boolean isHeicExtension(String extension) {
+    if (extension == null) return false;
+    for (String suffix : SUFFIXES) {
+      if (suffix.equalsIgnoreCase(extension)) return true;
+    }
+    return false;
+  }
+
   /** The decoder readers of this provider use. Never loads native code. */
   HeifBackend backend() {
     return backend != null ? backend : HeifBackends.current();

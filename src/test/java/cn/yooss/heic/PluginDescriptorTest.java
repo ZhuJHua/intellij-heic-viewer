@@ -1,6 +1,8 @@
 package cn.yooss.heic;
 
 import cn.yooss.heic.backend.HeifBackendStatus;
+import cn.yooss.heic.backend.HeifRemedy;
+import cn.yooss.heic.ui.DecoderPrompt;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
@@ -93,14 +95,22 @@ class PluginDescriptorTest {
     }
   }
 
-  /** Every backend status reason and every text of the install prompt exists in English and Chinese. */
+  /**
+   * Every backend status reason and every text of the decoder UI exists in English and Chinese (the remedies of each
+   * reason are checked by HeifRemediesTest).
+   */
   @Test
   void decoderStatusTextsExistInEveryBundle() throws Exception {
     List<String> keys = new ArrayList<>();
-    for (HeifBackendStatus.Reason reason : HeifBackendStatus.Reason.values()) keys.add(reason.bundleKey());
-    keys.addAll(List.of("notification.group.heic", "decoder.missing.title", "decoder.missing.command",
-                        "decoder.action.install", "decoder.action.copy.command", "decoder.action.check.again",
-                        "decoder.action.dont.show.again", "decoder.available.title", "decoder.available.content"));
+    for (HeifBackendStatus.Reason reason : HeifBackendStatus.Reason.values()) {
+      keys.add(reason.bundleKey());
+      keys.add(HeifRemedy.titleKey(reason));
+    }
+    keys.addAll(List.of("notification.group.heic", "remedy.command.label", "remedy.banner.command", "remedy.command.copied",
+                        "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
+                        "remedy.action.copy.command", "remedy.action.open.settings", "remedy.action.check.again",
+                        "remedy.action.learn.more", "remedy.action.report", "remedy.action.dont.show.again", "remedy.action.more",
+                        "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title"));
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
       for (String key : keys) {
@@ -111,9 +121,36 @@ class PluginDescriptorTest {
     }
     List<Element> groups = elements(parse("META-INF/plugin.xml"), "notificationGroup");
     assertEquals(1, groups.size());
-    assertEquals(HeicDecoderAvailability.NOTIFICATION_GROUP, groups.get(0).getAttribute("id"));
+    assertEquals(DecoderPrompt.NOTIFICATION_GROUP, groups.get(0).getAttribute("id"));
     assertEquals("notification.group.heic", groups.get(0).getAttribute("key"));
     assertEquals("messages.HeicBundle", groups.get(0).getAttribute("bundle"));
+    assertEquals("BALLOON", groups.get(0).getAttribute("displayType"), "not sticky: once per session, not in the way");
+  }
+
+  /**
+   * The decoder UI: the editor banner (and the listener that asks for it when a HEIC file is opened), the diff hook and
+   * the re-check on activation, all dynamic extension points and declarative listeners.
+   */
+  @Test
+  void decoderUiIsRegistered() throws Exception {
+    Document plugin = parse("META-INF/plugin.xml");
+    List<Element> banners = elements(plugin, "editorNotificationProvider");
+    assertEquals(1, banners.size());
+    assertEquals("cn.yooss.heic.ui.HeicDecoderNotificationProvider", banners.get(0).getAttribute("implementation"));
+    List<Element> diff = elements(plugin, "diff.DiffExtension");
+    assertEquals(1, diff.size());
+    assertEquals("cn.yooss.heic.ui.HeicDiffExtension", diff.get(0).getAttribute("implementation"));
+    List<String> topics = new ArrayList<>();
+    for (Element listener : elements(plugin, "listener")) {
+      if (listener.getAttribute("class").equals("cn.yooss.heic.ui.HeicActivationListener")) topics.add(listener.getAttribute("topic"));
+    }
+    assertEquals(List.of("com.intellij.openapi.application.ApplicationActivationListener"), topics);
+    List<Element> projectListeners = elements(plugin, "projectListeners");
+    assertEquals(1, projectListeners.size());
+    NodeList opened = projectListeners.get(0).getElementsByTagName("listener");
+    assertEquals(1, opened.getLength());
+    assertEquals("cn.yooss.heic.ui.HeicFileOpenedListener", ((Element) opened.item(0)).getAttribute("class"));
+    assertEquals("com.intellij.openapi.fileEditor.FileEditorManagerListener", ((Element) opened.item(0)).getAttribute("topic"));
   }
 
   /** Loads the listener and extension classes, whose IDE supertypes are Java 21 bytecode in the IDE compiled against. */
@@ -125,13 +162,13 @@ class PluginDescriptorTest {
       classes.add(name);
       Class.forName(name, false, getClass().getClassLoader());
     }
-    assertEquals(6, classes.size(), classes::toString);
+    assertEquals(10, classes.size(), classes::toString);
   }
 
   @Test
   void referencedClassesArePluginClasses() throws Exception {
     List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
-    assertEquals(6, classes.size(), classes::toString);
+    assertEquals(10, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
       assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);
@@ -143,6 +180,8 @@ class PluginDescriptorTest {
     for (Element listener : elements(plugin, "listener")) classes.add(listener.getAttribute("class"));
     for (Element provider : elements(plugin, "fileIconProvider")) classes.add(provider.getAttribute("implementation"));
     for (Element provider : elements(plugin, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element provider : elements(plugin, "editorNotificationProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element extension : elements(plugin, "diff.DiffExtension")) classes.add(extension.getAttribute("implementation"));
     for (Element group : elements(plugin, "notificationGroup")) {
       if (!group.getAttribute("implementation").isEmpty()) classes.add(group.getAttribute("implementation"));
     }

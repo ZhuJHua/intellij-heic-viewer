@@ -37,9 +37,14 @@
          an Image file. accept() always returns false, so it never provides an editor. -->
     <fileEditorProvider implementation="cn.yooss.heic.HeicReaderRegistrar" fileType="Image"/>
 
-    <!-- "HEIC images need a system decoder" prompt (HeicDecoderAvailability), e.g. when the Windows HEIF/HEVC
-         extensions or the Linux libheif packages are missing. -->
-    <notificationGroup id="HEIC Viewer" displayType="STICKY_BALLOON" bundle="messages.HeicBundle"
+    <!-- When the system decoder is unavailable (e.g. the Windows HEIF/HEVC extensions or the Linux libheif packages
+         are missing), the user is told where a HEIC image fails to load, with the remedy (package cn.yooss.heic.ui):
+         a banner above the HEIC image editor, and for the diff viewer and the thumbnail icons one balloon per session
+         (also right after installing the plugin); "Check Again" and the results are balloons too. Never probes the
+         decoder on the EDT. -->
+    <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
+    <diff.DiffExtension implementation="cn.yooss.heic.ui.HeicDiffExtension"/>
+    <notificationGroup id="HEIC Viewer" displayType="BALLOON" bundle="messages.HeicBundle"
                        key="notification.group.heic"/>
   </extensions>
 
@@ -54,5 +59,16 @@
               topic="com.intellij.openapi.options.advanced.AdvancedSettingsChangeListener"/>
     <listener class="cn.yooss.heic.thumbnail.HeicThumbnailFileListener"
               topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action (a Store page, a
+         copied install command); a volatile read otherwise. -->
+    <listener class="cn.yooss.heic.ui.HeicActivationListener"
+              topic="com.intellij.openapi.application.ApplicationActivationListener"/>
   </applicationListeners>
+
+  <projectListeners>
+    <!-- The platform collects editor banners by itself for text editors only: asks for the banner of an opened HEIC
+         image editor while the decoder is missing (nothing otherwise). -->
+    <listener class="cn.yooss.heic.ui.HeicFileOpenedListener"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
 </idea-plugin>

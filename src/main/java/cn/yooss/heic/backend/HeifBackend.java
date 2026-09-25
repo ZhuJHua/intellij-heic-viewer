@@ -1,6 +1,7 @@
 package cn.yooss.heic.backend;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -46,6 +47,14 @@ public interface HeifBackend {
    * the cached result. Never throws.
    */
   @NotNull HeifBackendStatus status();
+
+  /**
+   * The status {@link #status()} has cached, or {@code null} if the backend has not been probed yet. Never probes and
+   * never loads native code, so the UI may call it on any thread, including the EDT. The default knows nothing.
+   */
+  default @Nullable HeifBackendStatus cachedStatus() {
+    return null;
+  }
 
   /**
    * Forgets the cached status and probes again, e.g. after the user installed the missing system component

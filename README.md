@@ -83,8 +83,10 @@ Side-by-side image diff of a modified HEIC file:
 ## Limitations and known issues
 
 - Decoding relies on the operating system's decoder. Without it (Windows or Linux without the components listed under
-  [Requirements](#requirements), or another OS) HEIC files open as images but show "Image not loaded", and a
-  notification tells you what to install (*Check Again* in the notification makes HEIC files load without a restart).
+  [Requirements](#requirements), or another OS) HEIC files open as images but show "Image not loaded"; a banner above
+  the image (and, for the diff and the thumbnails, a notification once per session) tells you what to install.
+  *Check Again*, or coming back to the IDE after opening the Store page or copying the install command, loads the open
+  HEIC images without a restart; diffs that are already open have to be opened again.
 - Colors are converted to **sRGB**; Display P3 colors outside sRGB are clipped.
 - **HDR gain maps are ignored**: the standard dynamic range base image is shown.
 - Only the **primary image** is shown (no other images of collections, frames of `.heics` sequences, depth maps, …).
@@ -168,11 +170,26 @@ Side-by-side image diff of a modified HEIC file:
    canary in which no HEIC image loaded). In that case a second instance is
    added to `ImageIO`'s registry through `ImageIO.scanForPlugins()`, with a context class loader that names only this
    reader. It is removed again on unload, and the split is logged as a warning in `idea.log`.
-6. **Missing decoder** (`HeicDecoderAvailability`): after registering, the backend's status is probed on a pooled
-   thread. If a user-installable component is missing, a notification (group "HEIC Viewer") explains what is missing
-   and offers the backend's install page, its install command (copied to the clipboard), *Check Again* (probes again;
-   HEIC files then load without a restart) and *Don't Show Again*. Other states are only logged in `idea.log`.
-   `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` forces a status, to see the prompt of another OS.
+6. **Missing decoder** (`ui` package): after registering, the backend's status is probed on a pooled thread; the UI
+   only ever reads the backend's cached status and never probes on the EDT (`DecoderStatus`). When the decoder is
+   unavailable, the user is told where a HEIC image fails to load, with the remedy of the reason
+   (`backend.HeifRemedies`: the Microsoft Store page or the install command, *Check Again*, *Learn More*, ...):
+   - a **banner** above HEIC image editors (`HeicDecoderNotificationProvider`, `editorNotificationProvider`). The
+     platform collects banners by itself only for text editors, so `HeicFileOpenedListener` asks for it when a HEIC
+     file is opened while the decoder is missing;
+   - a **notification** (group "HEIC Viewer", balloon) at most once per session where there is no banner: a diff of
+     HEIC files (`HeicDiffExtension`, `diff.DiffExtension`), a thumbnail of a file that is not open, or right after the
+     plugin was installed; *Don't Show Again* per reason.
+
+   *Check Again* probes again on a pooled thread. Once the decoder is found, the banners disappear, the open HEIC
+   editors load their image (`ImageEditorImpl.refreshFile()`, as after a change on disk), the thumbnails are decoded
+   again and a notification confirms it; if it is still missing, a notification says what is missing now. After the
+   user opened the Store page or copied the install command, the next activation of the IDE window checks again by
+   itself (`HeicActivationListener`, debounced, for 30 minutes). A normal start with a working decoder shows nothing and
+   posts nothing to the EDT. Before the plugin is unloaded, its banners are removed explicitly (IntelliJ 2026.1 leaves the
+   panels of an unloaded provider in the editor, which would keep the class loader alive) and its notifications expire.
+   `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` forces a status, to see the UI of another OS; with
+   `-Dheic.viewer.debug.backendStatus.recover=true` the first *Check Again* switches to the real decoder of the OS.
 7. **Thumbnails** (`thumbnail` package): `HeicThumbnailIconProvider` (`fileIconProvider`, `order="first"`) never
    decodes in `getIcon`: it looks up an LRU cache (500 entries, keyed by URL, VFS timestamp, length, icon size and the
    maximum screen scale) and otherwise queues a decode on the plugin's own bounded executor (two threads) and returns
@@ -253,9 +270,11 @@ against (261) and that Java 17 is lower than the Java 21 that 261 requires. Both
 
 The platform jars of the IDE compiled against are Java 21 bytecode, so `testJdk17` runs with a minimal class path (the
 plugin jar, JUnit and the IDE's `util-8.jar`, which contains JNA). Tests that need other IDE classes are tagged
-`platform` and run only on JDK 21 and 25. `HeicPlatformIntegrationTest` starts a light IDE (IntelliJ test framework,
-`BasePlatformTestCase`) and therefore runs only in `test`: the HEIC extensions are Image files once plugin.xml is
-loaded, and the IDE's `IfsUtil` decodes a HEIC file through the reader.
+`platform` and run only on JDK 21 and 25. The `*PlatformIntegrationTest` classes start a light IDE (IntelliJ test
+framework, `BasePlatformTestCase`) and therefore run only in `test`: `HeicPlatformIntegrationTest` (the HEIC extensions
+are Image files once plugin.xml is loaded, and the IDE's `IfsUtil` decodes a HEIC file through the reader) and
+`DecoderUiPlatformIntegrationTest` (banner, notifications, *Check Again* and the check on activation, with a fake
+backend).
 
 ### Project structure
 
@@ -269,18 +288,21 @@ src/main/java/cn/yooss/heic/
   HeicImageReader             Reader: input, size, image types, subsampling/source region/pixel budget
   DecodeLimits                Pixel budget
   HeicSupport                 Registration in IIORegistry (ordering, stale copies, split registry)
-  HeicDecoderAvailability     "Install the missing decoder" notification
   HeicSettings, HeicBundle    Advanced Settings access, resource bundle
   HeicFileTypeMappingRepair   IJPL-39443 workaround
   HeicAppLifecycleListener, HeicDynamicPluginListener   Registration on start / dynamic load and unload
   HeicReaderRegistrar         Registration in the command-line diff and merge (an editor provider that never accepts)
   backend/                    HeifBackend, HeifBackendStatus, HeifBackends (selection by OS), AbstractHeifBackend,
                               HeifImageInfo, HeifInput + IsoBoxes (input checks), PixelPipeline,
-                              UnavailableHeifBackend; jna/JnaLibraries (JNA rules, library loading)
+                              UnavailableHeifBackend, HeifRemedy + HeifRemedies (what the user can do about each
+                              unavailable status); jna/JnaLibraries (JNA rules, library loading)
   mac/                        MacHeifBackend, HeicDecoder (the ImageIO.framework algorithm), MacApi, jna/JnaMacApi
   win/                        WicHeifBackend (Windows Imaging Component)  <!-- TODO(windows backend) -->
   linux/                      LibheifHeifBackend (libheif)  <!-- TODO(linux backend) -->
   thumbnail/                  Thumbnail icons: provider, loader, cache, renderer, listeners
+  ui/                         Missing decoder: editor banner (HeicDecoderNotificationProvider, HeicFileOpenedListener),
+                              notifications (DecoderPrompt), status and Check Again (DecoderStatus), refresh of the
+                              views (HeicViews), remedy actions, HeicDiffExtension, HeicActivationListener
 src/main/resources/
   META-INF/plugin.xml         Plugin id, name, vendor, dependencies and everything the plugin contributes
                               (description and change notes come from Gradle)
@@ -298,8 +320,13 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
   that report `NOT_IMPLEMENTED`); `HeifBackends` already selects them by OS.
 - `probe()`: load the system libraries through `backend.jna.JnaLibraries` and return
   `HeifBackendStatus.available(...)` or `unavailable(Reason, detail)` with `withInstallUrl` (e.g. a Microsoft Store
-  link) or `withInstallCommand` (the distribution's package command). User-installable reasons show the notification of
-  `HeicDecoderAvailability`; their texts are `backend.status.<REASON>` in both message bundles.
+  link) or `withInstallCommand` (the distribution's package command).
+- What the user sees for a reason (banner, notifications) is its remedy in `backend.HeifRemedies`: the texts
+  `remedy.title.<REASON>` and `backend.status.<REASON>` in both message bundles, and the actions (install page or
+  command, *Check Again*, *Learn More*). The URL and command a backend passes replace the defaults of `HeifRemedies`
+  (only `https:` and `ms-windows-store:` URLs and single-line commands are accepted). Replace the defaults marked
+  `TODO(windows backend)` / `TODO(linux backend)` there and in the bundles with the verified data; `HeifRemediesTest`
+  checks every remedy.
 - `doReadInfo` / `doDecode` / `doDecodeThumbnail`: the input checks, the availability check and the wrapping of native
   failures are done by the base class. Produce the images with `PixelPipeline` (8-bit sRGB, straight alpha,
   orientation applied, never larger than `maxPixelSize`).
@@ -307,7 +334,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
   arrays); `BytecodeLevelTest` and `PluginClassLoaderLeakTest` check them.
 - `HeifBackendContractTest` must pass on the OS; in `.github/workflows/cross-platform.yml`, set `expect` of each job to
   the status its runner must report (`available`, or e.g. `LINUX_LIBHEIF_MISSING`).
-- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` shows the notification of any status on any OS.
+- `-Dheic.viewer.debug.backendStatus=<REASON>[|<url>[|<command>]]` shows the banner and notifications of any status on
+  any OS (with `-Dheic.viewer.debug.backendStatus.recover=true`, *Check Again* then finds the real decoder).
 
 ### Plugin description and change notes
 
@@ -325,7 +353,8 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 - `.github/workflows/cross-platform.yml` runs on pushes to `dev/**` branches and manually: build and the tests on JDK 25,
   21 and 17 on macOS arm64 and x86_64, Linux x64 with and without libheif, Linux arm64 and Windows x64 and arm64 (the
   IDE to compile against is downloaded for each OS and cached; on arm64 Linux and Windows, which Android Studio has no
-  build for, IntelliJ IDEA), and Plugin Verifier. Each job sets `HEIC_EXPECT_BACKEND`
+  build for, IntelliJ IDEA), the light-IDE tests (`test`, on the jobs whose IDE has a build for the runner), and Plugin
+  Verifier. Each job sets `HEIC_EXPECT_BACKEND`
   to the decoder status `HeifBackendContractTest` must see on that runner (`available`, or a `HeifBackendStatus.Reason`
   such as `LINUX_LIBHEIF_MISSING`). Test reports are uploaded as artifacts.
 - Publishing the draft release triggers `.github/workflows/release.yml`: it moves the release notes into a version

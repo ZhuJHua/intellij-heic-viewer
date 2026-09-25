@@ -67,6 +67,7 @@ public abstract class AbstractHeifBackend implements HeifBackend {
   }
 
   /** The cached status, or {@code null} if {@link #status()} has not been called yet (never probes). */
+  @Override
   public final @Nullable HeifBackendStatus cachedStatus() {
     return status;
   }

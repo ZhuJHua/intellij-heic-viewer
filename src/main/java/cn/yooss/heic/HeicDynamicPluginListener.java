@@ -2,6 +2,7 @@ package cn.yooss.heic;
 
 import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.thumbnail.HeicThumbnails;
+import cn.yooss.heic.ui.DecoderUi;
 import com.intellij.ide.plugins.DynamicPluginListener;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.openapi.diagnostic.Logger;
@@ -21,7 +22,7 @@ public final class HeicDynamicPluginListener implements DynamicPluginListener {
     try {
       if (HeicSupport.register()) {
         HeicFileTypeMappingRepair.schedule();
-        HeicDecoderAvailability.checkInBackground();
+        DecoderUi.checkInBackground(true); // just installed or updated: tell right away if the decoder is missing
       }
     }
     catch (RuntimeException | LinkageError e) {
@@ -38,7 +39,7 @@ public final class HeicDynamicPluginListener implements DynamicPluginListener {
     }
     finally {
       try {
-        HeicDecoderAvailability.shutDown(); // expires the install prompt (its actions are plugin classes)
+        DecoderUi.shutDown(); // expires the balloons (their actions are plugin classes), no more banners
       }
       finally {
         try {
