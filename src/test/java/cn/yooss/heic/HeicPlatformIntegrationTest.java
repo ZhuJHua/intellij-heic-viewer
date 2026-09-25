@@ -3,6 +3,8 @@ package cn.yooss.heic;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
+import com.intellij.openapi.options.advanced.AdvancedSettings;
+import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.intellij.images.fileTypes.ImageFileTypeManager;
@@ -22,6 +24,20 @@ public class HeicPlatformIntegrationTest extends BasePlatformTestCase {
       assertSame(extension, image, FileTypeManager.getInstance().getFileTypeByExtension(extension));
     }
     assertTrue(HeicFileTypeMappingRepair.unmappedExtensions().isEmpty());
+  }
+
+  /** The libheif path setting (os="linux" in plugin.xml) exists on Linux only; reading it never throws. */
+  public void testLibheifPathSettingIsRegisteredOnLinuxOnly() {
+    boolean registered;
+    try {
+      assertEquals("", AdvancedSettings.getString(HeicSettings.LIBHEIF_PATH));
+      registered = true;
+    }
+    catch (IllegalArgumentException e) {
+      registered = false;
+    }
+    assertEquals(SystemInfo.isLinux, registered);
+    assertEquals("", HeicSettings.libheifPath());
   }
 
   public void testIfsUtilDecodesHeicThroughOurReader() throws Exception {

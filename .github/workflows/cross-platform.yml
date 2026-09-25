@@ -140,6 +140,12 @@ jobs:
           ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
+      # The plugin inside a light IDE (IntelliJ test framework, the `test` task, which needs an IDE build for the runner's
+      # architecture): plugin.xml as the IDE reads it (e.g. the Linux-only setting) and IfsUtil decoding through libheif.
+      - name: Light IDE test
+        if: ${{ runner.os == 'Linux' && runner.arch == 'X64' }}
+        run: ./gradlew test --tests cn.yooss.heic.HeicPlatformIntegrationTest --continue ${{ matrix.platform }}
+
       # Which native JNA directories the IDE provides (JNA can only be used in tests on the runner's architecture).
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}
@@ -251,7 +257,7 @@ jobs:
 
       - name: Run the suggested install command
         run: >
-          docker run --rm -e PREPARE="${{ matrix.prepare }}"
+          docker run --rm -e PREPARE="${{ matrix.prepare }}" -e KNOWN="${{ matrix.known }}"
           -v "$PWD/w:/w:ro" -v "$JAVA_HOME:/jdk:ro" -v "$PWD/.github/scripts:/scripts:ro"
           ${{ matrix.image }} sh /scripts/linux-install-check.sh ${{ matrix.mode || 'java' }}
 

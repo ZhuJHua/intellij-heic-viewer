@@ -35,7 +35,8 @@ import java.util.function.Supplier;
  *   {@code UNSUPPORTED_OS};</li>
  *   <li>load libheif: the path configured in <i>Advanced Settings</i> ({@link HeicSettings#LIBHEIF_PATH}) if set,
  *   otherwise {@code libheif.so.1} and {@code heif} through the dynamic linker's search, then (NixOS) the system and
- *   user profiles. If none loads: {@code LINUX_LIBHEIF_MISSING} with the attempts and errors in the detail;</li>
+ *   user profiles; only a libheif 1.x is accepted (the ABI of {@code libheif.so.1}). If none loads:
+ *   {@code LINUX_LIBHEIF_MISSING} with the attempts and errors in the detail;</li>
  *   <li>{@code heif_init(NULL)} once (libheif 1.13+; it loads the codec plugins in 1.14+);</li>
  *   <li>{@code heif_have_decoder_for_format(heif_compression_HEVC)}. If there is none, the plugin directories are
  *   scanned again ({@code heif_load_plugins}, libheif 1.14+), so that "Check Again" finds a plugin installed after the
@@ -117,8 +118,13 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
       lib = null;
       for (String candidate : tried) {
         try {
-          lib = Libheif.open(candidate);
-          break;
+          Libheif opened = Libheif.open(candidate);
+          if (opened.majorVersion() == 1) {
+            lib = opened;
+            break;
+          }
+          // e.g. a future libheif.so.2 found by the short name "heif": its ABI is unknown, so it is never called
+          failures.add(candidate + " (libheif " + opened.version() + " is not supported, 1.x is needed)");
         }
         catch (UnsatisfiedLinkError e) {
           failures.add(candidate + " (" + condense(e.getMessage()) + ")");

@@ -99,8 +99,8 @@ the commands above for the other distributions.
 - **NixOS** has no global library path: the plugin also looks in `/run/current-system/sw/lib`, `~/.nix-profile/lib`
   and `/etc/profiles/per-user/<user>/lib`.
 - **Flatpak** builds of an IDE only see the libraries of their Flatpak runtime. Use the IDE from the JetBrains Toolbox
-  App, a tarball or a Snap (JetBrains' Snaps use classic confinement and see the system's libraries), or set the path
-  below to a libheif inside the sandbox.
+  App, a tarball or a Snap (JetBrains' Snaps use classic confinement, so the system's libraries are found as usual), or
+  set the path below to a libheif inside the sandbox.
 - **Other locations** (a libheif you built, another prefix): *Settings | Advanced Settings | HEIC Viewer | libheif
   library* takes the path of `libheif.so.1` or of the directory that contains it.
 - `idea.log` tells what was found: `HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with

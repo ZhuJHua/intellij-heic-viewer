@@ -10,14 +10,15 @@
 # Mode "alpine" (musl: JNA's library in jna.jar is built for glibc): the suggested command is run and the libraries
 #   must be installed. Mode "nix": the NixOS command (channel "nixpkgs" instead of "nixos" in the nixos/nix image) must
 #   put libheif.so.1 where the plugin looks for it.
-# $PREPARE is run first (e.g. apt-get update).
+# $PREPARE is run first (e.g. apt-get update). $KNOWN lists decode checks that fail with that distribution's libheif
+# (limitations of an old version, see the workflow).
 set -eu
 mode=${1:-java}
 export DEBIAN_FRONTEND=noninteractive
 classpath=/w/classes/main:/w/resources/main:/w/classes/test:/w/resources/test:/w/jna.jar
 
 check() {
-  "$java" -Djava.awt.headless=true -cp "$classpath" cn.yooss.heic.linux.DistroCheck "$@"
+  "$java" -Djava.awt.headless=true -Dheic.check.known="${KNOWN:-}" -cp "$classpath" cn.yooss.heic.linux.DistroCheck "$@"
 }
 
 adapt() {

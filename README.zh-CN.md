@@ -91,7 +91,7 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 - **NixOS** 没有全局的库路径：插件还会在 `/run/current-system/sw/lib`、`~/.nix-profile/lib` 和
   `/etc/profiles/per-user/<用户名>/lib` 中查找。
 - **Flatpak** 版 IDE 只能看到其 Flatpak 运行时中的库。请使用 JetBrains Toolbox App、tar.gz 包或 Snap 安装的 IDE
-  （JetBrains 的 Snap 使用 classic 模式，能看到系统的库），或把下面的路径设置为沙箱内的 libheif。
+  （JetBrains 的 Snap 使用 classic 模式，照常能找到系统的库），或把下面的路径设置为沙箱内的 libheif。
 - **其它位置**（自行编译的 libheif、其它安装前缀）：在 *Settings | Advanced Settings | HEIC Viewer | libheif 库* 中填写
   `libheif.so.1` 或其所在目录的路径。
 - `idea.log` 中会记录查找结果：`HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with

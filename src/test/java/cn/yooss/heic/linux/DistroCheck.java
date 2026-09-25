@@ -67,34 +67,75 @@ public final class DistroCheck {
   private static int decode() throws IOException {
     HeifBackend backend = HeifBackends.current();
     int failures = 0;
-    failures += expect(backend.decode(Fixtures.bytes("rgb_libheif.heic"), 0), "600x400 TL=red TR=green BL=blue BR=white marker=TL");
-    failures += expect(backend.decode(Fixtures.bytes("exif6_apple.heic"), 0), "400x600 TL=blue TR=red BL=white BR=green marker=TR");
-    failures += expect(backend.decode(Fixtures.bytes("fliph_imir.heic"), 0), "600x400 TL=green TR=red BL=white BR=blue marker=TR");
-    failures += expect(backend.decode(Fixtures.bytes("grid_libheif.heic"), 0), "600x400 TL=red TR=green BL=blue BR=white marker=TL");
-    failures += expect(backend.decode(Fixtures.bytes("seq.heics"), 300), "300x200 TL=red TR=green BL=blue BR=white marker=TL");
-    String thumbnail = Fixtures.layout(backend.decodeThumbnail(Fixtures.bytes("thumb_irot.heic"), 64));
-    failures += check("embedded thumbnail", thumbnail.startsWith("43x64 TL=blue TR=red BL=white BR=green"), thumbnail);
-
-    BufferedImage alpha = backend.decode(Fixtures.bytes("alpha_libheif.heic"), 0);
-    int redAt128 = alpha.getRGB(150, 150);
-    failures += check("alpha", alpha.getType() == BufferedImage.TYPE_INT_ARGB && Math.abs((redAt128 >>> 24) - 128) <= 4,
-                      Integer.toHexString(redAt128));
-    BufferedImage tenBit = backend.decode(Fixtures.bytes("ten_bit.heic"), 0);
-    double tenBitDifference = Fixtures.meanDifference(tenBit, Fixtures.png("rgb16.png"));
-    failures += check("10-bit", tenBitDifference < 1.5, "mean difference " + tenBitDifference);
-    int icc = backend.decode(Fixtures.bytes("icc_wide.heic"), 0).getRGB(100, 75); // (200, 60, 60) in the wide space
-    failures += check("ICC profile", Math.abs(((icc >> 16) & 255) - 219) <= 4 && Math.abs(((icc >> 8) & 255) - 39) <= 4,
-                      Integer.toHexString(icc));
+    failures += layout(backend, "rgb_sips.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
+    failures += layout(backend, "rgb_libheif.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
+    failures += layout(backend, "exif6_apple.heic", 0, "400x600 TL=blue TR=red BL=white BR=green marker=TR");
+    failures += layout(backend, "fliph_imir.heic", 0, "600x400 TL=green TR=red BL=white BR=blue marker=TR");
+    failures += layout(backend, "grid_libheif.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
+    failures += layout(backend, "multi.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
+    failures += layout(backend, "seq.heics", 300, "300x200 TL=red TR=green BL=blue BR=white marker=TL");
+    failures += check("thumb_irot.heic (embedded thumbnail)", () -> {
+      String layout = Fixtures.layout(backend.decodeThumbnail(Fixtures.bytes("thumb_irot.heic"), 64));
+      return layout.startsWith("43x64 TL=blue TR=red BL=white BR=green") ? null : layout;
+    });
+    for (String name : new String[]{"alpha_sips.heic", "alpha_libheif.heic"}) {
+      failures += check(name + " (alpha)", () -> {
+        BufferedImage alpha = backend.decode(Fixtures.bytes(name), 0);
+        int redAt128 = alpha.getRGB(150, 150);
+        boolean ok = alpha.getType() == BufferedImage.TYPE_INT_ARGB && Math.abs((redAt128 >>> 24) - 128) <= 4;
+        return ok ? null : Integer.toHexString(redAt128);
+      });
+    }
+    for (String name : new String[]{"rgb16_sips.heic", "ten_bit.heic"}) {
+      failures += check(name + " (10-bit)", () -> {
+        double difference = Fixtures.meanDifference(backend.decode(Fixtures.bytes(name), 0), Fixtures.png("rgb16.png"));
+        return difference < 1.5 ? null : "mean difference " + difference;
+      });
+    }
+    failures += check("icc_wide.heic (ICC profile)", () -> {
+      int icc = backend.decode(Fixtures.bytes("icc_wide.heic"), 0).getRGB(100, 75); // (200, 60, 60) in the wide space
+      boolean ok = Math.abs(((icc >> 16) & 255) - 219) <= 4 && Math.abs(((icc >> 8) & 255) - 39) <= 4;
+      return ok ? null : Integer.toHexString(icc);
+    });
     System.out.println(failures == 0 ? "DECODE OK" : "DECODE FAILED: " + failures);
     return failures == 0 ? 0 : 1;
   }
 
-  private static int expect(BufferedImage image, String layout) {
-    return check(layout, Fixtures.layout(image).equals(layout), Fixtures.layout(image));
+  private interface Check {
+    /** {@code null} if the result is right, else what was found instead. */
+    String run() throws Exception;
   }
 
-  private static int check(String name, boolean ok, String actual) {
-    System.out.println((ok ? "ok      " : "FAILED  ") + name + (ok ? "" : ": " + actual));
-    return ok ? 0 : 1;
+  private static int layout(HeifBackend backend, String name, int maxPixelSize, String expected) {
+    return check(name, () -> {
+      String layout = Fixtures.layout(backend.decode(Fixtures.bytes(name), maxPixelSize));
+      return layout.equals(expected) ? null : layout;
+    });
+  }
+
+  /**
+   * Runs a check; a failure counts unless the check's name starts with one of the comma-separated prefixes of
+   * {@code -Dheic.check.known} (limitations of an old libheif, documented in the workflow).
+   */
+  private static int check(String name, Check check) {
+    String problem;
+    try {
+      problem = check.run();
+    }
+    catch (Exception e) {
+      problem = e.toString();
+    }
+    if (problem == null) {
+      System.out.println("ok      " + name);
+      return 0;
+    }
+    for (String known : System.getProperty("heic.check.known", "").split(",")) {
+      if (!known.trim().isEmpty() && name.startsWith(known.trim())) {
+        System.out.println("KNOWN   " + name + ": " + problem);
+        return 0;
+      }
+    }
+    System.out.println("FAILED  " + name + ": " + problem);
+    return 1;
   }
 }

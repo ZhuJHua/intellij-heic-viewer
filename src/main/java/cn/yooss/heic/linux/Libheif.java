@@ -179,6 +179,11 @@ final class Libheif {
     return getVersionNumber.invokeInt(new Object[0]);
   }
 
+  /** The major version: 1 for every libheif with the soname {@code libheif.so.1}. */
+  int majorVersion() {
+    return versionNumber() >>> 24;
+  }
+
   /** Version as a comparable {@code major * 10000 + minor * 100 + patch}, e.g. 11706 for 1.17.6. */
   int comparableVersion() {
     int v = versionNumber();
