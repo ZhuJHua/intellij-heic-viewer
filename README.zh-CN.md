@@ -10,8 +10,8 @@
 在 Android Studio / IntelliJ 系列 IDE **自带的图片查看器**和**版本控制（VCS）差异对比**中查看 HEIC/HEIF 图片，支持 macOS、Windows 和 Linux。
 
 插件把 `.heic`、`.heif`、`.hif`、`.heics` 加入平台自带的 “Image” 文件类型，并注册一个 `javax.imageio` 读取器，通过 IDE 自带的
-JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework（系统自带）、Windows 10/11 的 WIC（需要 Microsoft Store 中免费的
-“HEIF 图像扩展”和“HEVC 视频扩展”）、Linux 的 libheif 1.x（需要它的 HEVC 解码器 libde265）。插件不附带任何解码器或本地代码；
+JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework（系统自带）、Windows 10/11 的 WIC（需要 Microsoft Store 中的
+“HEIF 图像扩展”（免费）和“HEVC 视频扩展”（付费））、Linux 的 libheif 1.x（需要它的 HEVC 解码器 libde265）。插件不附带任何解码器或本地代码；
 缺少系统组件时，图片上方的横幅会说明需要安装什么，并给出 Microsoft Store 链接或当前 Linux 发行版的安装命令。
 
 ## 功能
@@ -52,8 +52,8 @@ Git 中修改过的 HEIC 文件左右对比：
   2026.1.3 起为 JBR 25）。
 - **macOS**（Apple Silicon 或 Intel）：无需安装任何东西（ImageIO.framework 是 macOS 的一部分）。在 macOS 26 / Apple Silicon 上验证；
   解码测试也在 CI 的 Intel Mac 上运行。
-- **Windows 10（1809 或更新）/ 11**（x64 或 arm64）：Microsoft Store 中免费的 *HEIF 图像扩展*（HEIF Image Extension）和
-  *HEVC 视频扩展*（HEVC Video Extensions）（部分电脑已预装）。缺少哪个，插件就给出哪个的链接；详见
+- **Windows 10（1809 或更新）/ 11**（x64 或 arm64）：Microsoft Store 中的 *HEIF 图像扩展*（HEIF Image Extension，免费）和
+  *HEVC 视频扩展*（HEVC Video Extensions，付费），部分电脑已预装两者。缺少哪个，插件就给出哪个的链接；详见
   [Windows: HEIF 和 HEVC 扩展](#windows-heif-和-hevc-扩展)。
 - **Linux**（x64 或 arm64）：发行版软件包中的 libheif 1.x（`libheif.so.1`）及其 HEVC 解码器（libde265），例如 Ubuntu 24.04 上
   `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的安装命令；其它发行版的命令见

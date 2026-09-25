@@ -28,8 +28,8 @@ The system decoder is called through the JNA library that comes with the IDE. Th
 native code, and does not send any data.
 
 - **macOS**: nothing to install (ImageIO.framework).
-- **Windows**: the free *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store (some PCs come
-  with both).
+- **Windows**: the *HEIF Image Extension* (free) and the *HEVC Video Extensions* (paid) from the Microsoft Store; some
+  PCs come with both.
 - **Linux**: libheif 1.x with its HEVC decoder (libde265) from the distribution's packages.
 
 If a component is missing, a banner above the image says what to install, with a link to the Microsoft Store or the
@@ -58,8 +58,8 @@ Side-by-side image diff of a modified HEIC file:
   (JBR 17 in 2024.1, JBR 21 in 2024.2 – 2026.1.2, JBR 25 since 2026.1.3).
 - **macOS**, Apple silicon or Intel: nothing to install (ImageIO.framework is part of macOS). Tested on macOS 26 on
   Apple silicon; the decoder tests also run on Intel Macs in CI.
-- **Windows 10 (1809 or newer) or 11**, x64 or arm64: the free *HEIF Image Extension* and the *HEVC Video Extensions*
-  from the Microsoft Store (some PCs come with both). The plugin links to the one that is missing; see
+- **Windows 10 (1809 or newer) or 11**, x64 or arm64: the *HEIF Image Extension* (free) and the *HEVC Video Extensions*
+  (paid) from the Microsoft Store; some PCs come with both. The plugin links to the one that is missing; see
   [Windows: HEIF and HEVC extensions](#windows-heif-and-hevc-extensions).
 - **Linux**, x64 or arm64: libheif 1.x (`libheif.so.1`) with its HEVC decoder (libde265) from the distribution's
   packages, for example `sudo apt install libheif1 libheif-plugin-libde265` on Ubuntu 24.04. The plugin shows the
