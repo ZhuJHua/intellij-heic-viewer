@@ -96,7 +96,7 @@ class LibheifDecodingTest {
   @ParameterizedTest
   @ValueSource(strings = {"rgb_sips.heic", "rgb_libheif.heic", "alpha_sips.heic", "alpha_libheif.heic", "rgb16_sips.heic",
       "ten_bit.heic", "exif3_apple.heic", "exif5_apple.heic", "exif6_apple.heic", "rot90_irot.heic", "fliph_imir.heic",
-      "grid_libheif.heic", "multi.heic", "seq.heics", "bands_exif6.heic"})
+      "grid_libheif.heic", "multi.heic", "seq.heics", "bands_exif6.heic", "icc_wide.heic", "thumb_irot.heic"})
   void matchesImageIoFramework(String name) throws IOException {
     assumeTrue(HeifBackends.Os.current() == HeifBackends.Os.MAC, "needs macOS");
     HeifBackend mac = HeifBackends.create(HeifBackends.Os.MAC);
@@ -163,6 +163,45 @@ class LibheifDecodingTest {
     assertEquals(BufferedImage.TYPE_INT_ARGB, alpha.getType());
     int redAt128 = alpha.getRGB(37, 37);
     assertTrue(Math.abs((redAt128 >>> 24) - 128) <= 4 && ((redAt128 >> 16) & 0xFF) > 240, Integer.toHexString(redAt128));
+  }
+
+  /**
+   * An embedded ICC profile (a wide-gamut space) is converted to sRGB. Expected: ImageIO.framework's result on macOS 26
+   * (ColorSync); without the conversion the patches would keep their source values (200, 60, 60), (60, 180, 80), ...
+   */
+  @Test
+  void iccProfileIsConvertedToSrgb() throws IOException {
+    BufferedImage image = backend().decode(Fixtures.bytes("icc_wide.heic"), 0);
+    assertColor(219, 39, 48, image.getRGB(100, 75));
+    assertColor(0, 185, 62, image.getRGB(300, 75));
+    assertColor(62, 91, 207, image.getRGB(100, 225));
+    assertColor(129, 129, 129, image.getRGB(300, 225));
+    // also when downscaled (converted after scaling)
+    assertColor(219, 39, 48, backend().decode(Fixtures.bytes("icc_wide.heic"), 40).getRGB(10, 7));
+  }
+
+  private static void assertColor(int r, int g, int b, int argb) {
+    String message = String.format("expected (%d,%d,%d), was (%d,%d,%d)", r, g, b, (argb >> 16) & 255, (argb >> 8) & 255, argb & 255);
+    assertTrue(Math.abs(((argb >> 16) & 255) - r) <= 4 && Math.abs(((argb >> 8) & 255) - g) <= 4 && Math.abs((argb & 255) - b) <= 4,
+               message);
+  }
+
+  /** thumb_irot.heic has irot (portrait 400x600) and a 64x96 thumbnail, used when it is at least as large as requested. */
+  @Test
+  void embeddedThumbnail() throws IOException {
+    byte[] data = Fixtures.bytes("thumb_irot.heic");
+    assertEquals("thumbnail 64x96", decoder().thumbnailChoice(data, 64));
+    assertEquals("thumbnail 64x96", decoder().thumbnailChoice(data, 96));
+    assertEquals("primary", decoder().thumbnailChoice(data, 97));
+    BufferedImage small = backend().decodeThumbnail(data, 64);
+    assertEquals("43x64", small.getWidth() + "x" + small.getHeight());
+    String quadrants = "TL=blue TR=red BL=white BR=green"; // like rot90_irot.heic: the thumbnail's irot is applied
+    assertTrue(Fixtures.layout(small).contains(quadrants), Fixtures.layout(small));
+    BufferedImage large = backend().decodeThumbnail(data, 200);
+    assertEquals("133x200", large.getWidth() + "x" + large.getHeight());
+    assertTrue(Fixtures.layout(large).contains(quadrants), Fixtures.layout(large));
+    // decode() never uses the thumbnail
+    assertEquals("400x600 TL=blue TR=red BL=white BR=green marker=TR", Fixtures.layout(backend().decode(data, 0)));
   }
 
   @Test

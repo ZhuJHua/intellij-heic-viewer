@@ -158,6 +158,103 @@ jobs:
             build/test-results
           if-no-files-found: ignore
 
+  # The install commands the plugin suggests on Linux (LibheifRemedy), run in containers of the distributions: the
+  # classes built here are mounted into each container together with JNA and a JDK (.github/scripts/linux-install-check.sh).
+  install-classes:
+    name: Linux install commands (build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Cache IDE
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/com.google.android.studio
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/idea
+          key: ide-${{ runner.os }}-${{ runner.arch }}--${{ hashFiles('gradle.properties') }}
+
+      - name: Build classes
+        run: |
+          ./gradlew testClasses
+          mkdir -p out/classes out/resources
+          cp -r build/classes/java/main build/classes/java/test out/classes/
+          cp -r build/resources/main build/resources/test out/resources/
+          # JNA as in IntelliJ 2024.1 (the IDEs bundle it; here it comes from Maven Central, with its native part)
+          curl -fsSL -o out/jna.jar https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
+
+      - name: Upload classes
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-install-classes
+          path: out
+
+  install:
+    name: Linux install commands (${{ matrix.image }})
+    needs: install-classes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:20.04
+            prepare: apt-get update
+          - image: ubuntu:22.04
+            prepare: apt-get update
+          - image: ubuntu:24.04
+            prepare: apt-get update
+          - image: debian:12
+            prepare: apt-get update
+          - image: debian:13
+            prepare: apt-get update
+          - image: fedora:latest
+          - image: almalinux:9
+          - image: opensuse/tumbleweed
+          - image: opensuse/leap:15.6
+          - image: archlinux:latest
+          - image: alpine:3.22
+            mode: alpine
+          - image: nixos/nix
+            prepare: nix-channel --update
+            mode: nix
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Download classes
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-install-classes
+          path: w
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Run the suggested install command
+        run: >
+          docker run --rm -e PREPARE="${{ matrix.prepare }}"
+          -v "$PWD/w:/w:ro" -v "$JAVA_HOME:/jdk:ro" -v "$PWD/.github/scripts:/scripts:ro"
+          ${{ matrix.image }} sh /scripts/linux-install-check.sh ${{ matrix.mode || 'java' }}
+
   verify:
     name: Verify plugin
     runs-on: ubuntu-latest

@@ -54,9 +54,9 @@ Git 中修改过的 HEIC 文件左右对比：
 - **Windows 10 / 11**（x64 或 arm64）：需要 Microsoft Store 中的 *HEIF 图像扩展*（HEIF Image Extensions）和 *HEVC 视频扩展*
   （HEVC Video Extensions）。缺少时插件会给出链接。
   <!-- TODO(windows backend)：Store 产品 ID、最低版本、Windows Server / LTSC 说明。 -->
-- **Linux**（x64 或 arm64）：libheif 1.x（`libheif.so.1`）及 HEVC 解码插件（libde265），例如 Debian/Ubuntu 上
-  `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的安装命令。
-  <!-- TODO(linux backend)：最低 libheif 版本，Fedora（RPM Fusion）、Arch、openSUSE 等的包名。 -->
+- **Linux**（x64 或 arm64）：发行版软件包中的 libheif（`libheif.so.1`，1.6 或更新版本；已用 1.12、1.17、1.23 测试）及其
+  HEVC 解码器（libde265），例如 Ubuntu 24.04 上 `sudo apt install libheif1 libheif-plugin-libde265`。缺少时插件会给出对应发行版的
+  安装命令；其它发行版的命令见 [Linux: libheif](#linux-libheif)。
 
 ## 安装
 
@@ -64,6 +64,49 @@ Git 中修改过的 HEIC 文件左右对比：
 - **手动安装**：从 [GitHub Releases](https://github.com/ZhuJHua/intellij-heic-viewer/releases/latest)（或 JetBrains Marketplace）
   下载 `heic-viewer-<版本>.zip`，然后 <kbd>Settings</kbd>（⌘,）> <kbd>Plugins</kbd> > 齿轮图标 > <kbd>Install Plugin from Disk…</kbd>，
   选择该 zip 即可，无需重启。
+
+### Linux: libheif
+
+在 Linux 上，HEIC 图片由系统的 libheif（`libheif.so.1`）及其 HEVC 解码器 libde265（较新的发行版中是单独的插件包）解码。
+缺少其中之一时，插件的通知会给出当前发行版（根据 `/etc/os-release` 识别）的安装命令，可点“复制命令”；安装后点“重新检测”，
+无需重启 IDE 即可显示 HEIC 文件。
+
+| 发行版 | 命令 |
+|---|---|
+| Ubuntu 23.10 及更新版本（24.04、26.04 等）、Debian 13 及更新版本、Linux Mint 22、Pop!_OS 24.04 等 | `sudo apt install libheif1 libheif-plugin-libde265` |
+| Ubuntu 20.04 / 22.04、Debian 11 / 12、Linux Mint 20 / 21 等（libde265 直接链接在 libheif 中） | `sudo apt install libheif1` |
+| Fedora：Fedora 自带的 libheif 因专利原因不含 HEVC 解码器，由 RPM Fusion Free 的 `libheif-freeworld` 提供 | `sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm && sudo dnf install libheif-freeworld` |
+| RHEL、AlmaLinux、Rocky Linux、CentOS Stream：libheif 来自 EPEL，HEVC 解码器来自 RPM Fusion Free | `sudo dnf install --nogpgcheck https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E %rhel).noarch.rpm https://mirrors.rpmfusion.org/free/el/rpmfusion-free-release-$(rpm -E %rhel).noarch.rpm && sudo /usr/bin/crb enable && sudo dnf install libheif-freeworld` |
+| openSUSE Tumbleweed、Slowroll、Leap：openSUSE 的 libheif 不含 HEVC 解码器，Packman Essentials 提供 `libheif-HEIF` | `sudo zypper addrepo -cfp 90 https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials/ packman-essentials && sudo zypper --gpg-auto-import-keys refresh packman-essentials && sudo zypper install --from packman-essentials libheif1 libheif-HEIF`（其它版本分别为 `openSUSE_Slowroll`、`openSUSE_Leap_15.6` 等） |
+| Arch Linux、Manjaro、EndeavourOS 等 | `sudo pacman -S --needed libheif libde265` |
+| Alpine | `sudo apk add libheif` |
+| NixOS | `nix-env -iA nixos.libheif.lib`，或在 `environment.systemPackages` 中加入 `pkgs.libheif.lib` |
+
+已安装 libheif 但缺少 HEVC 解码器时，插件只要求安装解码器：Debian 和 Ubuntu 上为 `sudo apt install libheif-plugin-libde265`，
+Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行版同上表。
+
+- **Ubuntu 24.04 及更新版本**：自 2026 年 2 月起（24.04 中 `libheif1` 1.17.6-1ubuntu4.3，以及 25.10、26.04），
+  `libheif-plugin-libde265` 只是“建议”安装的包（[LP: #2142762](https://bugs.launchpad.net/ubuntu/+source/libheif/+bug/2142762)），
+  因此被其它软件包（ImageMagick、GIMP 等）顺带装上的 `libheif1` 本身无法解码 HEIC 照片。
+- **NixOS** 没有全局的库路径：插件还会在 `/run/current-system/sw/lib`、`~/.nix-profile/lib` 和
+  `/etc/profiles/per-user/<用户名>/lib` 中查找。
+- **Flatpak** 版 IDE 只能看到其 Flatpak 运行时中的库。请使用 JetBrains Toolbox App、tar.gz 包或 Snap 安装的 IDE
+  （JetBrains 的 Snap 使用 classic 模式，能看到系统的库），或把下面的路径设置为沙箱内的 libheif。
+- **其它位置**（自行编译的 libheif、其它安装前缀）：在 *Settings | Advanced Settings | HEIC Viewer | libheif 库* 中填写
+  `libheif.so.1` 或其所在目录的路径。
+- `idea.log` 中会记录查找结果：`HEIC decoder: libheif 1.17.6 (/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6) with
+  libde265 HEVC decoder ...`，或者尝试过哪些库、在哪些插件目录中查找过 HEVC 解码器。
+
+包名于 2026 年 9 月依据以下来源核对：[packages.ubuntu.com](https://packages.ubuntu.com/search?keywords=libheif1)、
+[packages.debian.org](https://packages.debian.org/search?keywords=libheif-plugin-libde265)、
+[RPM Fusion](https://admin.rpmfusion.org/pkgdb/package/free/libheif-freeworld/)（[配置方法](https://rpmfusion.org/Configuration)、
+[原因](https://discussion.fedoraproject.org/t/libheif-vs-libheif-freeworld/147974)）、
+[packages.fedoraproject.org](https://packages.fedoraproject.org/pkgs/libheif/libheif/)、
+[openSUSE:Factory/libheif](https://build.opensuse.org/package/show/openSUSE:Factory/libheif) 与
+[Packman](https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials/)、
+[archlinux.org](https://archlinux.org/packages/extra/x86_64/libheif/)、[Alpine](https://pkgs.alpinelinux.org/packages?name=libheif*)
+以及 [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/li/libheif/package.nix)；CI 中的
+*Linux install commands* 任务会在这些发行版的容器中实际执行这些命令。
 
 ## 设置
 
@@ -73,6 +116,8 @@ Git 中修改过的 HEIC 文件左右对比：
   （最长边另外限制为 16384）。IDE 的图片查看器总是请求原始分辨率，而 Diff 会同时解码两张图，这个预算用来限制内存占用。
 - **用缩略图作为 HEIC 文件图标**（`heic.viewer.project.view.thumbnails`），默认开启。关闭后所有 HEIC 文件恢复为普通图片图标。
   修改在点击 OK/Apply 后生效：已显示的图标在设置对话框关闭后立即刷新（不需要重新打开项目）。
+- **libheif 库**（`heic.viewer.libheif.path`，仅 Linux），默认为空（使用系统的 libheif）。填写 `libheif.so.1` 或其所在目录的路径，
+  用于不在系统库路径中的 libheif（见 [Linux: libheif](#linux-libheif)）。下次启动 IDE 或点击通知中的“重新检测”后生效。
 
 ## 限制与已知问题
 
@@ -96,7 +141,16 @@ Git 中修改过的 HEIC 文件左右对比：
   Recent Files、Search Everywhere 等）。非本地文件（jar/归档内、远程、Diff 中的历史版本）和超过 64 MB 的文件使用普通图片图标。
   第一次显示某个文件时会先短暂显示普通图标；一个目录下有大量 HEIC 文件时，缩略图按 2 个线程逐个出现。缓存最多 500 个图标，
   超出后最久未使用的会在需要时重新解码。
-- 尚未在真实 IDE 中验证：Intel Mac（解码测试在 CI 中通过）、macOS 26 以前的版本、Git LFS 管理的 HEIC。
+- **Linux**：
+  - libheif 以软件方式按原始分辨率解码，插件再缩小，因此比 macOS 慢（以 Apple M 系列上的 libheif 1.23 实测：像 iPhone 那样
+    由 512 像素图块组成的 1200 万像素照片约 0.3 秒，单个 1200 万像素图块约 0.7 秒），大图解码期间需要每像素 3–4 字节的本地内存。
+    文件图标会使用文件内嵌的缩略图，因而很快。
+  - ICC 颜色配置文件会转换为 sRGB（Java 的色彩管理）；但只用 `nclx` 标注、原色不是 sRGB/BT.709 的颜色（例如没有 ICC 配置文件的
+    Display P3 或 BT.2020）不做转换，显示得略微偏淡；HDR 图片（PQ/HLG 传递函数）看起来发灰。
+  - 方向取自 HEIF 变换（`irot`、`imir`，由 libheif 应用）；没有这些变换、只有 EXIF 方向的文件（相机和手机不会这样写，它们两者都写）
+    不会被旋转。
+- 尚未在真实 IDE 中验证：Linux（解码测试在 CI 的 Ubuntu 22.04 和 24.04、x64 和 arm64 上通过）、Intel Mac（解码测试在 CI 中通过）、
+  macOS 26 以前的版本、Git LFS 管理的 HEIC。
 
 ## 工作原理
 
@@ -119,7 +173,7 @@ Git 中修改过的 HEIC 文件左右对比：
    |---|---|---|
    | macOS | `mac.MacHeifBackend` | ImageIO.framework |
    | Windows | `win.WicHeifBackend` | WIC + Microsoft Store 的 HEIF/HEVC 扩展 <!-- TODO(windows backend) --> |
-   | Linux | `linux.LibheifHeifBackend` | `libheif.so.1` + HEVC 解码插件 <!-- TODO(linux backend) --> |
+   | Linux | `linux.LibheifHeifBackend` | libheif（`libheif.so.1`，1.6+）+ HEVC 解码器（libde265） |
 
    `AbstractHeifBackend` 实现各平台相同的部分：任何本地调用之前，数据必须通过 `HeifInput`（`HeifSniffer` 检查——系统解码器按内容选择
    解码器，其它格式绝不能交给它；以及纯 Java 的 `IsoBoxes` 检查顶层 box 与 `iloc` 数据区是否完整——ImageIO.framework 会把截断的文件
@@ -135,6 +189,18 @@ Git 中修改过的 HEIC 文件左右对比：
    复制到 `BufferedImage`。每次调用都有自己的 autorelease pool，所有 CF 对象和本地缓冲区在 `finally` 中释放，线程安全。
    ImageIO 报告的类型必须属于 HEIF 家族（`public.heic`、`public.heif` 等）。`MacApi` 列出它需要的本地调用，由 `jna.JnaMacApi` 实现；
    按值传递的 `CGRect` 在 arm64 上作为 4 个 double 传递，在 x86_64 上先用 8 个占位 double 填满 `xmm0`–`xmm7`，再把 4 个分量放到栈上。
+   **Linux 解码**（`linux` 包）：`Libheif` 绑定 libheif 的 C API（只用 libheif 1.6 起就有的函数；`heif_init` 等较新的函数存在时才调用）。
+   探测时加载 `libheif.so.1`（其次是 `heif`、NixOS 的 profile 目录，或设置中指定的路径），调用一次 `heif_init`（它会加载编解码插件；
+   从不调用 `heif_deinit`：libheif 的初始化是进程级的，插件必须对其它使用者、以及插件卸载时仍在进行的解码保持加载），再询问
+   `heif_have_decoder_for_format(HEVC)`；没有解码器时重新扫描插件目录（这样“重新检测”能找到期间安装的插件），仍然没有则报告
+   `LINUX_HEVC_PLUGIN_MISSING`。`LinuxDistribution` 读取 `/etc/os-release`，`LibheifRemedy` 据此给出安装命令。`LibheifDecoder` 把数据
+   复制到本地内存（`heif_context_read_from_memory_without_copy` 会一直引用它，直到上下文释放），取得主图句柄（其尺寸就是显示尺寸：
+   libheif 解码时应用 `irot`/`imir`/`clap`），用 `heif_decode_image` 解码为交错的 8 bit RGB 或 RGBA，并按条带读取；`PlaneConverter`
+   在读取的同时缩小（先按最大整数倍做按 alpha 加权的盒式滤波，再做一次双线性缩放），Java 堆中不会出现比请求尺寸更大的图像。
+   ICC 配置文件通过 `PixelPipeline` 转换为 sRGB。`decodeThumbnail` 在内嵌缩略图宽高比相同且不小于请求尺寸时使用它。
+   libheif 按值返回 16 字节的 `struct heif_error`：在 x86-64（System V）和 AArch64 上，这样的结构体通过两个寄存器返回
+   （`RAX`/`RDX`、`X0`/`X1`），因此用 `Function.invokeLong` 调用这些函数，第一个寄存器中低 32 位是 `code`、高 32 位是 `subcode`；
+   其它架构不支持。所有上下文、句柄、图像和本地缓冲区都在 `finally` 中释放。
 4. **注册时机**：`AppLifecycleListener.appFrameCreated`（正常启动，在恢复项目/编辑器标签之前）、
    `DynamicPluginListener.pluginLoaded/beforePluginUnload`（免重启安装/更新/卸载），以及 `HeicReaderRegistrar`：一个只针对
    Image 文件类型的 `fileEditorProvider`，它的 `accept` 注册读取器并始终返回 `false`。命令行启动的 Diff/合并窗口（IDE 未运行时执行
@@ -190,7 +256,8 @@ Git 中修改过的 HEIC 文件左右对比：
 ### 环境
 
 - 在 macOS、Windows、Linux 上都能构建和测试。解码测试只在系统解码器可用的地方运行（macOS；安装了[环境要求](#环境要求)中组件的
-  Windows / Linux），其余测试在任何系统上运行。
+  Windows / Linux），其余测试在任何系统上运行。Linux 后端（`linux` 包）的测试在 macOS 上也会使用 Homebrew 的 libheif
+  （`brew install libheif`）或 `HEIC_TEST_LIBHEIF=/path/to/libheif` 指定的 libheif 运行，并把结果与 ImageIO.framework 的解码结果比较。
 - JDK 25 作为 Gradle toolchain（代码以 `--release 17` 编译），另外 `testJdk21` / `testJdk17` 需要 JDK 21 和 JDK 17。Gradle 会使用
   已安装的 JDK（包括运行 Gradle 本身的 JDK），找不到时由 foojay 插件自动下载（复用 IDE 自带 JBR 25 的方法见下文）。
 - Gradle 9.4.1（wrapper 已包含），IntelliJ Platform Gradle Plugin 2.19.0，版本统一记录在 `gradle/libs.versions.toml`。
@@ -275,7 +342,8 @@ src/main/java/cn/yooss/heic/
                                    HeifInput + IsoBoxes（输入检查）、PixelPipeline、UnavailableHeifBackend；jna/JnaLibraries（JNA 规则、加载本地库）
   mac/                             MacHeifBackend、HeicDecoder（ImageIO.framework 解码流程）、MacApi、jna/JnaMacApi
   win/WicHeifBackend.java          Windows Imaging Component  <!-- TODO(windows backend) -->
-  linux/LibheifHeifBackend.java    libheif  <!-- TODO(linux backend) -->
+  linux/                           LibheifHeifBackend（探测）、Libheif（通过 JNA 调用的 libheif C API）、LibheifDecoder、
+                                   PlaneConverter（流式缩小）、LinuxDistribution + LibheifRemedy（os-release、安装命令）
   thumbnail/HeicThumbnailIconProvider.java   FileIconProvider（缩略图文件图标）
   thumbnail/HeicThumbnails.java              缓存、后台解码、刷新、卸载时清理（平台相关部分）
   thumbnail/ThumbnailLoader.java             异步去重加载 + LRU 缓存 + 失败缓存（纯 Java）
@@ -294,8 +362,8 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 
 ### 实现解码后端（Windows、Linux）
 
-- 在 `win.WicHeifBackend` / `linux.LibheifHeifBackend`（目前都是报告 `NOT_IMPLEMENTED` 的占位实现）中继承 `backend.AbstractHeifBackend`；
-  `HeifBackends` 已经按操作系统选择它们。
+- 在 `win.WicHeifBackend`（目前是报告 `NOT_IMPLEMENTED` 的占位实现）中继承 `backend.AbstractHeifBackend`；
+  `HeifBackends` 已经按操作系统选择它。`linux.LibheifHeifBackend` 是一个完整的例子。
 - `probe()`：通过 `backend.jna.JnaLibraries` 加载系统库，返回 `HeifBackendStatus.available(...)` 或 `unavailable(Reason, detail)`，
   并用 `withInstallUrl`（例如 Microsoft Store 链接）或 `withInstallCommand`（发行版的安装命令）附上安装方式。用户可以安装的原因会触发
   `HeicDecoderAvailability` 的通知，文案是两个资源包中的 `backend.status.<REASON>`。
@@ -318,11 +386,13 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 - `.github/workflows/build.yml`：每次推送到 `main` 和每个 Pull Request 时运行。在 `macos-latest` 上构建并运行测试
   （`check`：JDK 25、21、17），在 `ubuntu-latest` 上针对 `pluginVerificationIdes` 运行 Plugin Verifier，推送到 `main` 时再根据
   `CHANGELOG.md` 的 `[Unreleased]` 小节创建一个 GitHub Release 草稿。
-- `.github/workflows/cross-platform.yml`：推送到 `dev/**` 分支时或手动运行。在 macOS arm64 与 x86_64、安装和未安装 libheif 的
-  Linux x64、Linux arm64、Windows x64 与 arm64 上构建并在 JDK 25、21、17 上运行测试（按操作系统下载并缓存编译所用的 IDE；
-  Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用 IntelliJ IDEA），
-  另有一个 Plugin Verifier 任务。每个任务通过 `HEIC_EXPECT_BACKEND` 指定 `HeifBackendContractTest` 在该环境中必须看到的解码器状态
-  （`available`，或 `LINUX_LIBHEIF_MISSING` 等 `HeifBackendStatus.Reason`）。测试报告作为 artifact 上传。
+- `.github/workflows/cross-platform.yml`：推送到 `dev/**` 分支时或手动运行。在 macOS arm64 与 x86_64、Linux x64（libheif 1.17
+  带/不带 HEVC 插件、Ubuntu 22.04 上的 libheif 1.12、未安装 libheif）、Linux arm64（libheif 1.17）、Windows x64 与 arm64 上构建并在
+  JDK 25、21、17 上运行测试（按操作系统下载并缓存编译所用的 IDE；Android Studio 没有 arm64 的 Linux/Windows 版本，这两个任务改用
+  IntelliJ IDEA），另有一个 Plugin Verifier 任务。每个任务通过 `HEIC_EXPECT_BACKEND` 指定 `HeifBackendContractTest` 在该环境中必须
+  看到的解码器状态（`available`，或 `LINUX_LIBHEIF_MISSING` 等 `HeifBackendStatus.Reason`）。测试报告作为 artifact 上传。
+  *Linux install commands* 任务在 Ubuntu、Debian、Fedora、AlmaLinux、openSUSE、Arch Linux、Alpine 和 Nix 的容器中执行插件给出的
+  安装命令，并用插件的类检查之后能否找到 libheif 并正确解码。
 - 在 GitHub 上发布该草稿会触发 `.github/workflows/release.yml`：把发布说明写入 `CHANGELOG.md` 的版本小节、签名并发布到
   JetBrains Marketplace、把 zip 附加到 Release，并创建一个更新 changelog 的 Pull Request。需要的仓库 Secrets：
   `PUBLISH_TOKEN`、`CERTIFICATE_CHAIN`、`PRIVATE_KEY`、`PRIVATE_KEY_PASSWORD`
@@ -342,7 +412,7 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 ## 路线图
 
 - 0.2：支持 IntelliJ 2024.1+ / Android Studio Koala+（用 JNA 取代 FFM，Java 17），并通过各系统自带的解码器支持 Windows（WIC）和
-  Linux（libheif），实现放在 `HeifBackend` 接口之后（进行中：Windows 和 Linux 后端目前是报告 `NOT_IMPLEMENTED` 的占位实现）。
+  Linux（libheif），实现放在 `HeifBackend` 接口之后（进行中：Windows 后端目前是报告 `NOT_IMPLEMENTED` 的占位实现）。
 
 ## 许可证
 
