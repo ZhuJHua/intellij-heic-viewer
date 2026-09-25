@@ -121,6 +121,11 @@ class PluginDescriptorTest {
         assertFalse(text.trim().isEmpty(), bundle + ": " + key);
       }
     }
+    // The success balloon quotes the image viewer's own error text, as the IDE shows it in that language (the Chinese
+    // language pack's ImagesBundle: error.broken.image.file.format = "<b>图像未加载</b>").
+    assertTrue(properties("messages/HeicBundle.properties").getProperty("remedy.check.available.content").contains("\"Image not loaded\""));
+    String zh = properties("messages/HeicBundle_zh_CN.properties").getProperty("remedy.check.available.content");
+    assertTrue(zh.contains("“图像未加载”") && !zh.contains("Image not loaded"), zh);
     List<Element> groups = elements(parse("META-INF/plugin.xml"), "notificationGroup");
     assertEquals(1, groups.size());
     assertEquals(DecoderPrompt.NOTIFICATION_GROUP, groups.get(0).getAttribute("id"));
