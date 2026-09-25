@@ -292,7 +292,10 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     group = "verification"
     description = "Runs the unit tests on JDK $javaVersion."
     testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = files(tasks.test.map { it.classpath })
+    // The class path of `test` (with the tasks that build it), but not tasks.test.map { it.classpath }: a value mapped from
+    // the task provider would make this task depend on `test` itself.
+    classpath = tasks.test.get().classpath
+    dependsOn("prepareTestSandbox") // the class path contains the plugin as installed in the test sandbox
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
     systemProperty("heic.test.javaVersion", javaVersion)
     // Needs the IDE test environment that only `test` sets up.
