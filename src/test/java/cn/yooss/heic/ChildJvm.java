@@ -7,7 +7,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Command line for a fresh JVM that runs a test's {@code main} class with the same runtime, class path and JNA setup as
@@ -32,6 +35,55 @@ public final class ChildJvm {
     command.add(mainClass.getName());
     command.addAll(List.of(arguments));
     return command;
+  }
+
+  /** Output and exit code of a child JVM. */
+  public static final class Result {
+    public final int exitCode;
+    public final String output;
+
+    Result(int exitCode, String output) {
+      this.exitCode = exitCode;
+      this.output = output;
+    }
+
+    /** The {@code RESULT key=value} lines of the output. */
+    public Map<String, String> values() {
+      Map<String, String> values = new HashMap<>();
+      for (String line : output.split("\n")) {
+        if (!line.startsWith("RESULT ")) continue;
+        int eq = line.indexOf('=');
+        if (eq > 0) values.put(line.substring("RESULT ".length(), eq), line.substring(eq + 1).trim());
+      }
+      return values;
+    }
+  }
+
+  /**
+   * Runs {@code mainClass} in a child JVM (see {@link #command}) and waits at most {@code timeoutSeconds}; a child that
+   * does not end in time is killed and fails the test with its output so far. Output goes through a file, so a child
+   * that hangs cannot block the test.
+   */
+  public static Result run(Class<?> mainClass, long timeoutSeconds, String... arguments) throws IOException, InterruptedException {
+    Path log = Files.createTempFile("heic-test-child", ".log");
+    try {
+      ProcessBuilder builder = new ProcessBuilder(command(mainClass, arguments));
+      builder.redirectErrorStream(true);
+      builder.redirectOutput(log.toFile());
+      Process process = builder.start();
+      process.getOutputStream().close();
+      boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+      if (!finished) {
+        process.destroyForcibly();
+        process.waitFor(10, TimeUnit.SECONDS);
+      }
+      String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+      if (!finished) throw new AssertionError("child JVM " + mainClass.getName() + " timed out after " + timeoutSeconds + " s:\n" + output);
+      return new Result(process.exitValue(), output);
+    }
+    finally {
+      Files.deleteIfExists(log);
+    }
   }
 
   /** A launcher argument file with {@code -cp <the test class path>}, deleted when the test JVM exits. */

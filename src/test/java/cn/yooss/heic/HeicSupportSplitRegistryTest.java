@@ -12,10 +12,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
@@ -64,6 +62,12 @@ class HeicSupportSplitRegistryTest {
     assertEquals(HeicImageReader.class.getName(), r.get("readerAfterReload"), context);
   }
 
+  private static Result runChild() throws IOException, InterruptedException {
+    ChildJvm.Result result = ChildJvm.run(Child.class, 120);
+    assertEquals(0, result.exitCode, result.output);
+    return new Result(result.values(), result.output);
+  }
+
   private static final class Result {
     final Map<String, String> values;
     final String output;
@@ -74,27 +78,23 @@ class HeicSupportSplitRegistryTest {
     }
   }
 
-  private static Result runChild() throws IOException, InterruptedException {
-    ProcessBuilder builder = new ProcessBuilder(ChildJvm.command(Child.class));
-    builder.redirectErrorStream(true);
-    Process process = builder.start();
-    process.getOutputStream().close();
-    byte[] out = process.getInputStream().readAllBytes();
-    assertTrue(process.waitFor(60, TimeUnit.SECONDS), "child JVM timed out");
-    String output = new String(out, StandardCharsets.UTF_8);
-    assertEquals(0, process.exitValue(), output);
-    Map<String, String> values = new HashMap<>();
-    for (String line : output.split("\n")) {
-      if (!line.startsWith("RESULT ")) continue;
-      int eq = line.indexOf('=');
-      values.put(line.substring("RESULT ".length(), eq), line.substring(eq + 1).trim());
-    }
-    return new Result(values, output);
-  }
-
   /** Runs in a fresh JVM. */
   public static final class Child {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+      int exitCode = 1;
+      try {
+        run();
+        exitCode = 0;
+      }
+      catch (Throwable t) {
+        t.printStackTrace(System.out);
+      }
+      finally {
+        System.exit(exitCode);
+      }
+    }
+
+    private static void run() throws Exception {
       try (LogCapture log = new LogCapture()) { // before HeicSupport is initialized: it keeps its logger
         boolean split = forceSplitRegistry();
         out("split", split);
@@ -128,7 +128,6 @@ class HeicSupportSplitRegistryTest {
         out("readerAfterReload", readerFor("rgb_sips.heic"));
         HeicSupport.unregister();
       }
-      System.exit(0);
     }
 
     /**

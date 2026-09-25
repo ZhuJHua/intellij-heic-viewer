@@ -239,6 +239,7 @@ tasks {
         // JDK 25: the runtime of IDEs 2026.1.3+ (Android Studio Quail 3+).
         javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
         systemProperty("heic.test.javaVersion", 25)
+        jvmArgs("--enable-native-access=ALL-UNNAMED") // JNA loads its JNI library (Java 22+ warns otherwise)
     }
 }
 
@@ -298,6 +299,7 @@ fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(ta
     dependsOn("prepareTestSandbox") // the class path contains the plugin as installed in the test sandbox
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
     systemProperty("heic.test.javaVersion", javaVersion)
+    if (javaVersion >= 22) jvmArgs("--enable-native-access=ALL-UNNAMED")
     // Needs the IDE test environment that only `test` sets up.
     filter { excludeTestsMatching("cn.yooss.heic.HeicPlatformIntegrationTest") }
     shouldRunAfter(tasks.test)

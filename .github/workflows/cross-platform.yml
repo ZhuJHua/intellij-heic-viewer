@@ -48,18 +48,19 @@ jobs:
             libheif: remove
             expect: NOT_IMPLEMENTED
           # Android Studio has no Linux/Windows arm64 build: compile against IntelliJ IDEA there (its arm64 build ships
-          # JNA's native library for arm64, which the Linux and Windows backends need).
+          # JNA's native library for arm64, which the Linux and Windows backends need). A 2026.1 build like the Android
+          # Studio in gradle.properties: the 2026.2 platform jars are too new for the JDK 17/21 test runs.
           - name: Linux arm64, libheif
             os: ubuntu-24.04-arm
             libheif: install
-            platform: -PplatformType=IU -PplatformVersion=2026.2.3
+            platform: -PplatformType=IU -PplatformVersion=2026.1.5
             expect: NOT_IMPLEMENTED
           - name: Windows x64
             os: windows-latest
             expect: NOT_IMPLEMENTED
           - name: Windows arm64
             os: windows-11-arm
-            platform: -PplatformType=IU -PplatformVersion=2026.2.3
+            platform: -PplatformType=IU -PplatformVersion=2026.1.5
             expect: NOT_IMPLEMENTED
     env:
       HEIC_EXPECT_BACKEND: ${{ matrix.expect }}

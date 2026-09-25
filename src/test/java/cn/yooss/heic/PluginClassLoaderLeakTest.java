@@ -11,9 +11,7 @@ import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -56,23 +54,12 @@ class PluginClassLoaderLeakTest {
     List<String> arguments = new ArrayList<>();
     arguments.add(mainClassesRoot().toString());
     arguments.addAll(List.of(options));
-    ProcessBuilder builder = new ProcessBuilder(ChildJvm.command(Child.class, arguments.toArray(new String[0])));
-    builder.redirectErrorStream(true);
-    Process process = builder.start();
-    process.getOutputStream().close();
-    byte[] out = process.getInputStream().readAllBytes();
-    assertTrue(process.waitFor(120, TimeUnit.SECONDS), "child JVM timed out");
-    String output = new String(out, StandardCharsets.UTF_8);
-    System.out.println(output);
-    assertEquals(0, process.exitValue(), output);
-    Map<String, String> results = new HashMap<>();
-    for (String line : output.split("\n")) {
-      if (!line.startsWith("RESULT ")) continue;
-      int eq = line.indexOf('=');
-      results.put(line.substring("RESULT ".length(), eq), line.substring(eq + 1).trim());
-    }
-    results.put("output", output);
-    return results;
+    ChildJvm.Result result = ChildJvm.run(Child.class, 180, arguments.toArray(new String[0]));
+    System.out.println(result.output);
+    assertEquals(0, result.exitCode, result.output);
+    Map<String, String> values = result.values();
+    values.put("output", result.output);
+    return values;
   }
 
   /** Root of the directory/jar our main classes come from. */
@@ -109,7 +96,21 @@ class PluginClassLoaderLeakTest {
 
   /** Runs in a fresh JVM: {@code args[0]} is the root of the plugin classes; {@code skip-shutdown} omits the unload steps. */
   public static final class Child {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+      int exitCode = 1;
+      try {
+        run(args);
+        exitCode = 0;
+      }
+      catch (Throwable t) {
+        t.printStackTrace(System.out);
+      }
+      finally {
+        System.exit(exitCode); // also when a non-daemon thread is left
+      }
+    }
+
+    private static void run(String[] args) throws Exception {
       URL root = URI.create(args[0]).toURL();
       byte[] heic = Fixtures.bytes("alpha_sips.heic");
       // What the IDE has done long before a plugin loads: ImageIO's registry and Java2D are initialized (their global
@@ -127,7 +128,6 @@ class PluginClassLoaderLeakTest {
       out("collected", collected);
       if (!collected) for (String suspect : suspects) System.out.println("SUSPECT " + suspect);
       pool.shutdownNow();
-      System.exit(0);
     }
 
     /** Everything that references the plugin loader stays inside this frame. */
