@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-25
+
 ### Added
 
 - HEIC/HEIF files (`.heic`, `.heif`, `.hif`, `.heics`) open in the built-in image viewer and in the side-by-side VCS image diff (macOS only), also in the diff and merge windows started from the command line (`studio diff`, `idea merge`, git difftool/mergetool …) while the IDE is not running.
@@ -14,3 +16,6 @@
 - Installs, updates and uninstalls without an IDE restart.
 - Repairs the `.heic` file type mapping if the IDE dropped it while the plugin was unloaded (IJPL-39443).
 - Robust reader registration: HEIC images also load when a startup race in `javax.imageio` leaves the IDE with two image reader registries; the condition is logged.
+
+[Unreleased]: https://github.com/ZhuJHua/intellij-heic-viewer/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/ZhuJHua/intellij-heic-viewer/commits/0.1.0
