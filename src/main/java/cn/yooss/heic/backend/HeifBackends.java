@@ -44,14 +44,41 @@ public final class HeifBackends {
   private HeifBackends() {
   }
 
+  /**
+   * Debugging aid: {@code -Dheic.viewer.debug.backendStatus=<REASON>[|<install URL>[|<install command>]]} replaces the
+   * backend of this OS by one that reports that status, e.g. to see the install prompt of another OS
+   * ({@code LINUX_LIBHEIF_MISSING||sudo apt install libheif1}).
+   */
+  public static final String DEBUG_STATUS_PROPERTY = "heic.viewer.debug.backendStatus";
+
   /** The backend for this OS (created on the first call, without probing it). */
   public static @NotNull HeifBackend current() {
     HeifBackend result = current;
     if (result != null) return result;
     synchronized (LOCK) {
-      if (current == null) current = create(Os.current());
+      if (current == null) {
+        HeifBackend debug = debugBackend(System.getProperty(DEBUG_STATUS_PROPERTY));
+        current = debug != null ? debug : create(Os.current());
+      }
       return current;
     }
+  }
+
+  /** The backend {@link #DEBUG_STATUS_PROPERTY} asks for, or {@code null} (not set or invalid). */
+  static HeifBackend debugBackend(String value) {
+    if (value == null || value.trim().isEmpty()) return null;
+    String[] parts = value.split("\\|", -1);
+    HeifBackendStatus.Reason reason;
+    try {
+      reason = HeifBackendStatus.Reason.valueOf(parts[0].trim());
+    }
+    catch (IllegalArgumentException e) {
+      return null;
+    }
+    HeifBackendStatus status = HeifBackendStatus.unavailable(reason, "Forced by -D" + DEBUG_STATUS_PROPERTY)
+      .withInstallUrl(parts.length > 1 ? parts[1] : null)
+      .withInstallCommand(parts.length > 2 ? parts[2] : null);
+    return new UnavailableHeifBackend("debug", "system HEIF decoder (" + DEBUG_STATUS_PROPERTY + ")", status);
   }
 
   /** A new backend instance for {@code os} (tests; the plugin uses {@link #current()}). */

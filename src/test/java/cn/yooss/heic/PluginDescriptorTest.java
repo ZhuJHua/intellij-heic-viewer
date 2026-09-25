@@ -1,5 +1,6 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeifBackendStatus;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -89,6 +91,29 @@ class PluginDescriptorTest {
       }
       assertEquals(properties("messages/HeicBundle.properties").stringPropertyNames(), texts.stringPropertyNames(), bundle);
     }
+  }
+
+  /** Every backend status reason and every text of the install prompt exists in English and Chinese. */
+  @Test
+  void decoderStatusTextsExistInEveryBundle() throws Exception {
+    List<String> keys = new ArrayList<>();
+    for (HeifBackendStatus.Reason reason : HeifBackendStatus.Reason.values()) keys.add(reason.bundleKey());
+    keys.addAll(List.of("notification.group.heic", "decoder.missing.title", "decoder.missing.command",
+                        "decoder.action.install", "decoder.action.copy.command", "decoder.action.check.again",
+                        "decoder.action.dont.show.again", "decoder.available.title", "decoder.available.content"));
+    for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
+      Properties texts = properties(bundle);
+      for (String key : keys) {
+        String text = texts.getProperty(key);
+        assertNotNull(text, bundle + ": " + key);
+        assertFalse(text.trim().isEmpty(), bundle + ": " + key);
+      }
+    }
+    List<Element> groups = elements(parse("META-INF/plugin.xml"), "notificationGroup");
+    assertEquals(1, groups.size());
+    assertEquals(HeicDecoderAvailability.NOTIFICATION_GROUP, groups.get(0).getAttribute("id"));
+    assertEquals("notification.group.heic", groups.get(0).getAttribute("key"));
+    assertEquals("messages.HeicBundle", groups.get(0).getAttribute("bundle"));
   }
 
   /** Loads the listener and extension classes, whose IDE supertypes are Java 21 bytecode in the IDE compiled against. */

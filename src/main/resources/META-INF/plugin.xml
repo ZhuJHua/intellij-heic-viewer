@@ -36,6 +36,11 @@
          while the IDE is not running), which never fire appFrameCreated: asked before an image viewer is created for
          an Image file. accept() always returns false, so it never provides an editor. -->
     <fileEditorProvider implementation="cn.yooss.heic.HeicReaderRegistrar" fileType="Image"/>
+
+    <!-- "HEIC images need a system decoder" prompt (HeicDecoderAvailability), e.g. when the Windows HEIF/HEVC
+         extensions or the Linux libheif packages are missing. -->
+    <notificationGroup id="HEIC Viewer" displayType="STICKY_BALLOON" bundle="messages.HeicBundle"
+                       key="notification.group.heic"/>
   </extensions>
 
   <applicationListeners>

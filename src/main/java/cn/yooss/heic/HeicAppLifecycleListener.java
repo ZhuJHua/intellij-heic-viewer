@@ -17,6 +17,7 @@ public final class HeicAppLifecycleListener implements AppLifecycleListener {
     try {
       if (HeicSupport.register()) {
         HeicFileTypeMappingRepair.schedule();
+        HeicDecoderAvailability.checkInBackground();
       }
     }
     catch (RuntimeException | LinkageError e) {
