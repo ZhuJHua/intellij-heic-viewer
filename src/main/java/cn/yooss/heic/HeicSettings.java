@@ -11,6 +11,11 @@ public final class HeicSettings {
   public static final String MAX_MEGAPIXELS = "heic.viewer.max.megapixels";
   /** Boolean: show thumbnails as the icons of HEIC files (project view, editor tabs, ...). */
   public static final String PROJECT_VIEW_THUMBNAILS = "heic.viewer.project.view.thumbnails";
+  /**
+   * String, registered on Linux only: the {@code libheif.so.1} (or the directory that contains it) to use instead of
+   * the system's; empty for the system's. Read by every availability probe (IDE start, "Check Again").
+   */
+  public static final String LIBHEIF_PATH = "heic.viewer.libheif.path";
 
   private HeicSettings() {
   }
@@ -23,6 +28,11 @@ public final class HeicSettings {
   /** Whether HEIC files are shown with a thumbnail icon; {@code true} when the setting is unavailable. */
   public static boolean projectViewThumbnails() {
     return getBoolean(PROJECT_VIEW_THUMBNAILS, true);
+  }
+
+  /** The configured libheif location (Linux), trimmed; empty for the system's libheif or when the setting is unavailable. */
+  public static String libheifPath() {
+    return getString(LIBHEIF_PATH, "").trim();
   }
 
   /**
@@ -42,6 +52,17 @@ public final class HeicSettings {
   static boolean getBoolean(String id, boolean defaultValue) {
     try {
       return AdvancedSettings.getBoolean(id);
+    }
+    catch (RuntimeException | LinkageError e) {
+      return defaultValue;
+    }
+  }
+
+  /** String counterpart of {@link #getInt(String, int)}. */
+  static String getString(String id, String defaultValue) {
+    try {
+      String value = AdvancedSettings.getString(id);
+      return value != null ? value : defaultValue;
     }
     catch (RuntimeException | LinkageError e) {
       return defaultValue;

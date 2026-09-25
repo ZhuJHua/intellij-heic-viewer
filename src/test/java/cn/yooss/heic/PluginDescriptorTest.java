@@ -79,7 +79,8 @@ class PluginDescriptorTest {
       assertEquals("messages.HeicBundle", setting.getAttribute("bundle"));
       assertEquals("group.advanced.settings.heic", setting.getAttribute("groupKey"));
     }
-    assertEquals(new TreeSet<>(Set.of(HeicSettings.MAX_MEGAPIXELS, HeicSettings.PROJECT_VIEW_THUMBNAILS)), ids);
+    assertEquals(new TreeSet<>(Set.of(HeicSettings.MAX_MEGAPIXELS, HeicSettings.PROJECT_VIEW_THUMBNAILS,
+                                      HeicSettings.LIBHEIF_PATH)), ids);
 
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
