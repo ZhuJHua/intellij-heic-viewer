@@ -372,6 +372,12 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertNull(banner(file, editor));
     DecoderStatus.remedyActionPerformed();
     assertFalse(DecoderStatus.isActivationCheckArmed());
+    // The backend is released right after: nothing may look it up (and create a new one) any more.
+    HeifBackends.replaceForTests(null);
+    assertNull(DecoderStatus.cached());
+    assertFalse(PlatformTestUtil.waitForFuture(DecoderStatus.status(), 10_000).isAvailable());
+    assertNull(new HeicDecoderNotificationProvider().collectNotificationData(getProject(), file));
+    assertNull("no backend was created", HeifBackends.replaceForTests(null));
   }
 
   // ---------------------------------------------------------------------------------------------------------------------

@@ -48,6 +48,10 @@ public final class DecoderStatus {
     ACTIVATION
   }
 
+  /** What {@link #status()} answers while the plugin is being unloaded. */
+  private static final HeifBackendStatus SHUT_DOWN =
+    HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR, "HEIC Viewer is being unloaded");
+
   private static final Object LOCK = new Object();
   /** The first probe of the current backend (guarded by {@link #LOCK}). */
   private static CompletableFuture<HeifBackendStatus> firstProbe;
@@ -61,9 +65,12 @@ public final class DecoderStatus {
   private DecoderStatus() {
   }
 
-  /** The status the current backend has cached, or {@code null} if it has not been probed yet. Never probes; any thread. */
+  /**
+   * The status the current backend has cached, or {@code null} if it has not been probed yet (or the plugin is being
+   * unloaded: the backend is not even looked up then, it is released right after). Never probes; any thread.
+   */
   public static @Nullable HeifBackendStatus cached() {
-    return HeifBackends.current().cachedStatus();
+    return shutDown ? null : HeifBackends.current().cachedStatus();
   }
 
   /**
@@ -72,6 +79,7 @@ public final class DecoderStatus {
    * calling thread if the status is known.
    */
   public static @NotNull CompletableFuture<HeifBackendStatus> status() {
+    if (shutDown) return CompletableFuture.completedFuture(SHUT_DOWN);
     HeifBackendStatus known = cached();
     if (known != null) return CompletableFuture.completedFuture(known);
     synchronized (LOCK) {
