@@ -116,11 +116,11 @@ Side-by-side image diff of a modified HEIC file:
   Non-local files (inside archives, remote, historical revisions in the diff) and files over 64 MB keep the generic
   icon. The first time a file is shown, the generic icon appears briefly; folders with many HEIC files fill in two at a
   time. Up to 500 icons are cached.
-- **Windows colors** come from Microsoft's HEIF decoder. With the HEIF Image Extension 1.2.36 (tested in CI) it converts
-  single (non-grid) HEVC images whose color information says BT.601, which is what libheif and macOS write, with BT.709
-  coefficients, so saturated colors shift (pure red decodes as (255, 25, 0)); grid images, which all iPhone photos are,
-  come out right. The plugin shows what Windows decodes, like Windows' own apps.
-- **Windows**: the first HEIC image after the IDE starts takes one to two seconds while Windows activates the Store
+- **Windows colors** come from Microsoft's HEIF decoder. In CI (HEIF Image Extension 1.2.36) it converted several single
+  (non-grid) test images that signal BT.601 YCbCr coefficients (written by libheif and macOS) with BT.709 coefficients,
+  so saturated colors shift (pure red decodes as (255, 25, 0)); the grid images, the layout iPhone photos have, came out
+  right, including one in Display P3. The plugin shows what Windows decodes, like Windows' own apps.
+- **Windows**: the first HEIC image after the IDE starts can take a second or two while Windows activates the Store
   packages; the availability check pays this in the background during startup.
 - Not verified in a real IDE yet: Intel Macs (the decoder tests pass on them in CI), macOS versions before 26, HEIC
   files stored with Git LFS, Windows (the decoder tests pass on Windows 11 arm64 and Windows Server 2025 x64 in CI).

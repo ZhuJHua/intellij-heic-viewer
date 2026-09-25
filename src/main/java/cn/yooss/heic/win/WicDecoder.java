@@ -35,7 +35,9 @@ import java.util.Locale;
  *   with {@code WICBitmapCacheOnLoad} (decodes once), then {@code CopyPixels} in strips into the
  *   {@link BufferedImage}; the alpha plane is merged in.</li>
  *   <li>An embedded ICC profile ({@code IWICColorContext} of type profile, e.g. Display P3 of iPhone photos) is
- *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.</li>
+ *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.
+ *   The YCbCr to RGB conversion is the decoder's: HEIF Image Extension 1.2.36 converts some single (non-grid) images
+ *   that signal BT.601 with BT.709 coefficients (grid images are right); the plugin keeps what Windows decodes.</li>
  * </ol>
  * Every COM object and native buffer is released in {@link Session#close()}, in reverse order, on every path. All
  * failures are {@link IOException}s ({@link WicException} with the {@code HRESULT} for failed calls).

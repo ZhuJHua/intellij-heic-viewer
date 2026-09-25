@@ -103,10 +103,10 @@ Git 中修改过的 HEIC 文件左右对比：
   Recent Files、Search Everywhere 等）。非本地文件（jar/归档内、远程、Diff 中的历史版本）和超过 64 MB 的文件使用普通图片图标。
   第一次显示某个文件时会先短暂显示普通图标；一个目录下有大量 HEIC 文件时，缩略图按 2 个线程逐个出现。缓存最多 500 个图标，
   超出后最久未使用的会在需要时重新解码。
-- **Windows 上的颜色**来自微软的 HEIF 解码器。HEIF 图像扩展 1.2.36（CI 中测试的版本）会把颜色信息标为 BT.601 的单图（非网格）
-  HEVC 图片（libheif 和 macOS 都这样写）按 BT.709 系数转换，饱和色会有偏差（纯红解码为 (255, 25, 0)）；网格图片（所有 iPhone
-  照片都是）颜色正确。插件显示的就是 Windows 解码的结果，与 Windows 自带应用一致。
-- **Windows**：IDE 启动后的第一张 HEIC 图片需要 1–2 秒（Windows 激活 Store 包）；可用性检测在启动时于后台承担这部分开销。
+- **Windows 上的颜色**来自微软的 HEIF 解码器。在 CI 中（HEIF 图像扩展 1.2.36），它把几张标明 BT.601 YCbCr 系数的单图（非网格）
+  测试图片（由 libheif 和 macOS 生成）按 BT.709 系数转换，饱和色会有偏差（纯红解码为 (255, 25, 0)）；网格图片（iPhone 照片的结构）
+  颜色正确，包括一张 Display P3 图片。插件显示的就是 Windows 解码的结果，与 Windows 自带应用一致。
+- **Windows**：IDE 启动后的第一张 HEIC 图片可能需要一两秒（Windows 激活 Store 包）；可用性检测在启动时于后台承担这部分开销。
 - 尚未在真实 IDE 中验证：Intel Mac（解码测试在 CI 中通过）、macOS 26 以前的版本、Git LFS 管理的 HEIC、Windows（解码测试在 CI 的
   Windows 11 arm64 和 Windows Server 2025 x64 上通过）。
 
