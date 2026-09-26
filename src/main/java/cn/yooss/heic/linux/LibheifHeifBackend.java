@@ -2,10 +2,12 @@ package cn.yooss.heic.linux;
 
 import cn.yooss.heic.HeicSettings;
 import cn.yooss.heic.backend.AbstractHeifBackend;
+import cn.yooss.heic.backend.HeapCost;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifBackendStatus.Reason;
 import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.backend.HeifImageInfo;
+import cn.yooss.heic.backend.PlaneConverter;
 import cn.yooss.heic.backend.jna.JnaLibraries;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -240,6 +242,15 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
   @Override
   protected @NotNull BufferedImage doDecode(byte[] data, int maxPixelSize) throws IOException {
     return decoder().decode(data, maxPixelSize, false);
+  }
+
+  /**
+   * The result and, when it is smaller than the image, the intermediate image of {@link PlaneConverter}; libheif's
+   * decoded plane is native (read in strips).
+   */
+  @Override
+  public long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
+    return HeapCost.simple(info, maxPixelSize) + HeapCost.planeReduction(info.width(), info.height(), maxPixelSize);
   }
 
   /** May decode a thumbnail stored in the file when it is large enough (see {@link LibheifDecoder}). */

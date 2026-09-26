@@ -84,10 +84,11 @@ public final class PlaneConverter {
     BufferedImage image = PixelPipeline.newImage(width, height, alpha);
     int stripRows = stripRows(height, stride);
     byte[] strip = new byte[stripRows * stride];
+    int[] pixels = null; // allocated once (the first strip is the largest)
     for (int y0 = 0; y0 < height; y0 += stripRows) {
       int n = Math.min(stripRows, height - y0);
       rows.read(y0, n, strip);
-      PixelPipeline.writeByteRows(image, y0, n, strip, 0, stride, layout, premultiplied);
+      pixels = PixelPipeline.writeByteRows(image, y0, n, strip, 0, stride, layout, premultiplied, pixels);
     }
     return image;
   }

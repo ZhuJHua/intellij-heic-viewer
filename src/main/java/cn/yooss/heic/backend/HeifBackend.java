@@ -75,6 +75,20 @@ public interface HeifBackend {
   @NotNull BufferedImage decode(byte[] data, int maxPixelSize) throws IOException;
 
   /**
+   * The Java heap {@link #decode decode(data, maxPixelSize)} of an image with {@code info} needs at its peak: the result
+   * (4 bytes per pixel) and the backend's transient heap buffers (strips, an alpha plane, the copy that applies an
+   * orientation, ...), not counting the input data and never the native memory of the system decoder. The image
+   * reader's heap safety valve ({@code cn.yooss.heic.HeapValve}) decides the decode size with it before decoding;
+   * {@code HeifBackendContractTest} checks that a decode allocates no more. Pure arithmetic: never loads native code.
+   * The default is the result plus {@link HeapCost#FIXED_BYTES}.
+   *
+   * @param maxPixelSize as for {@link #decode}: {@code 0} for full resolution
+   */
+  default long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
+    return HeapCost.simple(info, maxPixelSize);
+  }
+
+  /**
    * Fast, small preview of the primary image for icons (orientation applied): may use the thumbnail embedded in the
    * file, so the result may be smaller than requested, but its longer side is never larger than {@code maxPixelSize}
    * (rounding by one pixel is tolerated).

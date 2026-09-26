@@ -81,8 +81,7 @@ class PluginDescriptorTest {
       assertEquals("messages.HeicBundle", setting.getAttribute("bundle"));
       assertEquals("group.advanced.settings.heic", setting.getAttribute("groupKey"));
     }
-    assertEquals(new TreeSet<>(Set.of(HeicSettings.MAX_MEGAPIXELS, HeicSettings.PROJECT_VIEW_THUMBNAILS,
-                                      HeicSettings.LIBHEIF_PATH)), ids);
+    assertEquals(new TreeSet<>(Set.of(HeicSettings.PROJECT_VIEW_THUMBNAILS, HeicSettings.LIBHEIF_PATH)), ids);
 
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
@@ -94,6 +93,41 @@ class PluginDescriptorTest {
       }
       assertEquals(properties("messages/HeicBundle.properties").stringPropertyNames(), texts.stringPropertyNames(), bundle);
     }
+  }
+
+  /**
+   * 0.2 decodes at full size like the IDE's viewer does for PNG: the fixed pixel budget and its Advanced Setting
+   * ({@code heic.viewer.max.megapixels}, 64 megapixels) are gone from the descriptor, the bundles and the READMEs; only
+   * the heap safety valve reduces an image, and its banner texts exist in both languages.
+   */
+  @Test
+  void noPixelBudgetSettingAnyMore() throws Exception {
+    String removed = "heic.viewer.max.megapixels";
+    try (InputStream in = PluginDescriptorTest.class.getClassLoader().getResourceAsStream("META-INF/plugin.xml")) {
+      assertNotNull(in);
+      assertFalse(new String(in.readAllBytes(), StandardCharsets.UTF_8).contains(removed), "plugin.xml");
+    }
+    for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
+      Properties texts = properties(bundle);
+      for (String key : texts.stringPropertyNames()) assertFalse(key.contains(removed), bundle + ": " + key);
+      for (String key : List.of("downscale.banner", "downscale.banner.array", "downscale.action.memory.settings")) {
+        assertNotNull(texts.getProperty(key), bundle + ": " + key);
+      }
+      assertTrue(texts.getProperty("downscale.banner").contains("{0}") && texts.getProperty("downscale.banner").contains("{1}"));
+      assertFalse(texts.getProperty("downscale.banner").contains("'"), "a MessageFormat pattern: no single quotes");
+    }
+    // The tests run in the project directory.
+    for (String readme : List.of("README.md", "README.zh-CN.md")) {
+      String text = java.nio.file.Files.readString(java.nio.file.Path.of(readme), StandardCharsets.UTF_8);
+      assertFalse(text.contains(removed), readme);
+      assertFalse(text.contains("DecodeLimits"), readme);
+      assertTrue(text.contains("HeapValve"), readme + " explains the heap safety valve");
+    }
+    String description = java.nio.file.Files.readString(java.nio.file.Path.of("README.md"), StandardCharsets.UTF_8);
+    description = description.substring(description.indexOf("<!-- Plugin description -->"), description.indexOf("<!-- Plugin description end -->"));
+    assertFalse(description.contains("64 megapixels"), "the Marketplace description");
+    assertTrue(description.contains("no fixed pixel limit"), "the Marketplace description");
+    assertTrue(description.toLowerCase(java.util.Locale.ROOT).contains("full resolution"), "the Marketplace description");
   }
 
   /**
@@ -137,15 +171,17 @@ class PluginDescriptorTest {
   }
 
   /**
-   * The decoder UI: the editor banner (and the listener that asks for it when a HEIC file is opened), the diff hook and
-   * the re-check on activation, all dynamic extension points and declarative listeners.
+   * The decoder UI: the editor banners (the decoder's, and the heap safety valve's for an image shown smaller; the
+   * listener asks for them when a HEIC file is opened), the diff hook and the re-check on activation, all dynamic
+   * extension points and declarative listeners.
    */
   @Test
   void decoderUiIsRegistered() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");
-    List<Element> banners = elements(plugin, "editorNotificationProvider");
-    assertEquals(1, banners.size());
-    assertEquals("cn.yooss.heic.ui.HeicDecoderNotificationProvider", banners.get(0).getAttribute("implementation"));
+    List<String> banners = new ArrayList<>();
+    for (Element banner : elements(plugin, "editorNotificationProvider")) banners.add(banner.getAttribute("implementation"));
+    assertEquals(List.of("cn.yooss.heic.ui.HeicDecoderNotificationProvider", "cn.yooss.heic.ui.HeicDownscaleNotificationProvider"),
+                 banners);
     List<Element> diff = elements(plugin, "diff.DiffExtension");
     assertEquals(1, diff.size());
     assertEquals("cn.yooss.heic.ui.HeicDiffExtension", diff.get(0).getAttribute("implementation"));
@@ -171,13 +207,13 @@ class PluginDescriptorTest {
       classes.add(name);
       Class.forName(name, false, getClass().getClassLoader());
     }
-    assertEquals(10, classes.size(), classes::toString);
+    assertEquals(11, classes.size(), classes::toString);
   }
 
   @Test
   void referencedClassesArePluginClasses() throws Exception {
     List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
-    assertEquals(10, classes.size(), classes::toString);
+    assertEquals(11, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
       assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);

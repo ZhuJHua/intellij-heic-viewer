@@ -22,7 +22,7 @@ public final class HeicDynamicPluginListener implements DynamicPluginListener {
     try {
       if (HeicSupport.register()) {
         HeicFileTypeMappingRepair.schedule();
-        DecoderUi.checkInBackground(true); // just installed or updated: tell right away if the decoder is missing
+        DecoderUi.start(true); // just installed or updated: tell right away if the decoder is missing
       }
     }
     catch (RuntimeException | LinkageError e) {

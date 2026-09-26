@@ -12,7 +12,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 
 /**
  * {@code javax.imageio} service provider for HEIC/HEIF images.
@@ -44,33 +43,37 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
   /** Causes of failures swallowed by {@link #canDecodeInput} that have been logged already (once per cause). */
   private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
-  private final Supplier<DecodeLimits> limits;
+  /** Decides the decode size of every reader of this provider. */
+  private final HeapValve valve;
   /** {@code null}: the backend of the running OS, looked up for every reader ({@link HeifBackends#current()}). */
   private final HeifBackend backend;
   /** The registry this provider was last registered in (see {@link #onRegistration}). */
   private volatile ServiceRegistry registry;
 
   /**
-   * Provider with the {@link HeicSettings#decodeLimits() limits from the IDE settings} ({@link DecodeLimits#DEFAULT}
-   * outside the IDE). Also the constructor {@code ServiceLoader} uses when {@link HeicSupport} registers the provider
-   * through {@code ImageIO.scanForPlugins()}.
+   * Provider with the backend of the running OS and the {@linkplain HeapValve#RUNTIME heap safety valve of this JVM}.
+   * Also the constructor {@code ServiceLoader} uses when {@link HeicSupport} registers the provider through
+   * {@code ImageIO.scanForPlugins()}.
    */
   public HeicImageReaderSpi() {
-    this(HeicSettings::decodeLimits);
+    this(null, HeapValve.RUNTIME);
   }
 
-  /** @param limits queried on every read, so a changed setting applies to the next image */
-  public HeicImageReaderSpi(Supplier<DecodeLimits> limits) {
-    this(limits, null);
-  }
-
-  /** @param backend the decoder (tests), or {@code null} for {@link HeifBackends#current()} */
-  public HeicImageReaderSpi(Supplier<DecodeLimits> limits, HeifBackend backend) {
+  /**
+   * @param backend the decoder (tests), or {@code null} for {@link HeifBackends#current()}
+   * @param valve   the heap safety valve (tests inject heap numbers)
+   */
+  public HeicImageReaderSpi(HeifBackend backend, HeapValve valve) {
     super("ZhuJHua", "1.0", FORMAT_NAMES.clone(), SUFFIXES.clone(), MIME_TYPES.clone(),
           HeicImageReader.class.getName(), new Class<?>[]{ImageInputStream.class},
           null, false, null, null, null, null, false, null, null, null, null);
-    this.limits = Objects.requireNonNull(limits, "limits");
     this.backend = backend;
+    this.valve = Objects.requireNonNull(valve, "valve");
+  }
+
+  /** @param backend the decoder (tests), or {@code null} for {@link HeifBackends#current()} */
+  public HeicImageReaderSpi(HeifBackend backend) {
+    this(backend, HeapValve.RUNTIME);
   }
 
   /** Whether {@code extension} (without the dot, any case) is one of {@link #SUFFIXES}. */
@@ -147,7 +150,7 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
 
   @Override
   public ImageReader createReaderInstance(Object extension) {
-    return new HeicImageReader(this, limits, backend());
+    return new HeicImageReader(this, valve, backend());
   }
 
   /** Remembers the registry, so that {@link HeicSupport} can deregister an instance ImageIO created itself. */

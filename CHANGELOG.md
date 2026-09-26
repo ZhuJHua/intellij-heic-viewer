@@ -15,10 +15,12 @@
 
 - Supports IntelliJ-based IDEs 2024.1 and newer (Android Studio Koala 2024.1.1 and newer; previously 2026.1.4 / Android Studio Quail 3): the macOS decoder is called through the JNA library that comes with the IDE instead of the Java FFM API, and the plugin is compiled for Java 17.
 - The plugin loads on every operating system; `.heic` files are claimed as images everywhere, and the availability of the system decoder is checked at runtime, in the background. The plugin still bundles no decoder and no native code.
+- No fixed pixel limit any more: HEIC images are decoded at full resolution, like PNG and JPEG in the IDE's own image viewer (0.1 downscaled images above 64 megapixels), and the Advanced Setting *Maximum decoded image size* is gone. Only when decoding an image at full size would likely exhaust the IDE's Java heap does a heap safety valve decode it at the largest size that fits (with the default 2 GB heap from about 60 to 100 megapixels on, depending on how much memory the IDE uses, since the first paint needs a second copy of an image for a moment; 12- and 48-megapixel photos are always shown at full size), and a banner above the image says so, with a link to *Help | Change Memory Settings*. Images of more than about 2.1 gigapixels, too large for a Java image, are shown at the largest size that fits instead of failing.
+- Linux, Flatpak IDE: the banner and the notification say to run the `codecs-extra` install command in a terminal on the host (not "from your distribution's packages"), and a long install command is abbreviated in the middle in the banner (its tooltip, the notification and *Copy Command* have all of it).
 
 ### Fixed
 
-- macOS: a malformed HEIC whose declared size does not match its coded image could keep the image viewer busy for about a minute (ImageIO decoded the whole image again for every band of about one megapixel); an image is now drawn in at most eight bands.
+- macOS: a malformed HEIC whose declared size does not match its coded image could keep the image viewer busy for about a minute (ImageIO decoded the whole image again for every band of about one megapixel); an image is now drawn once, which takes about a second for such a file, and ordinary images are as fast as before with a lower memory peak.
 - macOS: images with transparency that are decoded smaller (the thumbnail icons) had darkened edges on some Macs (ImageIO's thumbnail scaler did not weight the colors by alpha); they are now downscaled alpha-weighted by the plugin, like on Windows and Linux.
 
 ## [0.1.0] - 2026-09-25

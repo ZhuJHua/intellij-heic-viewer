@@ -64,7 +64,7 @@ public final class HeicSupport {
   public static synchronized boolean register() {
     if (registered != null) return true;
     if (shutDown) return false; // this class loader is being unloaded: a new registration would pin it
-    register(new HeicImageReaderSpi(HeicSettings::decodeLimits));
+    register(new HeicImageReaderSpi());
     return true;
   }
 

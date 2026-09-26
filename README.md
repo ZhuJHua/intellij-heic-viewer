@@ -21,7 +21,9 @@ Files with the extensions `.heic`, `.heif`, `.hif` and `.heics` become regular i
 - **Upright images**: EXIF orientation and the HEIF `irot`/`imir` transformations are applied.
 - Transparency, 10-bit images, grid (tiled) images, image collections and `.heics` sequences (the primary image is
   shown).
-- Very large images are downscaled while decoding to keep memory use bounded (64 megapixels by default).
+- **Full resolution**, like PNG and JPEG in the built-in viewer: no fixed pixel limit. Only an image that would likely
+  exhaust the IDE's memory (Java heap) at full size is shown smaller, with a banner that says so and how to see it at
+  full size.
 - Installs, updates and uninstalls without restarting the IDE.
 
 The system decoder is called through the JNA library that comes with the IDE. The plugin bundles no decoder and no
@@ -34,8 +36,8 @@ native code, and does not send any data.
 
 If a component is missing, a banner above the image says what to install, with a link to the Microsoft Store or the
 install command for your Linux distribution; *Check Again* then shows the images without restarting the IDE (on
-Windows, restart the IDE if it still reports the extension as missing right after installing it). The pixel
-limit and the thumbnails can be changed in *Settings | Advanced Settings | HEIC Viewer*.
+Windows, restart the IDE if it still reports the extension as missing right after installing it). The thumbnails can
+be turned off in *Settings | Advanced Settings | HEIC Viewer*.
 
 Limitations: only the primary image of a file is shown, colors are converted to sRGB, and HDR gain maps are ignored.
 
@@ -169,7 +171,6 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 
 | Setting | ID | Default |
 |---|---|---|
-| Maximum decoded image size (megapixels, 1–512). Larger images are downscaled while decoding; the longer side is also limited to 16384 pixels. The image viewer always asks for full resolution and the diff decodes two images at once, so this bounds memory use. | `heic.viewer.max.megapixels` | 64 |
 | Show thumbnails as HEIC file icons. Applies as soon as the settings dialog is closed. | `heic.viewer.project.view.thumbnails` | on |
 | Linux only: libheif library, the path of `libheif.so.1` or of its directory, for a libheif outside the system's library path (see [Linux: libheif](#linux-libheif)). Applies at the next IDE start; *Check Again* in the banner or notification applies it only while no libheif has been loaded in the IDE. | `heic.viewer.libheif.path` | empty: the system's libheif |
 
@@ -184,8 +185,15 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
 - Colors are converted to **sRGB**; Display P3 colors outside sRGB are clipped.
 - **HDR gain maps are ignored**: the standard dynamic range base image is shown.
 - Only the **primary image** is shown (no other images of collections, frames of `.heics` sequences, depth maps, …).
-- Images above the pixel budget are downscaled: the editor's info label shows the decoded size, while the
-  documentation popup and completion show the original size.
+- Images are decoded at full resolution, like PNG and JPEG, and hold 4 bytes per pixel of the IDE's Java heap while
+  they are open (a 48-megapixel photo 186 MB, the diff two images). Only when a full-size image would likely exhaust
+  the heap does the [heap safety valve](#memory-full-resolution-and-the-heap-safety-valve) decode it smaller: a banner
+  above the image says "Shown at WxH instead of WxH to protect IDE memory" with a link to *Help | Change Memory
+  Settings* (the diff only logs it), and the editor's info label shows the size shown, while the documentation popup
+  and completion show the original size. With the default 2 GB heap this starts at about 60 to 100 megapixels,
+  depending on how much of the heap the IDE uses (the first time an image is painted, Java2D needs a second copy of it
+  for a moment, so it counts twice); phone and camera photos of 12 and 48 megapixels are always shown at full size.
+  Images of more than about 2.1 gigapixels (a Java array's limit) are always shown smaller.
 - Truncated files (cut short, e.g. a partial copy or download) show "Image not loaded" (the reason is logged) instead
   of a black image. A file of full length whose compressed image data is damaged (bit flips, or a zero-filled tail
   left by an interrupted pre-allocated download) may still appear black, because the system decoder (at least
@@ -248,6 +256,9 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    `javax.imageio` reader by content. `HeicImageReaderSpi.canDecodeInput` runs only the pure-Java `HeifSniffer`
    (reads at most 512 bytes of the `ftyp` box), never loads native code and never throws, so other formats are never
    affected. AVIF and MP4/MOV brands are rejected. The format name is `heic`, so the info label says `HEIC`.
+   `HeicImageReader` reports the display size without decoding pixels and decodes at full resolution (subsampling in an
+   `ImageReadParam` becomes a smaller decode, a source region is cropped afterwards); only the heap safety valve decodes
+   smaller, see [Memory](#memory-full-resolution-and-the-heap-safety-valve).
 3. **Decoding backends** (`backend` package): `HeifBackend` is the platform-neutral decoder interface (`readInfo`,
    `decode(maxPixelSize)`, `decodeThumbnail(maxPixelSize)` and a cached availability probe, `status()`, that returns
    `HeifBackendStatus`: available, or unavailable with a machine-readable reason such as
@@ -272,13 +283,17 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    `Library` interfaces, `Structure`s, callbacks or `Memory`, whose JNA caches would keep the plugin class loader alive,
    and libraries are opened so that JNA's Cleaner thread cannot inherit the plugin's context.
 4. **macOS decoder** (`mac` package): `HeicDecoder` creates a `CGImageSource` (no caching), reads the primary image's
-   properties, creates a transformed (orientation-applied) image with `CGImageSourceCreateThumbnailAtIndex`, draws it in
-   bands of about one megapixel, but at most eight (cropped with `CGImageCreateWithImageInRect`; when ImageIO could not
-   cache the decoded image, e.g. for a malformed file, every band decodes the whole image again), into an explicit 8-bit
-   sRGB bitmap context and copies the pixels into a `BufferedImage`. An image with alpha (up to 64 megapixels) that is
-   requested smaller, e.g. for a thumbnail, is decoded at full size and downscaled alpha-weighted by `PlaneConverter`
-   while the bands are read: ImageIO's thumbnail scaler does not weight the colors by alpha on every Mac, so the black
-   under transparent pixels darkened the edges. Every call has its own autorelease pool and all CF objects and native
+   properties, creates a transformed (orientation-applied) image with `CGImageSourceCreateThumbnailAtIndex`, draws it
+   once into an explicit 8-bit sRGB bitmap context of its size (native memory), releases the image and its source, and
+   then copies the pixels into a `BufferedImage` in chunks of about one megapixel. One draw, because ImageIO decodes an
+   image it could not cache (e.g. a malformed file whose declared size does not match its coded image) again on every
+   draw: a crafted 1 kB file that declares 50362 x 12301 took 8 s in eight bands (a minute while the IDE was busy) and
+   takes 1 s drawn once. Ordinary images take the same time as in bands, and releasing ImageIO's copy before the Java
+   image is allocated lowers the peak memory of the process (48 MP: 680 instead of 725 MB). If the full-size bitmap
+   cannot be allocated, the image is drawn in at most eight bands (`CGImageCreateWithImageInRect`). An image with alpha
+   (up to 64 megapixels) that is requested smaller, e.g. for a thumbnail, is decoded at full size and downscaled
+   alpha-weighted by `PlaneConverter` while it is drawn in at most eight bands: ImageIO's thumbnail scaler does not
+   weight the colors by alpha on every Mac, so the black under transparent pixels darkened the edges. Every call has its own autorelease pool and all CF objects and native
    buffers are released in `finally` blocks. The image source must report a HEIF-family type (`public.heic`,
    `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a `CGRect` is
    passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by the four
@@ -373,12 +388,65 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    waits up to one second for running decodes and clears the caches, so the plugin class loader can be unloaded.
 10. **Java 17 and dynamic unloading**: the plugin is compiled with `--release 17`. On JBR 17 (IntelliJ 2024.1) two
    things would keep the plugin class loader alive after an unload, so neither is used: records (their
-   `equals`/`hashCode`/`toString` bootstraps are cached by the JDK; value classes such as `DecodeLimits` are
-   hand-written instead), and EDT events posted by plugin code during a normal start (`HeicFileTypeMappingRepair` only
+   `equals`/`hashCode`/`toString` bootstraps are cached by the JDK; value classes such as `HeifBackendStatus` and
+   `HeapValve.Decision` are hand-written instead), and EDT events posted by plugin code during a normal start (`HeicFileTypeMappingRepair` only
    checks the file type mappings synchronously and posts to the EDT when a repair is actually needed).
    `BytecodeLevelTest` checks the packaged jar (class version, no records, no `java.lang.foreign`, the JNA rules) and
    `PluginClassLoaderLeakTest` checks on JDK 17, 21 and 25 that the class loader is collected after the plugin decoded
    images and was shut down.
+
+### Memory: full resolution and the heap safety valve
+
+The IDE's image viewer decodes a PNG or JPEG at full resolution however large it is, shows the same image at every
+zoom level and keeps it while the editor is open (`IfsUtil` keeps it in a `SoftReference` afterwards); HEIC images are
+handled the same way. There is no fixed pixel limit (0.1 downscaled everything above 64 megapixels, adjustable in
+Advanced Settings; that setting is gone).
+
+`HeapValve` only steps in when decoding at full size would likely exhaust the IDE's Java heap. Before every decode the
+reader estimates the heap the image needs: the larger of the decode's own peak (`HeifBackend.decodeHeapBytes`: the
+result, 4 bytes per pixel, plus what the backend keeps in the Java heap meanwhile: strips of a few MB; on Windows the
+alpha plane, 1 byte per pixel, and a second copy for a rotation) and what the IDE needs to paint it the first time
+(`HeapCost.painted`: Java2D makes a temporary copy of a `TYPE_INT_*` image the first time it draws it scaled, before it
+caches it as a texture, so 8 bytes per pixel for a moment), plus the file's bytes. The system decoder's native memory
+is not part of it. Measured on macOS: the smallest `-Xmx` that decodes a 48-megapixel image (whose result is 186 MB) is
+195 MB through ImageIO.framework and 202 MB through libheif; the first bilinear paint of a 48-megapixel image allocates
+205 MB with JBR 17 and 25 (Metal and OpenGL), of a 208-megapixel image 814 MB, and in IntelliJ IDEA 2024.1.7 on the
+default 2 GB heap the first paint of a 208-megapixel image ran out of heap in exactly that copy.
+`HeifBackendContractTest` checks on every CI runner that a decode allocates no more than the backend's estimate. With
+`max` the maximum heap (`-Xmx`):
+
+1. An estimate of at most `max / 4` is always decoded at full size: 512 MB of the default 2 GB heap, so every 12- and
+   48-megapixel photo (about 120 and 410 MB) is shown at full size whatever the IDE holds, like a PNG of that size.
+2. A larger one must fit `min(0.4 * max, max - used - inFlight - 0.3 * max)`: one image never takes more than 40% of
+   the heap (on 2 GB an image of about 100 megapixels, on 8 GB about 400), and 30% must stay free afterwards (a fifth
+   for the IDE's work and the 10% G1 keeps in reserve). `used` is the heap in use outside the young generation
+   (`MemoryPoolMXBean`s), garbage and soft references included, so the valve errs on the IDE's side; `inFlight` counts
+   the decodes running at the same time, e.g. the other side of a diff.
+3. An image that does not fit is decoded at the largest size that does, but at least `max / 16` (128 MB of 2 GB, about
+   13 megapixels) and 1024 pixels. The reduced decode is logged once per image in idea.log, and a banner above the image
+   (`HeicDownscaleNotificationProvider`) says "Shown at 8752x8752 instead of 16384x16384 to protect IDE memory.
+   Increase the IDE heap (Help | Change Memory Settings) to see it at full size.", with a *Change Memory Settings* link
+   (the platform action `performancePlugin.ShowMemoryDialogAction`). The reader only sees the bytes of the file, so the
+   reduced decode is recorded by content (`Downscales`: length and CRC-32), and the banner compares the content of a file
+   with it, once per modification stamp. The diff shows no banner.
+
+Independently of the heap, the pixels must fit a Java `int[]`, the array of a `TYPE_INT_*` `BufferedImage` (about 2.1
+gigapixels): a larger image is decoded at the largest size that fits instead of failing. On Linux, libheif decodes at
+full resolution in native memory whatever size is shown, so images above about 268 megapixels are not decoded at all
+(see [Limitations](#limitations-and-known-issues)).
+
+Measured on macOS (M4 Pro, JBR 25, G1) through the plugin's reader, in a JVM with 600 MB of live data and garbage being
+made, like an IDE, the images kept like open editors (a diff: two images) and their first paint simulated by a copy:
+
+| `-Xmx` | 12 MP | 48 MP | 120 MP | 268 MP | 576 MP | diff of two 268 MP images |
+|---|---|---|---|---|---|---|
+| 2 GB | full size | full size | 7756 x 9306 | 8752 x 8752 | 8579 x 8579 | 8624 x 8624 and 3688 x 3688 |
+| 2 GB without the valve | full size | full size | full size | first paint: `OutOfMemoryError` | `OutOfMemoryError` | `OutOfMemoryError` |
+| 8 GB | full size | full size | full size | full size | 20647 x 20647 | both at full size |
+
+With the valve, 20% of the heap could still be allocated after each of the 2 GB cases. In IntelliJ IDEA 2024.1.7 and
+Android Studio 2026.1.4 on their default 2 GB heap, a 48-megapixel HEIC opens at full size and the 268- and
+576-megapixel ones open smaller with the banner.
 
 ## Development
 
@@ -458,8 +526,8 @@ gradle/libs.versions.toml     Version catalog (IntelliJ Platform Gradle Plugin, 
 src/main/java/cn/yooss/heic/
   HeifSniffer                 Pure-Java ftyp sniffing (never touches native code)
   HeicImageReaderSpi          javax.imageio service provider (format names, suffixes, MIME types, canDecodeInput)
-  HeicImageReader             Reader: input, size, image types, subsampling/source region/pixel budget
-  DecodeLimits                Pixel budget
+  HeicImageReader             Reader: input, size, image types, subsampling/source region, full resolution
+  HeapValve, Downscales       Heap safety valve (decode size), images decoded smaller (for the banner)
   HeicSupport                 Registration in IIORegistry (ordering, stale copies, split registry)
   HeicSettings, HeicBundle    Advanced Settings access, resource bundle
   HeicFileTypeMappingRepair   IJPL-39443 workaround
@@ -476,7 +544,8 @@ src/main/java/cn/yooss/heic/
                               PlaneConverter (streaming downscaling), LinuxDistribution + LibheifRemedy (os-release,
                               install commands)
   thumbnail/                  Thumbnail icons: provider, loader, cache, renderer, listeners
-  ui/                         Missing decoder: editor banner (HeicDecoderNotificationProvider, HeicFileOpenedListener),
+  ui/                         Banner of an image shown smaller (HeicDownscaleNotificationProvider); missing decoder:
+                              editor banner (HeicDecoderNotificationProvider, HeicFileOpenedListener),
                               notifications (DecoderPrompt), status and Check Again (DecoderStatus), refresh of the
                               views (HeicViews), remedy actions, HeicDiffExtension, HeicActivationListener
 src/main/resources/
@@ -567,7 +636,10 @@ CHANGELOG.md                  Keep a Changelog; the change notes of each release
 ## Roadmap
 
 - 0.2: IntelliJ 2024.1+ / Android Studio Koala+ (JNA instead of FFM, Java 17), and Windows (WIC) and Linux (libheif)
-  support through the systems' own decoders, behind the `HeifBackend` interface.
+  support through the systems' own decoders, behind the `HeifBackend` interface; full resolution like the built-in
+  viewer, with a heap safety valve instead of a fixed pixel limit.
+- 0.3: grid (tiled) HEIC images decoded tile by tile straight into the result, which lowers the peak memory of a decode.
+- 0.4: multi-resolution images, so that a fitted view holds a screen-sized image instead of the full resolution.
 
 ## License
 

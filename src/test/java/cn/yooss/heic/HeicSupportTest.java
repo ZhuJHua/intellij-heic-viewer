@@ -58,7 +58,8 @@ class HeicSupportTest {
 
   @Test
   void settingsFallBackToDefaultsOutsideTheIde() {
-    assertEquals(DecodeLimits.DEFAULT, HeicSettings.decodeLimits());
+    assertTrue(HeicSettings.projectViewThumbnails());
+    assertEquals("", HeicSettings.libheifPath());
   }
 
   @Test

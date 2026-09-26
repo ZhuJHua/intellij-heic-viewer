@@ -101,6 +101,20 @@ public final class PixelPipeline {
   }
 
   /**
+   * The size of a {@code width x height} image decoded with {@code maxPixelSize}: the image itself when it fits (or for
+   * {@code 0}), otherwise the longer side becomes {@code maxPixelSize} and the other side keeps the aspect ratio
+   * (rounded, at least 1). The rule of {@link #downscale}, {@link PlaneConverter} and the backends' scalers.
+   */
+  public static int[] targetSize(int width, int height, int maxPixelSize) {
+    int longest = Math.max(width, height);
+    if (maxPixelSize <= 0 || longest <= maxPixelSize) return new int[]{width, height};
+    double scale = (double) maxPixelSize / longest;
+    int targetWidth = width >= height ? maxPixelSize : (int) Math.max(1, Math.min(maxPixelSize, Math.round(width * scale)));
+    int targetHeight = height > width ? maxPixelSize : (int) Math.max(1, Math.min(maxPixelSize, Math.round(height * scale)));
+    return new int[]{targetWidth, targetHeight};
+  }
+
+  /**
    * Writes {@code rows} full rows of {@code 0xAARRGGBB} pixels (row-major, {@code target.getWidth()} per row) at row
    * {@code y0}. With {@code premultiplied}, the pixels are first converted to straight alpha, in place, if the target
    * has alpha. For an opaque target the alpha byte is ignored.
@@ -120,10 +134,22 @@ public final class PixelPipeline {
    */
   public static void writeByteRows(@NotNull BufferedImage target, int y0, int rows, byte[] source, int offset,
                                    int stride, @NotNull ByteLayout layout, boolean premultiplied) {
+    writeByteRows(target, y0, rows, source, offset, stride, layout, premultiplied, null);
+  }
+
+  /**
+   * {@link #writeByteRows(BufferedImage, int, int, byte[], int, int, ByteLayout, boolean)} with a scratch array for the
+   * converted pixels, reused when it holds at least {@code target.getWidth() * rows} pixels ({@code null}: a new one), so
+   * that a strip loop allocates it once.
+   *
+   * @return the scratch array used (pass it to the next call)
+   */
+  public static int[] writeByteRows(@NotNull BufferedImage target, int y0, int rows, byte[] source, int offset,
+                                    int stride, @NotNull ByteLayout layout, boolean premultiplied, int[] scratch) {
     int width = target.getWidth();
     int bpp = layout.bytesPerPixel;
     if (stride < width * bpp) throw new IllegalArgumentException("stride " + stride + " < " + width + " * " + bpp);
-    int[] pixels = new int[width * rows];
+    int[] pixels = scratch != null && scratch.length >= width * rows ? scratch : new int[width * rows];
     int a = layout.alpha, r = layout.red, g = layout.green, b = layout.blue;
     for (int row = 0; row < rows; row++) {
       int in = offset + row * stride;
@@ -134,6 +160,7 @@ public final class PixelPipeline {
       }
     }
     writeArgbRows(target, y0, rows, pixels, premultiplied && layout.hasAlpha());
+    return pixels;
   }
 
   /** Converts premultiplied {@code 0xAARRGGBB} to straight alpha in place (rounded, clamped to 255). */

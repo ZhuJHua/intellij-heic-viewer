@@ -1,7 +1,9 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeapCost;
 import cn.yooss.heic.backend.HeifBackend;
 import cn.yooss.heic.backend.HeifImageInfo;
+import com.intellij.openapi.diagnostic.Logger;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -17,7 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.function.Supplier;
+import java.util.Locale;
 
 /**
  * Reads the primary image of a HEIC/HEIF file through a {@link HeifBackend} (the system decoder of the running OS).
@@ -26,22 +28,26 @@ import java.util.function.Supplier;
  *   ImageIO disk cache).</li>
  *   <li>{@link #getWidth}/{@link #getHeight} report the display size (orientation applied) from the file's
  *   properties, without decoding pixels.</li>
- *   <li>{@link #read} honours source subsampling (mapped to a smaller decode size), the source region (cropped
- *   after decoding) and the {@link DecodeLimits pixel budget}; destination settings are ignored.</li>
+ *   <li>{@link #read} decodes at full resolution, like the IDE's image viewer decodes PNG and JPEG; source subsampling
+ *   is mapped to a smaller decode size and the source region is cropped after decoding; destination settings are
+ *   ignored. Only the {@link HeapValve heap safety valve} decodes an image smaller than asked for, when the full size
+ *   would likely exhaust the Java heap or not fit an {@code int[]}; that is logged once per image and recorded for the
+ *   editor banner ({@link Downscales}).</li>
  *   <li>Opaque images are returned as {@code TYPE_INT_RGB}, images with alpha as non-premultiplied
  *   {@code TYPE_INT_ARGB}.</li>
  *   <li>Any failure of the native layer, including {@link LinkageError}s, is reported as {@link IOException}.</li>
  * </ul>
  */
 final class HeicImageReader extends ImageReader {
-  private final Supplier<DecodeLimits> limits;
+  private static final Logger LOG = Logger.getInstance(HeicImageReader.class);
+  private final HeapValve valve;
   private final HeifBackend backend;
   private byte[] data;
   private HeifImageInfo info;
 
-  HeicImageReader(HeicImageReaderSpi provider, Supplier<DecodeLimits> limits, HeifBackend backend) {
+  HeicImageReader(HeicImageReaderSpi provider, HeapValve valve, HeifBackend backend) {
     super(provider);
-    this.limits = limits;
+    this.valve = valve;
     this.backend = backend;
   }
 
@@ -96,16 +102,17 @@ final class HeicImageReader extends ImageReader {
     int xSub = param == null ? 1 : Math.max(1, param.getSourceXSubsampling());
     int ySub = param == null ? 1 : Math.max(1, param.getSourceYSubsampling());
 
-    // Decode as small as possible: subsampling needs at most 1/min(sub) of the resolution, the budget may demand less.
+    // Full resolution, or what subsampling needs (1/min(sub) of it); the heap safety valve may demand less.
     int fullSide = Math.max(width, height);
-    int subsampledSide = ceilDiv(fullSide, Math.min(xSub, ySub));
-    int budgetSide = currentLimits().maxPixelSizeFor(width, height);
-    int decodeSide = Math.min(subsampledSide, budgetSide > 0 ? budgetSide : Integer.MAX_VALUE);
+    int requestedSide = ceilDiv(fullSide, Math.min(xSub, ySub));
+    byte[] encoded = bytes();
+    HeapValve.Decision decision = decide(info, requestedSide, encoded.length);
 
     processImageStarted(imageIndex);
     BufferedImage decoded;
+    HeapValve.Reservation reservation = valve.reserve(decision.bytes()); // for decodes running meanwhile (a diff)
     try {
-      decoded = backend.decode(bytes(), decodeSide >= fullSide ? 0 : decodeSide);
+      decoded = backend.decode(encoded, decision.side());
     }
     catch (IOException e) {
       throw e;
@@ -113,10 +120,18 @@ final class HeicImageReader extends ImageReader {
     catch (RuntimeException | LinkageError e) {
       throw new IOException("Cannot decode HEIC image: " + e, e);
     }
+    finally {
+      reservation.close();
+    }
     if (decoded == null) throw new IOException("The decoder returned no image");
     processImageProgress(90f);
+    report(encoded, info, decision, decoded);
 
     BufferedImage result = cropAndScale(decoded, width, height, region, xSub, ySub);
+    if (decision.isReduced() && decision.requestedSide() == 0 && region.width == width && region.height == height) {
+      // The whole image, smaller than it is: the editor banner reads its full size from the image.
+      result = Downscales.tag(result, width, height, decision.limit() == HeapValve.Limit.HEAP);
+    }
     if (abortRequested()) {
       processReadAborted();
       return result;
@@ -128,7 +143,7 @@ final class HeicImageReader extends ImageReader {
 
   /**
    * Maps the requested source region/subsampling (in full-resolution display coordinates) onto the decoded image,
-   * which may be smaller than the full resolution because of subsampling or the pixel budget.
+   * which may be smaller than the full resolution because of subsampling or the heap safety valve.
    */
   static BufferedImage cropAndScale(BufferedImage decoded, int width, int height, Rectangle region, int xSub, int ySub) {
     double kx = (double) decoded.getWidth() / width;
@@ -168,13 +183,48 @@ final class HeicImageReader extends ImageReader {
     return out;
   }
 
-  private DecodeLimits currentLimits() {
+  /**
+   * The valve's decision; never throws (without an estimate, the requested size, as the IDE's viewer would do). The
+   * estimate is the larger of the decode's own peak ({@link HeifBackend#decodeHeapBytes}) and what the IDE needs to
+   * paint the result the first time ({@link HeapCost#painted}: the image and Java2D's temporary copy of it), plus the
+   * input data.
+   */
+  private HeapValve.Decision decide(HeifImageInfo info, int requestedSide, long inputBytes) {
     try {
-      DecodeLimits current = limits.get();
-      return current != null ? current : DecodeLimits.DEFAULT;
+      return valve.decide(info.width(), info.height(), requestedSide,
+                          side -> Math.max(backend.decodeHeapBytes(info, side), HeapCost.painted(info, side)) + inputBytes);
     }
     catch (RuntimeException | LinkageError e) {
-      return DecodeLimits.DEFAULT;
+      LOG.warn("Cannot estimate the heap needed to decode a " + info.width() + "x" + info.height() + " HEIC image", e);
+      int longest = Math.max(info.width(), info.height());
+      int side = requestedSide >= longest ? 0 : requestedSide;
+      return new HeapValve.Decision(side, side, 0, 0, Long.MAX_VALUE, HeapValve.Limit.NONE);
+    }
+  }
+
+  /**
+   * Records a reduced decode for the editor banner and logs it once per image; a full-size decode forgets an earlier
+   * reduced one of the same content. Never throws.
+   */
+  private static void report(byte[] data, HeifImageInfo info, HeapValve.Decision decision, BufferedImage decoded) {
+    try {
+      if (decision.isReduced()) {
+        if (Downscales.recordReduced(data, info.width(), info.height(), decoded.getWidth(), decoded.getHeight(),
+                                     decision.limit() == HeapValve.Limit.HEAP)) {
+          LOG.info(String.format(Locale.ROOT, "HEIC image of %dx%d decoded at %dx%d (%s): a full-size decode needs about %d MB of "
+                                             + "Java heap, the decode was fitted into %d MB (maximum heap %d MB)",
+                                 info.width(), info.height(), decoded.getWidth(), decoded.getHeight(),
+                                 decision.limit() == HeapValve.Limit.ARRAY ? "too many pixels for a Java array"
+                                                                           : "heap safety valve, to protect IDE memory",
+                                 decision.fullSizeBytes() >> 20, decision.allowance() >> 20, Runtime.getRuntime().maxMemory() >> 20));
+        }
+      }
+      else if (decision.requestedSide() == 0) {
+        Downscales.recordFullSize(data);
+      }
+    }
+    catch (RuntimeException | LinkageError e) {
+      LOG.debug(e);
     }
   }
 

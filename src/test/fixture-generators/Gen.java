@@ -17,6 +17,11 @@
  *   header_only.heic                          = the first 64 bytes of rgb_sips.heic (ftyp + a cut meta box)
  *   garbage.heic                              = plain text
  * GenBands.java produces bands.png; bands_2000x1200.heic = sips -s format heic, bands_exif6.heic = writeorient ... 6.
+ * quadrants_4096x3072.heic (12.6 MP, 12 kB: for the heap estimates of HeifBackendContractTest) = sips -s format heic of
+ *   magick -size 4096x3072 xc:white -fill red -draw "rectangle 0,0 2047,1535" -fill '#00ff00'
+ *     -draw "rectangle 2048,0 4095,1535" -fill blue -draw "rectangle 0,1536 2047,3071" -fill black
+ *     -draw "rectangle 0,0 272,272" PNG24:quadrants.png
+ *   (the layout of rgb.png: TL red, TR green, BL blue, BR white, black marker top-left; an 8-bit 8x6 grid of 512 px tiles).
  * GenIcc.java produces the ICC profile and PNG of icc_wide.heic (colors in a wide-gamut space, embedded ICC profile).
  *
  * Color fixtures of the Windows workarounds in src/test/resources/cn/yooss/heic/win (heif-enc 1.23.5, macOS 26 sips):

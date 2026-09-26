@@ -18,7 +18,7 @@ public final class HeicAppLifecycleListener implements AppLifecycleListener {
     try {
       if (HeicSupport.register()) {
         HeicFileTypeMappingRepair.schedule();
-        DecoderUi.checkInBackground(false); // probes off the EDT; the user is told where a HEIC image fails to load
+        DecoderUi.start(false); // probes off the EDT; the user is told where a HEIC image fails to load
       }
     }
     catch (RuntimeException | LinkageError e) {

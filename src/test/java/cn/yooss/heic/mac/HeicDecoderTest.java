@@ -332,7 +332,7 @@ class HeicDecoderTest {
 
   /** Which decodes are downscaled alpha-weighted: with alpha, smaller than the image, at most 64 megapixels. */
   @Test
-  void alphaWeightedOnlyForSmallerImagesWithAlphaWithinTheBudget() {
+  void alphaWeightedOnlyForSmallerImagesWithAlphaOfAtMost64Megapixels() {
     HeifImageInfo alpha = new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, true);
     assertTrue(HeicDecoder.isAlphaWeighted(alpha, 256));
     assertFalse(HeicDecoder.isAlphaWeighted(alpha, 0), "full size");
@@ -340,7 +340,7 @@ class HeicDecoderTest {
     assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, false), 256));
     assertTrue(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 8000, 1, 8, true), 256));
     assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8001, 8000, 1, 8, true), 256),
-                "above the budget: ImageIO's scaler, as before");
+                "above 64 MP: ImageIO's scaler, whose decode needs no second full-size copy");
   }
 
   /** Orientation 6 (rotate 90 degrees clockwise) on an image that is copied in several chunks. */

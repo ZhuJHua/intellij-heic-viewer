@@ -22,8 +22,8 @@ JNA 调用**操作系统自己的 HEIF 解码器**：macOS 的 ImageIO.framework
   IDE 未运行时从命令行启动的 Diff/合并窗口（`studio diff`、`studio merge`、配置为使用 IDE 的 git difftool/mergetool）同样可以显示。
 - 正确处理 **方向**：EXIF orientation 以及 HEIF 的 `irot`/`imir`，手机竖拍的照片显示为正向。
 - 支持 **透明通道**（输出非预乘的 `TYPE_INT_ARGB`）、**10 bit** 图片、**网格（tile）图片**、多图文件和 `.heics` 序列（显示主图）。
-- 超大图片按**像素预算**在解码时等比缩小（默认 64 百万像素，最长边不超过 16384），可在
-  *Settings | Advanced Settings | HEIC Viewer* 中调整。
+- **原始分辨率**：和自带查看器打开 PNG/JPEG 一样按原始分辨率解码，没有固定的像素上限。只有按原尺寸解码很可能耗尽 IDE 的
+  Java 堆内存时，才以较小的尺寸显示，并用横幅说明原因以及如何查看全尺寸图像（见[内存](#内存原始分辨率与堆内存安全阀)）。
 - **缩略图文件图标**：本地 HEIC 文件（不超过 64 MB）在项目视图（以及编辑器标签页、导航栏、Recent Files 等所有显示文件图标的地方）
   中显示为图片内容的小缩略图，而不是通用的图片图标。缩略图保持宽高比、居中、带一圈很淡的灰色描边，在 Retina 屏幕上按物理像素清晰绘制，
   浅色/深色主题下都适用。解码在后台进行，完成前显示普通的图片图标；可在 Advanced Settings 中关闭。
@@ -149,8 +149,6 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 
 *Settings | Advanced Settings | HEIC Viewer*：
 
-- **解码图片的最大尺寸（百万像素）**（`heic.viewer.max.megapixels`），默认 64，范围 1–512。超过的图片在解码时等比缩小
-  （最长边另外限制为 16384）。IDE 的图片查看器总是请求原始分辨率，而 Diff 会同时解码两张图，这个预算用来限制内存占用。
 - **用缩略图作为 HEIC 文件图标**（`heic.viewer.project.view.thumbnails`），默认开启。关闭后所有 HEIC 文件恢复为普通图片图标。
   修改在点击 OK/Apply 后生效：已显示的图标在设置对话框关闭后立即刷新（不需要重新打开项目）。
 - **libheif 库**（`heic.viewer.libheif.path`，仅 Linux），默认为空（使用系统的 libheif）。填写 `libheif.so.1` 或其所在目录的路径，
@@ -165,7 +163,12 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 - 颜色统一转换到 **sRGB**：Display P3 照片中超出 sRGB 的颜色会被裁剪。
 - **HDR 增益图（gain map）被忽略**，显示的是标准动态范围的基础图像。
 - 只显示文件的**主图**；多图文件、`.heics` 序列的其它帧、深度图等辅助图像不显示。
-- 超过像素预算的图片会被缩小：编辑器信息标签显示的是解码后的尺寸，而文档弹窗/补全中的尺寸是原始尺寸。
+- 图片和 PNG/JPEG 一样按原始分辨率解码，打开期间每个像素占用 IDE Java 堆内存 4 字节（4800 万像素的照片约 186 MB，Diff 两张图）。
+  只有按原尺寸解码很可能耗尽堆内存时，[堆内存安全阀](#内存原始分辨率与堆内存安全阀)才以较小的尺寸解码：图片上方的横幅会显示
+  “为保护 IDE 内存，此图以 WxH 显示，而不是原始尺寸 WxH”，并提供“更改内存设置”链接（*帮助 | 更改内存设置*；Diff 中只写日志）；
+  此时编辑器信息标签显示的是实际显示的尺寸，而文档弹窗/补全中的尺寸是原始尺寸。默认 2 GB 堆内存下，视 IDE 已占用的内存而定，
+  大约从 6000 万到 1 亿像素开始缩小（图片第一次绘制时 Java2D 会短暂地再复制一份，所以按两份计算）；1200 万和 4800 万像素的手机、
+  相机照片始终按原尺寸显示。超过约 21 亿像素（Java 数组的上限）的图片总是缩小显示。
 - 截断的文件显示为 “Image not loaded”（日志中有具体原因）；长度完整但压缩数据损坏的文件（位翻转、预分配后未写完的零填充尾部等）
   仍可能显示为全黑，因为系统解码器（至少 macOS 的 ImageIO.framework）对此不报告任何错误。
 - **IJPL-39443**：IDE 在插件被卸载期间保存设置时，会在 `filetypes.xml` 里写入 `<removed_mapping ext="heic" type="Image"/>`。
@@ -217,7 +220,9 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    - `canDecodeInput` 只运行纯 Java 的 `HeifSniffer`（解析 `ftyp` box，最多 512 字节），绝不加载本地代码、绝不抛出异常，
      所以即使本地层出错也不会影响 PNG/JPEG 等其它格式；
    - AVIF（`avif/avis/avio` 品牌）、MP4/MOV 等被明确拒绝；
-   - `getFormatName()` 为 `heic`，信息标签显示 `HEIC`；不解码像素即可给出宽高（已考虑方向）。
+   - `getFormatName()` 为 `heic`，信息标签显示 `HEIC`；不解码像素即可给出宽高（已考虑方向）；
+   - `HeicImageReader` 按原始分辨率解码（`ImageReadParam` 的子采样映射为更小的解码尺寸，源区域在解码后裁剪），只有堆内存安全阀会缩小，
+     见[内存](#内存原始分辨率与堆内存安全阀)。
 3. **解码后端**（`backend` 包）：`HeifBackend` 是与平台无关的解码接口（`readInfo`、`decode(maxPixelSize)`、
    `decodeThumbnail(maxPixelSize)`，以及带缓存的可用性探测 `status()`，返回 `HeifBackendStatus`：可用，或不可用并附带机器可读的原因
    （如 `WINDOWS_HEIF_EXTENSION_MISSING`、`LINUX_LIBHEIF_MISSING`）、说明文字，以及可选的安装页面和安装命令）。
@@ -240,10 +245,13 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
 
    **macOS 解码**（`mac` 包）：`HeicDecoder` 的流程：`CFDataCreate` → `CGImageSourceCreateWithData(ShouldCache=false)` → 主图属性 →
    `CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform, ThumbnailMaxPixelSize, ShouldCacheImmediately)`
-   → 以约 100 万像素为一条带（最多 8 条：ImageIO 无法缓存解码结果时，例如格式有误的文件，每画一条都要重新解码整张图），经
-   `CGImageCreateWithImageInRect` 裁剪后绘制到显式的 8 bit **sRGB** 位图上下文 →
-   复制到 `BufferedImage`。带透明通道、且请求的尺寸更小（例如缩略图）的图片（不超过 6400 万像素）按原尺寸解码，在读取条带时由
-   `PlaneConverter` 按 alpha 加权缩小：ImageIO 的缩略图缩放并非在所有 Mac 上都按 alpha 加权，透明像素下的黑色会使边缘变暗。
+   → 一次性绘制到与图片同样大小的显式 8 bit **sRGB** 位图上下文（本地内存）→ 释放该图片及其图片源 → 以约 100 万像素为一块复制到
+   `BufferedImage`。只画一次，是因为 ImageIO 无法缓存的图片（例如声明尺寸与实际编码图像不符的格式有误的文件）每画一次都要重新解码
+   整张图：一个声明为 50362 x 12301 的 1 kB 构造文件分 8 条绘制要 8 秒（IDE 繁忙时约 1 分钟），一次绘制只要 1 秒。普通图片耗时与分条相同，
+   而且在分配 Java 图片之前先释放 ImageIO 的副本，进程内存峰值反而更低（4800 万像素：680 MB，分条时 725 MB）。无法分配全尺寸位图时，
+   改为最多 8 条经 `CGImageCreateWithImageInRect` 裁剪的条带。带透明通道、且请求的尺寸更小（例如缩略图）的图片（不超过 6400 万像素）
+   按原尺寸解码，在最多 8 条条带中由 `PlaneConverter` 按 alpha 加权缩小：ImageIO 的缩略图缩放并非在所有 Mac 上都按 alpha 加权，
+   透明像素下的黑色会使边缘变暗。
    每次调用都有自己的 autorelease pool，所有 CF 对象和本地缓冲区在 `finally` 中释放，线程安全。
    ImageIO 报告的类型必须属于 HEIF 家族（`public.heic`、`public.heif` 等）。`MacApi` 列出它需要的本地调用，由 `jna.JnaMacApi` 实现；
    按值传递的 `CGRect` 在 arm64 上作为 4 个 double 传递，在 x86_64 上先用 8 个占位 double 填满 `xmm0`–`xmm7`，再把 4 个分量放到栈上。
@@ -334,9 +342,50 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
    - 切换设置（`AdvancedSettingsChangeListener`）会立即清空缓存，并对所有请求过图标的文件发布外观变化，关闭设置对话框后
      项目视图即切换为缩略图/默认图标，无需重新打开项目。HEIC 文件在磁盘上被修改时（`BulkFileListener`，只比较字符串）同样刷新。
 8. **Java 17 与免重启卸载**：插件以 `--release 17` 编译。在 JBR 17（IntelliJ 2024.1）上，有两件事会让插件卸载后类加载器仍被持有，所以都不使用：
-   record（JDK 会缓存它的 `equals`/`hashCode`/`toString` 引导方法；`DecodeLimits` 等值类改为手写），以及正常启动时由插件代码向 EDT
+   record（JDK 会缓存它的 `equals`/`hashCode`/`toString` 引导方法；`HeifBackendStatus`、`HeapValve.Decision` 等值类改为手写），以及正常启动时由插件代码向 EDT
    投递事件（见第 5 条）。`BytecodeLevelTest` 检查打包后的 jar（class 版本、没有 record、没有 `java.lang.foreign`、JNA 规则），
    `PluginClassLoaderLeakTest` 在 JDK 17、21、25 上验证：插件解码图片并关闭后，类加载器可以被回收。
+
+### 内存：原始分辨率与堆内存安全阀
+
+IDE 自带的图片查看器无论 PNG/JPEG 多大都按原始分辨率解码，所有缩放级别使用同一张图，编辑器打开期间一直持有它（关闭后 `IfsUtil`
+用 `SoftReference` 保留）；HEIC 图片也这样处理，没有固定的像素上限（0.1 会把超过 6400 万像素的图片缩小，可在高级设置中调整；
+该设置已删除）。
+
+只有按原尺寸解码很可能耗尽 IDE 的 Java 堆内存时，`HeapValve` 才会介入。每次解码前，读取器先估算这张图需要的堆内存：取解码本身的峰值
+（`HeifBackend.decodeHeapBytes`：结果图每像素 4 字节，加上后端在此期间占用的 Java 堆——几 MB 的条带；Windows 上还有每像素 1 字节的
+透明平面，以及旋转时的第二份副本）与 IDE 第一次绘制它所需内存（`HeapCost.painted`：Java2D 第一次缩放绘制 `TYPE_INT_*` 图片、
+把它缓存为纹理之前，会临时复制一份，因此短时间内每像素 8 字节）中较大的一个，再加上文件本身的字节数；系统解码器的本地内存不计在内。
+在 macOS 上实测：能解码 4800 万像素图片（结果图 186 MB）的最小 `-Xmx` 通过 ImageIO.framework 为 195 MB，通过 libheif 为 202 MB；
+用 JBR 17 和 25（Metal 与 OpenGL）第一次双线性绘制 4800 万像素的图片会分配 205 MB，2.08 亿像素的图片分配 814 MB；
+IntelliJ IDEA 2024.1.7 在默认 2 GB 堆内存下第一次绘制一张 2.08 亿像素的图片时，正是在这份副本上耗尽了堆内存。
+`HeifBackendContractTest` 在每个 CI 运行环境上检查解码实际分配的内存不超过后端的估算值。记最大堆内存（`-Xmx`）为 `max`：
+
+1. 估算值不超过 `max / 4` 的图片总是按原尺寸解码：默认 2 GB 堆内存下为 512 MB，所以所有 1200 万和 4800 万像素的照片（约 120 MB 和
+   410 MB）无论 IDE 已占用多少内存，都和同样大小的 PNG 一样按原尺寸显示。
+2. 更大的图片必须满足 `min(0.4 * max, max - used - inFlight - 0.3 * max)`：一张图最多占 40% 的堆（2 GB 下约为 1 亿像素的图片，
+   8 GB 下约 4 亿像素），解码后至少还要留出 30%（五分之一留给 IDE 自己，另外 10% 是 G1 保留的空间）。`used` 是年轻代以外正在使用的堆
+   （`MemoryPoolMXBean`），其中也包括垃圾和软引用，所以安全阀偏向保护 IDE；`inFlight` 是同时进行的其它解码（例如 Diff 的另一侧）的估算值。
+3. 放不下的图片以能放下的最大尺寸解码，但至少为 `max / 16`（2 GB 下 128 MB，约 1300 万像素）且长边至少 1024 像素。每张图只在 idea.log
+   中记录一次，并在图片上方显示横幅（`HeicDownscaleNotificationProvider`）：“为保护 IDE 内存，此图以 8752x8752 显示，而不是原始尺寸
+   16384x16384。增大 IDE 堆内存（帮助 | 更改内存设置）后即可查看全尺寸图像。”，附“更改内存设置”链接（平台操作
+   `performancePlugin.ShowMemoryDialogAction`）。读取器只能看到文件的字节，所以缩小的解码按内容记录（`Downscales`：长度和 CRC-32），
+   横幅按文件内容比对（每个修改戳只计算一次）。Diff 中不显示横幅。
+
+与堆内存无关，像素数还必须放得进一个 Java `int[]`（`TYPE_INT_*` 的 `BufferedImage` 背后的数组，约 21 亿像素）：更大的图片以能放下的最大尺寸解码，
+而不是失败。Linux 上 libheif 无论显示多大都在本地内存中按原始分辨率解码，所以超过约 2.68 亿像素的图片根本不会解码（见[限制与已知问题](#限制与已知问题)）。
+
+在 macOS（M4 Pro，JBR 25，G1）上通过插件的读取器实测：JVM 中有 600 MB 存活数据并不断产生垃圾（类似 IDE），像打开的编辑器一样持有图片
+（Diff：两张图），并用一份副本模拟第一次绘制：
+
+| `-Xmx` | 1200 万像素 | 4800 万 | 1.2 亿 | 2.68 亿 | 5.76 亿 | 两张 2.68 亿像素图片的 Diff |
+|---|---|---|---|---|---|---|
+| 2 GB | 原尺寸 | 原尺寸 | 7756 x 9306 | 8752 x 8752 | 8579 x 8579 | 8624 x 8624 和 3688 x 3688 |
+| 2 GB，不用安全阀 | 原尺寸 | 原尺寸 | 原尺寸 | 第一次绘制：`OutOfMemoryError` | `OutOfMemoryError` | `OutOfMemoryError` |
+| 8 GB | 原尺寸 | 原尺寸 | 原尺寸 | 原尺寸 | 20647 x 20647 | 两张都是原尺寸 |
+
+使用安全阀时，2 GB 的每种情况之后都仍能再分配 20% 的堆。在默认 2 GB 堆内存的 IntelliJ IDEA 2024.1.7 和 Android Studio 2026.1.4 中，
+4800 万像素的 HEIC 按原尺寸打开，2.68 亿和 5.76 亿像素的则缩小显示并带横幅。
 
 ## 开发
 
@@ -416,8 +465,8 @@ local.properties                  本机设置（不提交，见上文）
 src/main/java/cn/yooss/heic/
   HeifSniffer.java                 纯 Java 的 ftyp 嗅探（不接触本地代码）
   HeicImageReaderSpi.java          javax.imageio 服务提供者（格式名、后缀、MIME、canDecodeInput）
-  HeicImageReader.java             读取器：读入流、宽高、图像类型、子采样/源区域/像素预算、异常包装
-  DecodeLimits.java                像素预算
+  HeicImageReader.java             读取器：读入流、宽高、图像类型、子采样/源区域、原始分辨率、异常包装
+  HeapValve.java, Downscales.java  堆内存安全阀（解码尺寸）、缩小显示的图片（供横幅使用）
   HeicSupport.java                 在 IIORegistry 中注册/注销（排序、清理旧副本、注册表分裂）
   HeicSettings.java                Advanced Settings 读取（失败时回退默认值）
   HeicBundle.java                  资源包 messages/HeicBundle
@@ -439,7 +488,8 @@ src/main/java/cn/yooss/heic/
   thumbnail/ThumbnailRenderer.java           等比居中、渐进缩小、描边、多分辨率图片（纯 Java2D）
   thumbnail/ThumbnailGeometry.java, ThumbnailKey.java, LruCache.java   尺寸计算、缓存键、LRU
   thumbnail/HeicThumbnailSettingsListener.java, HeicThumbnailFileListener.java   设置切换 / 文件修改时刷新图标
-  ui/                              缺少解码器时的界面：编辑器横幅（HeicDecoderNotificationProvider、HeicFileOpenedListener）、通知
+  ui/                              缩小显示时的横幅（HeicDownscaleNotificationProvider）；缺少解码器时的界面：编辑器横幅
+                                   （HeicDecoderNotificationProvider、HeicFileOpenedListener）、通知
                                    （DecoderPrompt）、状态与“重新检测”（DecoderStatus）、刷新各视图（HeicViews）、解决办法的操作、
                                    HeicDiffExtension、HeicActivationListener
 src/main/resources/
@@ -515,7 +565,9 @@ CHANGELOG.md                       Keep a Changelog 格式；每个版本的 cha
 ## 路线图
 
 - 0.2：支持 IntelliJ 2024.1+ / Android Studio Koala+（用 JNA 取代 FFM，Java 17），并通过各系统自带的解码器支持 Windows（WIC）和
-  Linux（libheif），实现放在 `HeifBackend` 接口之后。
+  Linux（libheif），实现放在 `HeifBackend` 接口之后；和自带查看器一样按原始分辨率解码，用堆内存安全阀取代固定的像素上限。
+- 0.3：网格（tile）HEIC 逐块解码并直接拼入结果图，降低解码时的内存峰值。
+- 0.4：多分辨率图像，适配窗口显示时只持有与屏幕大小相当的图像，而不是原始分辨率。
 
 ## 许可证
 

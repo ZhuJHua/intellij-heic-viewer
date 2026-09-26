@@ -175,11 +175,23 @@ class PluginClassLoaderLeakTest {
         backendType.getMethod("decode", byte[].class, int.class).invoke(backend, heic, 0);
         backendType.getMethod("decodeThumbnail", byte[].class, int.class).invoke(backend, heic, 64);
       }
-      // Value classes that used to be records (hand-written equals/hashCode/toString now).
-      Class<?> limits = loader.loadClass("cn.yooss.heic.DecodeLimits");
-      Object defaults = limits.getField("DEFAULT").get(null);
-      Object other = limits.getConstructor(long.class, int.class).newInstance(10_000L, 300);
-      out("limits", defaults.equals(other) + " " + defaults.hashCode() + " " + other);
+      // Value classes (hand-written equals/hashCode/toString, not records) and the heap safety valve: a decision with the
+      // JVM's heap numbers (MXBeans), a reservation, a downscale record and its listener.
+      Class<?> valveClass = loader.loadClass("cn.yooss.heic.HeapValve");
+      Object valve = valveClass.getField("RUNTIME").get(null);
+      Object decision = valveClass.getMethod("decide", int.class, int.class, int.class, java.util.function.IntToLongFunction.class)
+        .invoke(valve, 50_000, 50_000, 0, (java.util.function.IntToLongFunction) side -> 4L * 50_000 * 50_000);
+      out("valve", decision + " " + decision.hashCode());
+      Object reservation = valveClass.getMethod("reserve", long.class).invoke(valve, 1L << 20);
+      reservation.getClass().getMethod("close").invoke(reservation);
+      Class<?> downscales = loader.loadClass("cn.yooss.heic.Downscales");
+      downscales.getMethod("setListener", Runnable.class).invoke(null, (Runnable) () -> { });
+      downscales.getMethod("recordReduced", byte[].class, int.class, int.class, int.class, int.class, boolean.class)
+        .invoke(null, heic, 50_000, 50_000, 1000, 1000, true);
+      Object entry = downscales.getMethod("find", String.class).invoke(null, downscales.getMethod("key", long.class, long.class)
+        .invoke(null, (long) heic.length, downscales.getMethod("crc", byte[].class).invoke(null, (Object) heic)));
+      out("downscale", entry + " " + entry.equals(entry) + " " + entry.hashCode());
+      downscales.getMethod("setListener", Runnable.class).invoke(null, (Object) null);
 
       // The reader, registered like the plugin does; ImageIO decodes through it.
       loader.loadClass("cn.yooss.heic.HeicSupport").getMethod("register").invoke(null);
