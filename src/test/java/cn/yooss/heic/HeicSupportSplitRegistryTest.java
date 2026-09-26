@@ -24,10 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Regression test for the "IfsUtil returns null for every HEIC file although the reader is registered" incident
- * (Android Studio 2026.2 canary, one cold start): {@code IIORegistry.getDefaultInstance()} is not thread-safe, and when
- * two threads call it for the first time at once, ImageIO can keep a registry that {@code getDefaultInstance()} no
- * longer returns. A reader registered through {@code getDefaultInstance()} is then invisible to ImageIO.
+ * The reader reaches ImageIO when ImageIO keeps a registry that {@code IIORegistry.getDefaultInstance()} does not return
+ * (two threads calling it for the first time at once): a reader registered through {@code getDefaultInstance()} only
+ * would be invisible to ImageIO.
  * <p>
  * The race needs a JVM in which ImageIO has not been initialized yet, so it runs in a child JVM ({@link Child}),
  * which forces the interleaving deterministically. Runs on every OS; the image is only decoded where the system decoder is
@@ -41,7 +40,7 @@ class HeicSupportSplitRegistryTest {
     String context = "child JVM output:\n" + child.output;
     System.out.println(context);
 
-    assertEquals("true", r.get("split"), "the race was reproduced: ImageIO does not use getDefaultInstance()\n" + context);
+    assertEquals("true", r.get("split"), "the split registry was set up: ImageIO does not use getDefaultInstance()\n" + context);
     assertEquals("false", r.get("probeVisible"), "a reader registered through getDefaultInstance() only is invisible to ImageIO\n" + context);
 
     assertEquals("true", r.get("registered"), context);

@@ -247,9 +247,9 @@ tasks {
 // <IDE>/lib/jna/<arch>; point JNA there exactly like the IDE launcher does (product-info.json: -Djna.boot.library.path,
 // -Djna.nosys=true, -Djna.noclasspath=true). Directory names as in the IDE distributions: aarch64 or amd64, on macOS,
 // Windows and Linux alike. Evaluated only when a test task runs (resolving platformPath needs the IDE).
-// -PjnaNativeDir=<directory with jnidispatch> is used where the IDE has no directory for this architecture (CI: the
-// IntelliJ IDEA download on Windows arm64 is the x64 build; the workflow extracts win32-aarch64/jnidispatch.dll from the
-// JNA release of the same version).
+// -PjnaNativeDir=<directory with jnidispatch> is used where the IDE has no directory for this architecture (e.g. the
+// x64 build of IntelliJ IDEA on Windows arm64, with win32-aarch64/jnidispatch.dll from the JNA release of the same
+// version).
 val platformDir: Provider<File> = providers.provider { intellijPlatform.platformPath.toFile() }
 val jnaNativeDirFallback: Provider<String> = providers.gradleProperty("jnaNativeDir")
 val jnaNativeDir: Provider<String> = platformDir.map { platform ->
@@ -283,7 +283,7 @@ tasks.withType<Test>().configureEach {
     // a JNA Cleaner thread started by plugin code, see PluginClassLoaderLeakTest).
     jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
     jvmArgumentProviders.add(JnaNativeArgs(jnaNativeDir))
-    // Lets HeifBackendContractTest check what CI expects of the system decoder (e.g. "available" on macOS).
+    // The status HeifBackendContractTest expects of the system decoder (e.g. "available" on macOS).
     providers.environmentVariable("HEIC_EXPECT_BACKEND").orNull?.let { systemProperty("heic.test.expectBackend", it) }
     // The libheif the tests of the Linux backend use on any OS (default: the system's on Linux, Homebrew's on macOS).
     providers.environmentVariable("HEIC_TEST_LIBHEIF").orNull?.let { systemProperty("heic.test.libheif", it) }

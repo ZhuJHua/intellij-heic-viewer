@@ -15,10 +15,8 @@ package cn.yooss.heic.win;
  *   <td>Microsoft.HEVCVideoExtension_8wekyb3d8bbwe</td><td>free, but only preinstalled by PC makers (the Store offers
  *   no purchase action for it)</td><td>10.0.16299</td></tr>
  * </table>
- * Which systems have them preinstalled depends on the Windows image: the GitHub-hosted Windows 11 Enterprise 25H2
- * (arm64) image has the HEIF Image Extension and the device-manufacturer HEVC package provisioned, the Windows Server
- * 2025 image has neither (and no Microsoft Store). Elsewhere it depends on the Windows edition and the PC maker; where
- * no HEVC package came with the PC, the paid one is the one a user can get.
+ * Which systems have them preinstalled depends on the Windows edition and the PC maker; where no HEVC package came with
+ * the PC, the paid one is the one a user can get.
  * <p>
  * The backend's statuses carry the Store app page ({@code ms-windows-store:}) and, for the free HEIF Image Extension,
  * the winget command; {@code backend.HeifRemedies} turns them into the banner's and the notifications' actions (with the

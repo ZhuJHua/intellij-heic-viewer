@@ -18,8 +18,8 @@ import java.util.Locale;
  * {@link WinApi} on top of the JNA that every IntelliJ-based IDE bundles, following the rules of {@link JnaLibraries}
  * (no {@code Library} interface, no {@code Structure}, no {@code Memory}, no callbacks; only {@link NativeLibrary},
  * {@link Function#invokeInt(Object[])} etc. with arguments of JDK types, and {@link Native#malloc}/{@link Native#free}),
- * so that the plugin class loader stays collectable. {@code jna-platform}'s COM helpers are deliberately not used: they
- * are {@code Structure}s and {@code Library} proxies that would register plugin-loaded state in JNA's caches.
+ * so that the plugin class loader stays collectable; {@code jna-platform}'s COM helpers are {@code Structure}s and
+ * {@code Library} proxies that would register plugin-loaded state in JNA's caches.
  * <p>
  * <b>COM methods</b> are called through the object's vtable: {@code *(void***) object} is the vtable, slot {@code i}
  * holds the function pointer of the {@code i}-th method, whose first argument is the object itself. The slots below

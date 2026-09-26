@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * The libheif backend against the fixtures, with the expectations of the macOS decoder (sizes, orientation, alpha,
  * 10-bit, colors; libheif's HEVC decoder and YCbCr conversion differ slightly, hence tolerances). Runs wherever a
- * libheif with HEVC decoder is available ({@link TestLibheif}): Linux CI, and macOS with Homebrew's libheif, where the
+ * libheif with HEVC decoder is available ({@link TestLibheif}): Linux, and macOS with Homebrew's libheif, where the
  * images are also compared with ImageIO.framework's directly. {@code HeifBackendContractTest} checks the rest of the
  * contract on Linux.
  */

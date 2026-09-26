@@ -41,12 +41,11 @@ import java.util.Locale;
  *   combined strip by strip and downscaled with an alpha-weighted filter ({@link PlaneConverter}) instead.</li>
  *   <li>An embedded ICC profile ({@code IWICColorContext} of type profile, e.g. Display P3 of iPhone photos) is
  *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.
- *   The YCbCr to RGB conversion is the decoder's, with two workarounds for HEIF Image Extension 1.2.36, applied to a
- *   copy of the data: a primary image that is a single 8-bit HEVC image is converted with the BT.709 matrix whatever
- *   the file signals (BT.601 red becomes (255, 25, 0)), so such files are decoded as a 1x1 grid of that image
- *   ({@link SingleImageGrid}), which the decoder converts right; and the BT.709-like and unspecified transfer curves
- *   that the decoder converts to sRGB, unlike every other viewer, are presented as sRGB ({@link NclxTransfer}). If
- *   the decoder rejects the rewritten data, the file is decoded as it is.</li>
+ *   The YCbCr to RGB conversion is the decoder's, with two color fixes applied to a copy of the data: a primary image
+ *   that is a single 8-bit HEVC image is decoded as a 1x1 grid of that image ({@link SingleImageGrid}), which the
+ *   decoder converts with the file's matrix; and the BT.709-like and unspecified transfer curves, which the decoder
+ *   converts to sRGB unlike other viewers, are presented as sRGB ({@link NclxTransfer}). If the decoder rejects the
+ *   rewritten data, the file is decoded as it is.</li>
  * </ol>
  * Every COM object and native buffer is released in {@link Session#close()}, in reverse order, on every path. All
  * failures are {@link IOException}s ({@link WicException} with the {@code HRESULT} for failed calls).
@@ -68,7 +67,7 @@ public final class WicDecoder {
   /** {@code System.Photo.Orientation} photo metadata policy: the EXIF-style orientation still to be applied. */
   static final String ORIENTATION_POLICY = "System.Photo.Orientation";
   /**
-   * System property: {@code false} switches the color workarounds ({@link SingleImageGrid}, {@link NclxTransfer}) off,
+   * System property: {@code false} switches the color fixes ({@link SingleImageGrid}, {@link NclxTransfer}) off,
    * so that HEIF files are decoded exactly as WIC decodes them.
    */
   public static final String COLOR_FIXES_PROPERTY = "heic.viewer.windows.colorFixes";
@@ -80,19 +79,19 @@ public final class WicDecoder {
     this(api, !"false".equalsIgnoreCase(System.getProperty(COLOR_FIXES_PROPERTY, "true").trim()));
   }
 
-  /** @param colorFixes whether the color workarounds are applied ({@link #COLOR_FIXES_PROPERTY}) */
+  /** @param colorFixes whether the color fixes are applied ({@link #COLOR_FIXES_PROPERTY}) */
   WicDecoder(@NotNull WinApi api, boolean colorFixes) {
     this.api = api;
     this.colorFixes = colorFixes;
   }
 
-  /** Whether the color workarounds are applied ({@link #COLOR_FIXES_PROPERTY}). */
+  /** Whether the color fixes are applied ({@link #COLOR_FIXES_PROPERTY}). */
   public boolean colorFixes() {
     return colorFixes;
   }
 
   /**
-   * The data WIC gets for a HEIF file: a rewritten copy with the color workarounds, or {@code data} itself if none
+   * The data WIC gets for a HEIF file: a rewritten copy with the color fixes, or {@code data} itself if none
    * applies (or they are switched off).
    */
   byte @NotNull [] forDecoder(byte @NotNull [] data) {

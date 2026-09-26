@@ -40,11 +40,7 @@ class PluginDescriptorTest {
     assertEquals("HEIC Viewer", text(plugin, "name"));
   }
 
-  /**
-   * Everything is declared in plugin.xml and loads on every OS (the backend decides at runtime whether a system decoder
-   * is available). An OS dependency, even an optional one, makes IntelliJ 2024.1-2025.1 refuse the plugin on the other
-   * systems, and an optional config file of an OS module that does not exist in the IDE is silently skipped.
-   */
+  /** Everything is declared in plugin.xml and loads on every OS: no OS dependency and no optional config files. */
   @Test
   void noOsDependencyAndNoOptionalConfigFiles() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");

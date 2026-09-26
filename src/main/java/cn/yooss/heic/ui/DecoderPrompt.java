@@ -83,7 +83,7 @@ public final class DecoderPrompt {
     if (remedy == null) return;
     String content = "<b>" + HeicBundle.message(remedy.titleKey()) + "</b><br>" + content(remedy);
     if (isStoreExtension(remedy.reason())) {
-      // Whether a running process sees a Store package installed after it started is not verified: say what else helps.
+      // A running process may not see a Store package installed after it started: say what else helps.
       content += "<br>" + HeicBundle.message("remedy.check.missing.restart");
     }
     show(HeicBundle.message("remedy.check.missing.title"), content, NotificationType.WARNING, remedy, false, project);

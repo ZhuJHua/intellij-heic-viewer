@@ -21,7 +21,7 @@ import org.jetbrains.annotations.NotNull;
  * session the reader is already registered and {@link #accept} is a synchronized null test. The platform closes only
  * the editors created by a provider that is removed, and this one never creates any, so installing, updating or
  * removing the plugin does not disturb open editors or diff windows. After {@code beforePluginUnload},
- * {@link HeicSupport#register()} no longer registers anything.
+ * {@link HeicSupport#register()} registers nothing.
  */
 public final class HeicReaderRegistrar implements FileEditorProvider, DumbAware {
   private static final Logger LOG = Logger.getInstance(HeicReaderRegistrar.class);

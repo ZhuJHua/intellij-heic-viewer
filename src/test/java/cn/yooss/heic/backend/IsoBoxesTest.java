@@ -75,10 +75,7 @@ class IsoBoxesTest {
     assertNotNull(IsoBoxes.findTruncation(pointsBeyond));
   }
 
-  /**
-   * All iloc field sizes 0: every extent reads no bytes, so the extent loop is not bounded by the box size. 65535
-   * items with 65535 extents each (393 KB) used to take seconds (up to minutes for larger files) before any decode.
-   */
+  /** All iloc field sizes 0 (65535 items with 65535 extents each, 393 KB): each extent is checked once, within a second. */
   @Test
   @Timeout(1)
   void zeroWidthExtentsAreCheckedOnce() {

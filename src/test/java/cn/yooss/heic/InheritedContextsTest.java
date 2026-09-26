@@ -25,9 +25,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * {@link InheritedContexts}: a thread started while code of a class loader was on the stack keeps that loader alive
- * through its inherited access control context (JDK 17-23), until it is released. The unload failure it fixes was
- * reproduced on IntelliJ IDEA 2024.1.7: an application pool thread started by the decoder check at startup. Here a
- * {@link Timer} thread stands in for it (its thread references only JDK objects, like an idle pool thread).
+ * through its inherited access control context (JDK 17-23), until it is released. A {@link Timer} thread stands in for
+ * an application pool thread (its thread references only JDK objects, like an idle pool thread).
  */
 @SuppressWarnings("removal")
 class InheritedContextsTest {

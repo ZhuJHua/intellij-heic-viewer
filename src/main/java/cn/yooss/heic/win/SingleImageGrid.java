@@ -10,20 +10,13 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Works around the colors of Microsoft's HEIF decoder (HEIF Image Extension 1.2.36) for files whose primary image is
- * a single 8-bit HEVC image: WIC gets such a file as a 1x1 grid of that image, which it decodes with the right colors.
- * Pure Java; nothing is re-encoded, and the file itself is not changed (WIC reads a rewritten copy in memory).
+ * Gives Microsoft's HEIF decoder a file whose primary image is a single 8-bit HEVC image as a 1x1 grid of that image,
+ * which it decodes with the right colors. Pure Java; nothing is re-encoded, and the file itself is not changed (WIC reads
+ * a rewritten copy in memory).
  * <p>
- * <b>The bug.</b> For a primary item of type {@code hvc1} with 8-bit samples, the decoder converts YCbCr to RGB with
- * the BT.709 matrix whatever the file signals: the {@code colr}/{@code nclx} matrix coefficients (BT.601, which
- * libheif, macOS and most encoders write, BT.2020, unspecified, ...) and the HEVC VUI are ignored; only the
- * {@code nclx} full-range flag is honored. Pure red encoded with BT.601 decodes as (255, 25, 0). The conversion clips
- * to 8 bits, so a corrective matrix afterwards cannot restore saturated colors (errors of up to 20 levels remain),
- * and the decoder offers nothing else: {@code IWICBitmapSourceTransform} returns only {@code 32bppBGR} (and
- * {@code 8bppAlpha}) for every requested format, and {@code IWICPlanarBitmapSourceTransform} is not implemented. Derived
- * {@code grid} images (the layout of iPhone photos) and 10-bit images take another path in the decoder, which honors
- * the {@code nclx} matrix and range. Measured on Windows 11 arm64 in CI against the files' own YCbCr samples (GitHub
- * Actions runs 36174285956 to 36181400095 of the project; {@code WicColorTest} reports the colors in every Windows job).
+ * For a primary item of type {@code hvc1} with 8-bit samples, the decoder converts YCbCr to RGB with the BT.709 matrix
+ * whatever the file signals (only the {@code nclx} full-range flag is honored); derived {@code grid} images and 10-bit
+ * images take another path in the decoder, which honors the {@code nclx} matrix and range.
  * <p>
  * <b>The rewrite</b>, only when the primary item is an 8-bit {@code hvc1} image with chroma and the file uses nothing
  * this class does not understand (otherwise {@link #wrap} returns {@code null} and the file is decoded as it is):
@@ -43,8 +36,7 @@ import java.util.Set;
  * </ul>
  * Nothing in the file moves: the old {@code meta} box becomes a {@code free} box of the same size and the new one is
  * appended after the last box, so the {@code iloc} offsets (and those of an image sequence's {@code moov}) stay valid.
- * The costs: one copy of the file plus a few hundred bytes, and the decoder's slower grid path (a 12 MP image took
- * 0.29 s instead of 0.08 s on the arm64 runner, the time an iPhone photo of that size takes anyway).
+ * The cost is one copy of the file plus a few hundred bytes.
  */
 final class SingleImageGrid {
   /** Properties that apply to the reconstructed (derived) image, so they move to the grid. */

@@ -43,7 +43,7 @@ import java.util.Set;
  * the plugin class loader. Either pins the loader for the thread's lifetime. {@link #open} switches the context class
  * loader to JNA's own loader for the call and clears the inherited context of a Cleaner thread that appeared during the
  * call (needs {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which every IDE launcher passes; without it the
- * repair is skipped). Java 24+ no longer has inherited access control contexts.
+ * repair is skipped). Java 24+ has no inherited access control contexts.
  */
 public final class JnaLibraries {
   private static final String CLEANER_THREAD = "JNA Cleaner";

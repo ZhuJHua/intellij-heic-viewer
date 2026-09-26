@@ -42,7 +42,7 @@ import java.util.Locale;
  * {@code subcode} the high 32 bits ({@link LibheifException#check}). The message pointer is lost; the codes are
  * turned into text by {@link LibheifException}. Other architectures (32-bit ARM, s390x, ...) return the struct in
  * memory, so the backend refuses them ({@link #isSupportedPlatform}). {@code LibheifAbiTest} checks the decoding
- * against real errors on x86-64 and AArch64 in CI.
+ * against real errors.
  * <p>
  * Thread-safe: libheif contexts are independent, the {@code Function} objects are immutable.
  */

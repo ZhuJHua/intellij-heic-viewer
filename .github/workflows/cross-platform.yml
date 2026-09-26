@@ -1,24 +1,13 @@
-# GitHub Actions workflow that builds the plugin and runs the unit tests on every supported OS and architecture, on the
-# three Java runtimes the supported IDEs use (JDK 25: 2026.1.3+; JDK 21: 2024.2 - 2026.1.2; JDK 17: 2024.1):
-#   macOS arm64 and x86_64      ImageIO.framework through the IDE's JNA (x86_64 passes CGRect by value differently)
-#   Linux x64 / arm64           the system libheif through the IDE's JNA: 1.17 with the libde265 plugin (x64, arm64),
-#                               1.12 (x64, Ubuntu 22.04), 1.17 without HEVC decoder (x64), no libheif (x64)
-#   Windows x64 / arm64         WIC through the IDE's JNA. Windows Server 2025 (x64) has no HEIF Image Extension and no
-#                               Microsoft Store: the backend must report WINDOWS_HEIF_EXTENSION_MISSING there (unless the
-#                               best-effort installation below succeeds), and WicNativeTest runs the same COM pipeline
-#                               with WIC's built-in PNG/JPEG/TIFF/BMP/GIF decoders. The Windows 11 arm64 image has the HEIF
-#                               Image Extension and the HEVC Video Extension provisioned: HEIC is decoded for real there.
-# HEIC_EXPECT_BACKEND is the status HeifBackendContractTest requires of the system decoder on that runner: "available",
-# or the HeifBackendStatus.Reason the backend must report (e.g. LINUX_LIBHEIF_MISSING). Test reports are uploaded for
-# every job.
+# Builds the plugin and runs the unit tests on macOS, Linux and Windows, on the Java runtimes of the supported IDEs
+# (JDK 25: 2026.1.3+; JDK 21: 2024.2 - 2026.1.2; JDK 17: 2024.1), with and without the system HEIF decoder.
+# HEIC_EXPECT_BACKEND is the status HeifBackendContractTest requires of the system decoder in each job: "available", or
+# the HeifBackendStatus.Reason the backend must report (e.g. LINUX_LIBHEIF_MISSING). Test reports are uploaded for every
+# job. The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded per OS and cached.
+# Plugin Verifier runs against pluginVerificationIdes in a separate job, and the install job runs the Linux install
+# commands the plugin suggests in containers of several distributions.
 #
-# The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded for the runner's OS and
-# cached. Plugin Verifier runs against pluginVerificationIdes in a separate job (like the Build workflow).
-#
-# Triggered by pushes to dev/** branches, by pull requests to main (so that nothing reaches main, and the release draft
-# that build.yml makes from it, without the Windows and Linux backends having been tested; no secrets are used, so
-# Dependabot and fork pull requests can run it), and manually (e.g. on main before a draft release is published).
-# The concurrency group of a pull request is its own (github.ref is refs/pull/<number>/merge).
+# Triggered by pushes to dev/** branches, by pull requests to main and manually. The concurrency group of a pull request
+# is its own (github.ref is refs/pull/<number>/merge).
 
 name: Cross-platform
 
@@ -49,8 +38,7 @@ jobs:
           - name: macOS x86_64
             os: macos-15-intel
             expect: available
-          # libheif 1.17 with its codecs as plugins; the HEVC one (libheif-plugin-libde265) is only suggested since
-          # 1.17.6-1ubuntu4.3, so the second job has libheif without HEVC decoder.
+          # libheif 1.17 with its codecs as plugins, with and without the HEVC plugin (libheif-plugin-libde265).
           - name: Linux x64, libheif
             os: ubuntu-24.04
             libheif: install
@@ -68,9 +56,8 @@ jobs:
             os: ubuntu-22.04
             libheif: install
             expect: available
-          # Android Studio has no Linux/Windows arm64 build: compile against IntelliJ IDEA there (its arm64 build ships
-          # JNA's native library for arm64, which the Linux and Windows backends need). A 2026.1 build like the Android
-          # Studio in gradle.properties: the 2026.2 platform jars are too new for the JDK 17/21 test runs.
+          # Android Studio has no Linux/Windows arm64 build: IntelliJ IDEA 2026.1 there (its arm64 build ships JNA's
+          # native library for arm64; the 2026.2 platform jars need a newer JDK than the JDK 17/21 test runs).
           - name: Linux arm64, libheif
             os: ubuntu-24.04-arm
             libheif: install
@@ -79,9 +66,8 @@ jobs:
           - name: Windows x64
             os: windows-latest
             expect: WINDOWS_HEIF_EXTENSION_MISSING
-          # winget installs the free HEIF Image Extension on Windows Server 2025; the HEVC Video Extensions cannot be
-          # installed there (the paid one needs a purchase, the device-manufacturer one is not offered), so the backend
-          # must report the missing HEVC codec, unless the best-effort installation gets both.
+          # winget installs the HEIF Image Extension; without the HEVC Video Extensions the backend reports the missing
+          # codec, unless the best-effort installation gets both.
           - name: Windows x64, HEIF Image Extension
             os: windows-latest
             codecs: try-install
@@ -147,7 +133,7 @@ jobs:
         shell: powershell
         run: |
           $winget = Get-Command winget -ErrorAction SilentlyContinue
-          if (-not $winget) { Write-Host "winget is not available on this runner: HEIC is not decoded here"; exit 0 }
+          if (-not $winget) { Write-Host "winget is not available here: HEIC is not decoded"; exit 0 }
           foreach ($id in '9PMMSR1CGPWG', '9N4WGH0Z6VHQ') {
             winget install --id $id --source msstore --accept-package-agreements --accept-source-agreements --disable-interactivity --silent
             Write-Host "winget install $id exited with $LASTEXITCODE"
@@ -206,9 +192,8 @@ jobs:
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
       # The light-IDE tests (*PlatformIntegrationTest: the plugin inside the IntelliJ test framework, e.g. the decoder
-      # banner and notifications, the Linux-only setting, IfsUtil decoding through the system decoder) need the `test`
-      # task, which only runs where the IDE compiled against has a build for the runner: not on the arm64 jobs, which
-      # compile against IntelliJ IDEA's x64 download.
+      # banner and notifications, IfsUtil decoding through the system decoder) need the `test` task, which only runs
+      # where the IDE compiled against has a build for the job's architecture: not on the arm64 jobs.
       - name: Light-IDE tests
         if: ${{ !cancelled() && !matrix.platform }}
         env:
@@ -220,9 +205,9 @@ jobs:
       # The colors of Microsoft's HEIF decoder as WIC decodes the fixtures and as the plugin does (WicColorTest).
       - name: Windows color report
         if: ${{ !cancelled() && runner.os == 'Windows' }}
-        run: cat build/reports/color/wic-colors.txt 2> /dev/null || echo "no color report (no HEVC codec on this runner)"
+        run: cat build/reports/color/wic-colors.txt 2> /dev/null || echo "no color report (no HEVC codec here)"
 
-      # Which native JNA directories the IDE provides (JNA can only be used in tests on the runner's architecture).
+      # Which native JNA directories the IDE provides (JNA can only be used in tests on the job's architecture).
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}
         run: |
@@ -303,7 +288,6 @@ jobs:
           - image: ubuntu:20.04
             prepare: apt-get update
             known: alpha_sips.heic,alpha_libheif.heic,rgb16_sips.heic,ten_bit.heic
-          # (Debian 11 is not checked: since its LTS ended, its security updates are no longer on deb.debian.org.)
           - image: ubuntu:22.04
             prepare: apt-get update
           - image: ubuntu:24.04
@@ -348,7 +332,7 @@ jobs:
     timeout-minutes: 60
     steps:
 
-      # The IDEs in pluginVerificationIdes need more disk space than a runner has free by default.
+      # The IDEs in pluginVerificationIdes need more disk space than is free by default.
       - name: Maximize Build Space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:

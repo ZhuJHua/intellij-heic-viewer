@@ -30,9 +30,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   decoder is now available, banners disappear and open HEIC editors reload ({@link HeicViews#decoderBecameAvailable()}),
  *   so no restart is needed.</li>
  * </ul>
- * A normal start where the decoder is available (e.g. every macOS start) posts nothing to the EDT: on Java 17
- * (IntelliJ 2024.1) an EDT event created by plugin code while the IDE starts can keep the plugin class loader alive
- * (see {@code HeicFileTypeMappingRepair}).
+ * A normal start where the decoder is available (e.g. every macOS start) posts nothing to the EDT: on Java 17 an EDT
+ * event created by plugin code while the IDE starts can keep the plugin class loader alive (see
+ * {@code HeicFileTypeMappingRepair}).
  */
 public final class DecoderStatus {
   private static final Logger LOG = Logger.getInstance(DecoderStatus.class);

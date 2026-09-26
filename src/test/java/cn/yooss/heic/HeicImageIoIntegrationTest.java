@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The real reader with the system decoder of this OS ({@code HeifBackends.current()}) driven through
  * {@code javax.imageio} exactly like the IDE does: {@code org.intellij.images.vfs.IfsUtil} (editor, diff) and
  * {@code org.intellij.images.util.ImageInfoReader} (image-info index, completion, documentation popup). Skipped where
- * no system decoder is available (HeifBackendContractTest checks that this matches what CI expects).
+ * no system decoder is available (HeifBackendContractTest checks the expected status).
  */
 @EnabledIf("cn.yooss.heic.SystemDecoder#isAvailable")
 class HeicImageIoIntegrationTest {

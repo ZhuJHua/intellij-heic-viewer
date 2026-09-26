@@ -35,10 +35,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * ({@link HeifBackends#current()}): macOS ImageIO.framework, Windows WIC or Linux libheif. Every backend must produce
  * the same images (sizes, orientation, alpha, colors within codec tolerances) from the same fixtures.
  * <p>
- * Tests that decode are skipped where the system decoder is unavailable. So that a broken or missing decoder cannot
- * pass unnoticed, CI sets {@code HEIC_EXPECT_BACKEND} (system property {@code heic.test.expectBackend}) to the status
- * the runner must report: {@code available}, or the {@link HeifBackendStatus.Reason} name (e.g.
- * {@code LINUX_LIBHEIF_MISSING} on a runner without libheif).
+ * Tests that decode are skipped where the system decoder is unavailable. {@code HEIC_EXPECT_BACKEND} (system property
+ * {@code heic.test.expectBackend}) names the status the backend must report: {@code available}, or the
+ * {@link HeifBackendStatus.Reason} name (e.g. {@code LINUX_LIBHEIF_MISSING} without libheif).
  */
 class HeifBackendContractTest {
   private static final HeifBackend BACKEND = HeifBackends.current();
@@ -117,7 +116,7 @@ class HeifBackendContractTest {
     assertFalse(image.isAlphaPremultiplied());
   }
 
-  /** Expected layouts of the quadrant fixture after orientation (verified against macOS Preview). */
+  /** Expected layouts of the quadrant fixture after orientation. */
   @ParameterizedTest
   @CsvSource(delimiter = '|', value = {
       "rgb_sips.heic     | 600x400 TL=red TR=green BL=blue BR=white marker=TL",
@@ -198,8 +197,7 @@ class HeifBackendContractTest {
 
   /**
    * Downscaling an image with alpha weights the colors by alpha: the color under the transparent pixels (black in HEIC
-   * files) must not darken the edges (Windows scaled the colors and the alpha plane separately, and so does ImageIO's
-   * thumbnail scaler on some Macs).
+   * files) does not darken the edges.
    */
   @ParameterizedTest
   @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
@@ -211,8 +209,7 @@ class HeifBackendContractTest {
     int edge = image.getRGB(22, 34);
     String message = name + " (" + BACKEND.id() + "): " + Integer.toHexString(edge);
     assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
-    // Alpha-weighted: red stays red (about 255). Scaling colors and alpha separately gives about 128 to 150 (WIC's
-    // scaler; ImageIO's thumbnail scaler on the GitHub macOS runners, 0x40800404; 0x44bf0000 on an M-series Mac).
+    // Alpha-weighted: red stays red (about 255); scaling colors and alpha separately gives about 128 to 150.
     assertTrue(((edge >> 16) & 0xFF) >= 220, message);
     assertTrue(((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
   }

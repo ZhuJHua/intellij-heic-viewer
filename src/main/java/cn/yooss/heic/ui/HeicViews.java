@@ -128,12 +128,12 @@ final class HeicViews {
   }
 
   /**
-   * Before the plugin is unloaded (EDT): no more banners or refreshes, and the banners on screen are removed. The
-   * platform does not do it reliably: IntelliJ 2026.1 only re-collects the banners of the providers that are still
-   * registered, so the panel of this plugin would stay in the editor (with its actions, plugin classes) and keep the
-   * plugin class loader alive. {@link #removePanels} removes a provider's panels from the editors of all open files right
-   * away; after {@code shutDown} the provider collects nothing, and a function it returned earlier creates no panel when
-   * the platform applies it later on the EDT ({@link #isBannerHidden} is checked again then), so no new panel appears.
+   * Before the plugin is unloaded (EDT): no more banners or refreshes, and the banners on screen are removed.
+   * IntelliJ 2026.1 and newer only re-collect the banners of the providers that are still registered, so the panel of
+   * this plugin (with its actions, plugin classes) would stay in the editor and keep the plugin class loader alive.
+   * {@link #removePanels} removes a provider's panels from the editors of all open files right away; after
+   * {@code shutDown} the provider collects nothing, and a function it returned earlier creates no panel when the platform
+   * applies it later on the EDT ({@link #isBannerHidden} is checked again then).
    */
   static void shutDown() {
     shutDown = true;
@@ -155,13 +155,10 @@ final class HeicViews {
   /**
    * Before the plugin is unloaded (EDT): replaces the banner updates in flight for the open files of {@code project}
    * with new ones. An update the platform started earlier holds the list of all banner providers it began with, this
-   * plugin's classes included, and needs the EDT between two providers. The IDE checks on the EDT whether the plugin
-   * class loader can be collected, so such an update cannot finish in time and the unload fails ("class loader cannot be
-   * unloaded"; reproduced on IntelliJ IDEA 2024.1.7 right after a diff was opened: the memory snapshot shows
-   * {@code EditorNotificationsImpl}'s update job -> {@code ExtensionComponentAdapter[]} -> a provider class of this
-   * plugin). {@code updateNotifications(file)} cancels the file's current update, and the platform drains the EDT queue
-   * right after {@code beforePluginUnload}, so the cancelled updates end there. The new ones wait 100 ms before they list
-   * the providers, normally until this plugin's have been removed.
+   * plugin's classes included, and needs the EDT between two providers, while the IDE checks on the EDT whether the
+   * plugin class loader can be collected. {@code updateNotifications(file)} cancels the file's current update, and the
+   * platform drains the EDT queue right after {@code beforePluginUnload}, so the cancelled updates end there. The new
+   * ones wait 100 ms before they list the providers, normally until this plugin's have been removed.
    */
   private static void restartBannerUpdates(@NotNull Project project) {
     try {
@@ -177,7 +174,7 @@ final class HeicViews {
 
   /**
    * {@code EditorNotifications.removeNotificationsForProvider(provider)}: removes the provider's panels from the editors
-   * right away (IntelliJ 2025.x and newer). 2024.1 and 2024.2 have the same operation only under its former name,
+   * right away (IntelliJ 2025.x and newer); 2024.1 and 2024.2 have the same operation as
    * {@code updateNotifications(provider)}, which the newer platforms deprecate (and delegate to). Called by name, so that
    * the plugin links neither a method that 2024.1 lacks nor a deprecated one.
    */

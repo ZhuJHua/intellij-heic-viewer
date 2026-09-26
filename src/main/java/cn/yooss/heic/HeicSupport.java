@@ -35,10 +35,10 @@ import java.util.stream.Stream;
  * <b>Split registry.</b> {@code ImageIO} (and therefore the IDE's {@code IfsUtil}) only searches the registry it
  * captured in its static initializer. {@link IIORegistry#getDefaultInstance()} is not thread-safe: when two threads
  * call it for the first time at once, each creates a registry, and ImageIO can end up with one that
- * {@code getDefaultInstance()} no longer returns (reproduced on Android Studio 2026.2 / JBR 25, where the splash screen
- * initializes ImageIO while the platform's {@code ImageReaderWriterSpiRegistrar} registers its readers). A reader
- * registered through {@code getDefaultInstance()} is then invisible to ImageIO for the whole session. Registration
- * therefore checks what ImageIO sees and, in that case, also registers a second instance into ImageIO's registry.
+ * {@code getDefaultInstance()} does not return (e.g. when the splash screen initializes ImageIO while the platform
+ * registers its readers). A reader registered through {@code getDefaultInstance()} is then invisible to ImageIO for the
+ * whole session. Registration therefore checks what ImageIO sees and, in that case, also registers a second instance
+ * into ImageIO's registry.
  */
 public final class HeicSupport {
   public static final String PLUGIN_ID = "cn.yooss.heic-viewer";
@@ -129,7 +129,7 @@ public final class HeicSupport {
 
   /**
    * Makes sure ImageIO sees the reader (see the class comment). In the normal case ImageIO's registry is
-   * {@code defaultRegistry} and this only looks. Never throws: at worst HEIC images do not load, as before.
+   * {@code defaultRegistry} and this only looks. Never throws: at worst HEIC images do not load.
    */
   private static void makeVisibleToImageIO(IIORegistry defaultRegistry) {
     try {
@@ -192,8 +192,7 @@ public final class HeicSupport {
     Thread thread = Thread.currentThread();
     ClassLoader previous = thread.getContextClassLoader();
     try {
-      // A real file (read through a plain file: URL) rather than an in-memory URL handler: URL.of(URI, handler) needs
-      // Java 20 and the URL(URL, String, URLStreamHandler) constructor is deprecated since then.
+      // A real file behind a plain file: URL (an in-memory URL handler needs Java 20 API).
       directory = Files.createTempDirectory("heic-viewer-spi");
       Path serviceFile = directory.resolve(OnlyOurProvider.SERVICE_FILE);
       Files.createDirectories(serviceFile.getParent());

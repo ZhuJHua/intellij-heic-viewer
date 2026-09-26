@@ -26,9 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * available is decided by the backend when an image is read (an unavailable decoder fails that read with an
  * {@link java.io.IOException}, the IDE then shows "Image not loaded").
  * <p>
- * The provider is registered programmatically by {@link HeicSupport}; there is deliberately no
- * {@code META-INF/services} entry (HeicSupport offers one to {@code ImageIO.scanForPlugins()} only when ImageIO uses a
- * registry other than {@code IIORegistry.getDefaultInstance()}).
+ * The provider is registered programmatically by {@link HeicSupport} and has no {@code META-INF/services} entry
+ * (HeicSupport offers one to {@code ImageIO.scanForPlugins()} only when ImageIO uses a registry other than
+ * {@code IIORegistry.getDefaultInstance()}).
  */
 public final class HeicImageReaderSpi extends ImageReaderSpi {
   static final String[] FORMAT_NAMES = {"heic", "HEIC", "heif", "HEIF"};

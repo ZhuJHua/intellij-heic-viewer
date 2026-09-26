@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Workaround for IJPL-39443.
+ * Keeps the HEIC extensions mapped to the Image file type.
  * <p>
  * When the IDE saves its file-type settings while this plugin is unloaded (after an uninstall, a disable, or an
  * update whose unload did not complete), {@code filetypes.xml} records {@code <removed_mapping ext="heic"
@@ -39,10 +39,8 @@ final class HeicFileTypeMappingRepair {
    * the repair on the EDT (a write action is required to change file type associations). The repair runs when no
    * modal dialog is open; until then it stays queued, e.g. while Settings | Plugins is open after an installation.
    * <p>
-   * A normal start posts nothing to the EDT: on Java 17 (IntelliJ 2024.1) an EDT event created by plugin code captures
-   * an {@code AccessControlContext} with the plugin's protection domain, and threads the platform starts while handling
-   * it (the welcome screen, ForkJoin workers) inherit that context and keep the plugin class loader alive, so the plugin
-   * could not be updated or removed without a restart.
+   * A normal start posts nothing to the EDT: on Java 17 an EDT event created by plugin code captures the plugin's
+   * protection domain, which threads started while handling it inherit (see {@link InheritedContexts}).
    */
   static void schedule() {
     Application application = ApplicationManager.getApplication();
@@ -88,6 +86,6 @@ final class HeicFileTypeMappingRepair {
       }
     });
     LOG.info("Re-associated " + unmapped + " with the " + imageFileType.getName()
-             + " file type (a stale removed_mapping in filetypes.xml had disabled them, IJPL-39443)");
+             + " file type (a removed_mapping in filetypes.xml had unmapped them)");
   }
 }

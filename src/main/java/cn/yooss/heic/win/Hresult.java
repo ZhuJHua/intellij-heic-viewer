@@ -46,8 +46,8 @@ public final class Hresult {
   public static final int WINCODEC_ERR_UNSUPPORTEDOPERATION = 0x88982F81;
   /**
    * The decoder registered for the data could not be created. {@code CreateDecoderFromStream} returns it for HEIF data
-   * when the "HEIF Image Extension" is not installed (observed on Windows 11 25H2 and Windows Server 2025: WIC keeps a
-   * registration for the HEIF decoder whose implementation comes with the Store package).
+   * when the "HEIF Image Extension" is not installed (WIC keeps a registration for the HEIF decoder whose implementation
+   * comes with the Store package).
    */
   public static final int WINCODEC_ERR_COMPONENTINITIALIZEFAILURE = 0x88982F8B;
   public static final int WINCODEC_ERR_INSUFFICIENTBUFFER = 0x88982F8C;

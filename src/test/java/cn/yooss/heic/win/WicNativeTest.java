@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * The real COM pipeline of the Windows backend (JNA, vtable calls, WIC, Media Foundation), also on runners without the
+ * The real COM pipeline of the Windows backend (JNA, vtable calls, WIC, Media Foundation), also on systems without the
  * HEIF Image Extension: WIC's built-in PNG, BMP, TIFF, GIF and JPEG decoders go through exactly the code that decodes
  * HEIC ({@link WicDecoder} with the HEIF-only check switched off, a test-only parameter), and the results are compared
  * with Java's ImageIO. HEIC itself is covered by {@code HeifBackendContractTest} where the extensions are installed.
@@ -193,9 +193,9 @@ class WicNativeTest {
     if (HeifBackends.current().status().isAvailable()) assertFalse(hevc.isEmpty(), "HEIC decodes, so there is an HEVC decoder");
   }
 
-  /** The backend of this runner, whatever it has installed: its status and what decoding a HEIC then does. */
+  /** The backend of this system, whatever it has installed: its status and what decoding a HEIC then does. */
   @Test
-  void heicOnThisRunner() throws IOException {
+  void heicOnThisSystem() throws IOException {
     HeifBackend backend = HeifBackends.current();
     assertInstanceOf(WicHeifBackend.class, backend);
     HeifBackendStatus status = backend.status();

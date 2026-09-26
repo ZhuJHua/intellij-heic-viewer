@@ -16,8 +16,7 @@ import java.util.Locale;
  * The availability probe of the Windows backend: what WIC and Media Foundation report, and the
  * {@link HeifBackendStatus} that follows ({@link #toStatus()}, pure Java, so the decision table is tested on every OS).
  * <p>
- * Observed behaviour (Windows 11 25H2 and Windows Server 2025, HEIF Image Extension 1.2.36, HEVC Video Extension
- * 2.4.45, in CI):
+ * What WIC and Media Foundation report:
  * <table>
  *   <caption>What each component's absence looks like</caption>
  *   <tr><th>Missing</th><th>{@code CreateDecoder(GUID_ContainerFormatHeif)}</th><th>decoding HEIC data</th>
@@ -31,12 +30,11 @@ import java.util.Locale;
  * Without Media Foundation (Windows "N" editions without the Media Feature Pack: no {@code mfplat.dll}, or
  * {@code MFStartup} fails with {@code E_NOTIMPL}) the HEIF decoder cannot decode HEVC either, however the failure looks;
  * the status is then {@code ERROR} with the Media Feature Pack as the remedy in its detail, since neither Store
- * extension would help. Not observed (no such runner); from Microsoft's documentation of {@code MFStartup}.
+ * extension would help.
  * <p>
  * The decisive check is decoding a tiny embedded HEIC ({@link #SAMPLE_BASE64}, 128x64 with {@code irot} 90 degrees, left half
  * red, right half blue): it proves the whole chain (WIC, HEIF decoder, HEVC transform, this plugin's binding). The first
- * decode in a process takes about one to two seconds (the Store packages are activated and the codec is loaded), later
- * ones a few milliseconds, so the probe costs what the first image would cost anyway; it runs on a background thread.
+ * decode in a process activates the Store packages and loads the codec, so the probe runs on a background thread.
  */
 final class WicProbe {
   /** {@code MFT_ENUM_FLAG_SYNCMFT | ASYNCMFT | HARDWARE | LOCALMFT | SORTANDFILTER} (mfapi.h). */
@@ -61,7 +59,7 @@ final class WicProbe {
 
   /** The native binding, e.g. {@code "JNA 5.17.0 (amd64)"}. */
   String bridge = "?";
-  /** Whether the decoder applies the color workarounds ({@link WicDecoder#COLOR_FIXES_PROPERTY}). */
+  /** Whether the decoder applies the color fixes ({@link WicDecoder#COLOR_FIXES_PROPERTY}). */
   boolean colorFixes = true;
   /** {@code HRESULT} of {@code IWICImagingFactory::CreateDecoder(GUID_ContainerFormatHeif)}, if it could be called. */
   @Nullable Integer createDecoderHr;

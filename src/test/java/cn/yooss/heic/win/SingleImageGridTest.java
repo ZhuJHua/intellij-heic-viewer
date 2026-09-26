@@ -200,7 +200,7 @@ class SingleImageGridTest {
   }
 
   /**
-   * Where the system decoder is not the one with the bug (macOS ImageIO, libheif), the rewritten file must decode to
+   * Where the system decoder is not the Windows one (macOS ImageIO, libheif), the rewritten file must decode to
    * the same image: size, orientation, alpha and every pixel.
    */
   @ParameterizedTest
@@ -225,9 +225,8 @@ class SingleImageGridTest {
     assertEquals(a.getWidth() + "x" + a.getHeight(), b.getWidth() + "x" + b.getHeight());
     assertEquals(a.getType(), b.getType());
     assertEquals(Fixtures.layout(a), Fixtures.layout(b));
-    // Bit-identical without transformations. With irot/imir, macOS ImageIO's thumbnail-with-transform path (the macOS
-    // backend's) resamples a rotated grid slightly differently at the color edges (mean 0.2 to 0.6); libheif's
-    // heif-dec and sips give bit-identical images for these files too.
+    // Bit-identical without transformations; with irot/imir, macOS ImageIO resamples a rotated grid slightly
+    // differently at the color edges.
     double mean = Fixtures.meanDifference(a, b);
     assertTrue(mean < 1.0, path + ": mean difference " + mean);
   }

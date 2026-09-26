@@ -12,8 +12,7 @@
   <!-- No OS dependency: everything below is loaded on macOS, Windows and Linux. The decoder is the operating system's
        own (macOS ImageIO.framework, Windows WIC with the HEIF/HEVC extensions, Linux libheif), chosen and probed at
        runtime by cn.yooss.heic.backend.HeifBackends; without one, HEIC files show "Image not loaded" and the user is
-       told what to install. (An OS dependency, even an optional one, makes IntelliJ 2024.1-2025.1 refuse to load the
-       plugin on the other systems.) -->
+       told what to install. IntelliJ 2024.1-2025.1 refuse a plugin with an OS dependency on the other systems. -->
 
   <resource-bundle>messages.HeicBundle</resource-bundle>
 
@@ -29,9 +28,8 @@
 
     <!-- When the system decoder is unavailable (e.g. the Windows HEIF/HEVC extensions or the Linux libheif packages
          are missing), the user is told where a HEIC image fails to load, with the remedy (package cn.yooss.heic.ui):
-         a banner above the HEIC image editor, and for the diff viewer one balloon per session
-         (also right after installing the plugin); "Check Again" and the results are balloons too. Never probes the
-         decoder on the EDT. -->
+         a banner above the HEIC image editor, and for the diff viewer one balloon per session (also right after
+         installing the plugin); "Check Again" and the results are balloons too. Never probes the decoder on the EDT. -->
     <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
     <diff.DiffExtension implementation="cn.yooss.heic.ui.HeicDiffExtension"/>
     <notificationGroup id="HEIC Viewer" displayType="BALLOON" bundle="messages.HeicBundle"
@@ -39,9 +37,7 @@
   </extensions>
 
   <applicationListeners>
-    <!-- Registration of the javax.imageio reader. Deliberately not ApplicationLoadListener (internal API and not
-         dynamic) and not 262's imageReaderWriterSpi extension point (unknown before 262, which blocks dynamic
-         unload). -->
+    <!-- Registration of the javax.imageio reader at IDE start and on dynamic load; deregistration before unload. -->
     <listener class="cn.yooss.heic.HeicAppLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
     <listener class="cn.yooss.heic.HeicDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
     <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action (a Store page, a
