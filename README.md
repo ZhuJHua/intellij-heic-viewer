@@ -294,7 +294,15 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    (up to 64 megapixels) that is requested smaller, e.g. for a thumbnail, is decoded at full size and downscaled
    alpha-weighted by `PlaneConverter` while it is drawn in at most eight bands: ImageIO's thumbnail scaler does not
    weight the colors by alpha on every Mac, so the black under transparent pixels darkened the edges. Every call has its own autorelease pool and all CF objects and native
-   buffers are released in `finally` blocks. The image source must report a HEIF-family type (`public.heic`,
+   buffers are released in `finally` blocks. On Intel Macs the native part of a decode (from the image source to the
+   draw and the release of the image) runs on one thread at a time per process: ImageIO converts the pixels of every
+   HEIC decode on the GPU (VideoToolbox's Metal pixel transfer), and on the GitHub macOS 15 Intel runner (a VM with a
+   paravirtualized GPU) that work fails under load from concurrent decodes, with wrong pixels and JVM crashes (SIGSEGV
+   or SIGFPE in `VTMetalTransferSession…`) in every thread and process that has a transfer in flight. Serialized, three
+   heavily loaded processes no longer crashed (none of 48 runs, against 7 of 45 without); Apple silicon was not
+   affected under the same load and is not serialized. The system property `heic.mac.serializeDecodes=true|false`
+   overrides it. The pixels are copied into the Java image outside that gate, and reading the image properties is not
+   gated (it does not reach the GPU). The image source must report a HEIF-family type (`public.heic`,
    `public.heif`, …). `MacApi` is the list of native calls it needs and `jna.JnaMacApi` implements it; a `CGRect` is
    passed by value as four doubles on arm64 and as eight dummy doubles (filling `xmm0`–`xmm7`) followed by the four
    components on the stack on x86_64.

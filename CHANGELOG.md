@@ -22,6 +22,7 @@
 
 - macOS: a malformed HEIC whose declared size does not match its coded image could keep the image viewer busy for about a minute (ImageIO decoded the whole image again for every band of about one megapixel); an image is now drawn once, which takes about a second for such a file, and ordinary images are as fast as before with a lower memory peak.
 - macOS: images with transparency that are decoded smaller (the thumbnail icons) had darkened edges on some Macs (ImageIO's thumbnail scaler did not weight the colors by alpha); they are now downscaled alpha-weighted by the plugin, like on Windows and Linux.
+- macOS on Intel: decoding several HEIC images at the same time (the thumbnail icons, the image viewer, the two sides of a diff) could crash the IDE inside VideoToolbox, the system's video decoder, whose GPU work failed under the load (seen on an Intel Mac virtual machine); the plugin now lets ImageIO decode one HEIC image at a time on Intel Macs (the system property `heic.mac.serializeDecodes` overrides this on any Mac).
 
 ## [0.1.0] - 2026-09-25
 

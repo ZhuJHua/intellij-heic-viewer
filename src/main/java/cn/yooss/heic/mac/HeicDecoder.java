@@ -9,8 +9,10 @@ import cn.yooss.heic.mac.jna.JnaMacApi;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayDeque;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Decodes HEIC/HEIF files into {@link BufferedImage}s with macOS ImageIO.framework.
@@ -32,8 +34,9 @@ import java.util.Set;
  * <p>
  * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
  * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
- * in {@code finally}), so the class is thread-safe. All failures, including a missing native layer, surface as
- * {@link IOException}; only {@link OutOfMemoryError} and other VM errors propagate.
+ * in {@code finally}), so the class is thread-safe; on Intel Macs the native part of the decodes runs on one thread at
+ * a time ({@link #NATIVE_DECODE}: concurrent ImageIO decodes crashed the JVM in VideoToolbox). All failures, including
+ * a missing native layer, surface as {@link IOException}; only {@link OutOfMemoryError} and other VM errors propagate.
  */
 public final class HeicDecoder {
   /** Type identifiers of ImageIO.framework's ISO-BMFF image formats (the HEIF family). */
@@ -93,6 +96,7 @@ public final class HeicDecoder {
     throws IOException {
     HeifInput.check(data);
     try (Session session = new Session(bound)) {
+      session.enterGate();
       session.open(data);
       HeifImageInfo info = session.info();
       if (isAlphaWeighted(info, maxPixelSize)) {
@@ -186,9 +190,59 @@ public final class HeicDecoder {
   /** Largest image with alpha that is downscaled alpha-weighted (64 MP), see {@link #isAlphaWeighted}. */
   static final long ALPHA_WEIGHTED_MAX_PIXELS = 64_000_000L;
 
+  /**
+   * The gate of the native part of a decode on Intel Macs ({@link Bound#serialized}): one decode at a time per process,
+   * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source. Fair: a decode
+   * waits at most for those that asked before it.
+   * <p>
+   * ImageIO converts the pixels of every HEIC decode on the GPU, with VideoToolbox's Metal pixel transfer (the first
+   * decode loads the Metal driver, whatever the options; {@link #readInfo}, which is not gated, does not). On the GitHub
+   * macOS 15 Intel runner (a VM with Apple's paravirtualized GPU) that GPU work fails under load from concurrent decodes:
+   * decodes come out with other pixels (1-2 levels off, or without their colors) and the JVM crashes with SIGSEGV
+   * (address 0x20) or SIGFPE (integer division by zero) in {@code VTMetalTransferSession...} code, in every thread, and
+   * every process, that has a transfer in flight, even in a process that decodes on one thread. The load comes from the
+   * decoding threads, from ImageIO's own threads (grid images are transferred tile by tile on
+   * {@code com.apple.cmphoto.canvasTransferQueue}) and from other processes. Serializing the decodes of each process
+   * removes most of it: three processes decoding on eight threads each crashed in 7 of 45 runs of 90 s without the gate
+   * and in none of 48 with it (dev/0.2-vtcrash). Neither Apple silicon (an M4 Pro, and the paravirtualized GPU of the
+   * GitHub arm64 runner under the same load) nor ImageIO's private options against hardware decoding
+   * ({@code kCGImageSourceUseHardwareAcceleration}) or parallel decoding ({@code kCGImageSourceDisableParallelDecode})
+   * changed anything, so the gate is for Intel Macs only; the system property {@code heic.mac.serializeDecodes}
+   * ({@code true}/{@code false}) overrides that.
+   * <p>
+   * The plugin decodes on a few threads at most (two for the thumbnail icons, the image viewer, the two sides of a
+   * diff). A decode that does not overlap another costs the same; on the Intel runner, two threads decode about a third
+   * fewer images per second (6.7 instead of 10.3 of a mix of thumbnails and 2-megapixel images), and while the two
+   * thumbnail threads are busy a 12-megapixel viewer decode takes about 1.05 instead of 0.95 s (median). The Java side of
+   * a decode (copying the pixels into the Java image) runs outside the gate ({@link Session#render}), except for the
+   * images drawn in strips.
+   */
+  private static final ReentrantLock NATIVE_DECODE = new ReentrantLock(true);
+
+  /** Whether the current thread is in the native part of a decode (tests). */
+  static boolean isInNativeDecode() {
+    return NATIVE_DECODE.isHeldByCurrentThread();
+  }
+
+  /** Whether {@code thread} waits for another decode to leave its native part (tests). */
+  static boolean isWaitingForNativeDecode(Thread thread) {
+    return NATIVE_DECODE.hasQueuedThread(thread);
+  }
+
+  /**
+   * Whether decodes are serialized ({@link #NATIVE_DECODE}) unless a {@link Bound} says otherwise: on x86_64, or as the
+   * system property {@code heic.mac.serializeDecodes} ({@code true}/{@code false}) says.
+   */
+  static boolean serializeByDefault(String arch, String property) {
+    if (property != null && !property.isBlank()) return Boolean.parseBoolean(property.trim());
+    return arch.equals("x86_64") || arch.equals("amd64");
+  }
+
   /** A {@link MacApi} plus the constants the algorithm needs, resolved once. */
   static final class Bound {
     final MacApi api;
+    /** Whether the native part of the decodes runs one at a time ({@link #NATIVE_DECODE}). */
+    final boolean serialized;
     final long kCFBooleanTrue;
     final long kCFBooleanFalse;
     final long kCGImageSourceShouldCache;
@@ -205,7 +259,12 @@ public final class HeicDecoder {
     final long kCGColorSpaceSRGB;
 
     Bound(MacApi api) {
+      this(api, serializeByDefault(System.getProperty("os.arch", ""), System.getProperty("heic.mac.serializeDecodes")));
+    }
+
+    Bound(MacApi api, boolean serialized) {
       this.api = api;
+      this.serialized = serialized;
       kCFBooleanTrue = api.constant(MacApi.Framework.CORE_FOUNDATION, "kCFBooleanTrue");
       kCFBooleanFalse = api.constant(MacApi.Framework.CORE_FOUNDATION, "kCFBooleanFalse");
       kCGImageSourceShouldCache = imageIO("kCGImageSourceShouldCache");
@@ -231,7 +290,8 @@ public final class HeicDecoder {
   private static final class Session implements AutoCloseable {
     private final Bound k;
     private final MacApi api;
-    private final long pool;
+    private long pool;
+    private boolean gated;
     private final ArrayDeque<Long> owned = new ArrayDeque<>();
     private long buffer;
     private long source;
@@ -246,6 +306,41 @@ public final class HeicDecoder {
       k = bound;
       api = bound.api;
       pool = api.autoreleasePoolPush();
+    }
+
+    /**
+     * Waits until no other decode is in its native part ({@link #NATIVE_DECODE}); left by {@link #leaveGate()} or
+     * {@link #close()}. Interruptible: an interrupted wait fails with an {@link InterruptedIOException} (the thread
+     * stays interrupted), e.g. when the thumbnail executor is shut down.
+     */
+    void enterGate() throws InterruptedIOException {
+      if (!k.serialized) return;
+      try {
+        NATIVE_DECODE.lockInterruptibly();
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new InterruptedIOException("Interrupted while waiting for another HEIC decode");
+      }
+      gated = true;
+    }
+
+    /**
+     * Leaves the gate before the pixels are copied into the Java image: ImageIO's objects are released by then, and
+     * the autorelease pool is drained (anything ImageIO autoreleased is freed inside the gate too) and pushed anew.
+     */
+    private void leaveGate() {
+      if (!gated) return;
+      try {
+        long drained = pool;
+        pool = 0;
+        api.autoreleasePoolPop(drained);
+        pool = api.autoreleasePoolPush();
+      }
+      finally {
+        gated = false;
+        NATIVE_DECODE.unlock();
+      }
     }
 
     private long own(long ref) {
@@ -362,10 +457,13 @@ public final class HeicDecoder {
       // malloc'd memory may still hold an earlier decode, and ImageIO leaves parts of a malformed image undrawn
       api.zero(buffer, bytesPerRow * height);
       api.cgContextDrawImage(context, 0, 0, width, height, image);
+      releaseNow(context); // the pixels stay in the buffer
+      releaseNow(colorSpace);
       releaseNow(image);
       releaseNow(source);
       releaseNow(properties);
       releaseNow(data);
+      leaveGate(); // the copy below is Java work: other decodes may start
 
       BufferedImage out = PixelPipeline.newImage(width, height, alpha);
       int copyRows = PixelPipeline.stripRows(width, height, stripPixels);
@@ -532,7 +630,15 @@ public final class HeicDecoder {
           api.free(buffer);
         }
         finally {
-          api.autoreleasePoolPop(pool);
+          try {
+            api.autoreleasePoolPop(pool);
+          }
+          finally {
+            if (gated) {
+              gated = false;
+              NATIVE_DECODE.unlock();
+            }
+          }
         }
       }
     }

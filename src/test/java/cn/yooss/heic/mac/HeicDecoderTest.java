@@ -15,13 +15,19 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -477,6 +483,13 @@ class HeicDecoderTest {
     assertThrows(IOException.class, () -> HeicDecoder.decode(data, 0));
   }
 
+  /**
+   * Decodes on 16 threads give the pixels of a decode on one thread, within 2 levels per channel: on the macOS 15 Intel
+   * runner, ImageIO's GPU conversion sometimes takes another path while other processes (the other test JVMs) decode,
+   * e.g. 0xFF0000FF instead of 0xFF0000FE, even with the decodes serialized. (Unserialized, a concurrent decode of
+   * alpha_sips.heic there came out as 0x80FB0000 instead of 0x80F90202, and the JVM crashed in VideoToolbox moments
+   * later; see HeicDecoder.) All decodes have finished before the results are checked, so none runs into the next test.
+   */
   @Test
   void concurrentDecodesAreIdentical() throws Exception {
     String[] names = {"rgb_sips.heic", "grid_libheif.heic", "alpha_sips.heic", "exif6_apple.heic"};
@@ -484,17 +497,201 @@ class HeicDecoderTest {
     for (String name : names) expected.add(pixels(HeicDecoder.decode(Fixtures.bytes(name), 0)));
 
     ExecutorService pool = Executors.newFixedThreadPool(16);
+    List<int[]> results = new ArrayList<>();
     try {
       List<Future<int[]>> futures = new ArrayList<>();
       for (int i = 0; i < 64; i++) {
         String name = names[i % names.length];
         futures.add(pool.submit(() -> pixels(HeicDecoder.decode(Fixtures.bytes(name), 0))));
       }
-      for (int i = 0; i < futures.size(); i++) {
-        assertArrayEquals(expected.get(i % names.length), futures.get(i).get(60, TimeUnit.SECONDS), names[i % names.length]);
-      }
+      for (Future<int[]> future : futures) results.add(future.get(120, TimeUnit.SECONDS));
     }
     finally {
+      pool.shutdownNow();
+      assertTrue(pool.awaitTermination(120, TimeUnit.SECONDS), "decodes still running");
+    }
+    for (int i = 0; i < results.size(); i++) {
+      int[] want = expected.get(i % names.length), got = results.get(i);
+      assertEquals(want.length, got.length, names[i % names.length]);
+      for (int p = 0; p < want.length; p++) {
+        if (maxChannelDifference(want[p], got[p]) > 2) {
+          assertEquals(String.format("%08X", want[p]), String.format("%08X", got[p]), names[i % names.length] + " pixel " + p);
+        }
+      }
+    }
+  }
+
+  private static int maxChannelDifference(int a, int b) {
+    int max = 0;
+    for (int shift = 0; shift < 32; shift += 8) max = Math.max(max, Math.abs(((a >>> shift) & 255) - ((b >>> shift) & 255)));
+    return max;
+  }
+
+  /** The ImageIO/CoreGraphics calls of the native part of a decode, which the gate keeps to one thread at a time. */
+  private static final Set<String> NATIVE_DECODE_CALLS = Set.of(
+    "cgImageSourceCreateWithData", "cgImageSourceCopyPropertiesAtIndex", "cgImageSourceCreateThumbnailAtIndex",
+    "cgImageCreateWithImageInRect", "cgContextDrawImage");
+
+  /** The real binding with {@code hook} called before every call (method name, arguments). */
+  private interface Hook {
+    Object before(String method, Object[] args) throws Throwable;
+  }
+
+  private static final Object PROCEED = new Object();
+
+  private static MacApi hooked(Hook hook) {
+    MacApi real = new cn.yooss.heic.mac.jna.JnaMacApi();
+    return (MacApi) java.lang.reflect.Proxy.newProxyInstance(
+      MacApi.class.getClassLoader(), new Class<?>[]{MacApi.class}, (proxy, method, args) -> {
+        Object result = hook.before(method.getName(), args);
+        if (result != PROCEED) return result;
+        try {
+          return method.invoke(real, args);
+        }
+        catch (java.lang.reflect.InvocationTargetException e) {
+          throw e.getCause();
+        }
+      });
+  }
+
+  /**
+   * Serialized, one decode at a time is in its native part, for every kind of decode: full size, scaled by ImageIO,
+   * alpha-weighted (drawn in strips) and embedded thumbnails; only the Java side (copying the pixels) runs in parallel.
+   * Not serialized, the same decodes do overlap (so the test can tell).
+   */
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void serializedNativeDecodesNeverOverlap(boolean serialized) throws Exception {
+    AtomicInteger inside = new AtomicInteger();
+    AtomicInteger maxInside = new AtomicInteger();
+    AtomicInteger copies = new AtomicInteger();
+    AtomicInteger copiesInsideTheGate = new AtomicInteger();
+    Set<String> seen = ConcurrentHashMap.newKeySet();
+    MacApi real = new cn.yooss.heic.mac.jna.JnaMacApi();
+    MacApi api = (MacApi) java.lang.reflect.Proxy.newProxyInstance(
+      MacApi.class.getClassLoader(), new Class<?>[]{MacApi.class}, (proxy, method, args) -> {
+        boolean decodeCall = NATIVE_DECODE_CALLS.contains(method.getName());
+        if (decodeCall) {
+          seen.add(method.getName());
+          maxInside.accumulateAndGet(inside.incrementAndGet(), Math::max);
+          Thread.sleep(1); // widens the window in which ungated decodes would overlap
+        }
+        if (method.getName().equals("readInts")) {
+          copies.incrementAndGet();
+          if (HeicDecoder.isInNativeDecode()) copiesInsideTheGate.incrementAndGet();
+        }
+        try {
+          return method.invoke(real, args);
+        }
+        catch (java.lang.reflect.InvocationTargetException e) {
+          throw e.getCause();
+        }
+        finally {
+          if (decodeCall) inside.decrementAndGet();
+        }
+      });
+    HeicDecoder.Bound bound = new HeicDecoder.Bound(api, serialized);
+    byte[] bands = Fixtures.bytes("bands_2000x1200.heic");
+    byte[] alpha = Fixtures.bytes("alpha_sips.heic");
+    byte[] thumb = Fixtures.bytes("thumb_irot.heic");
+    int strip = cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS;
+    ExecutorService pool = Executors.newFixedThreadPool(8);
+    try {
+      List<Future<BufferedImage>> futures = new ArrayList<>();
+      for (int i = 0; i < 48; i++) {
+        int kind = i % 4;
+        futures.add(pool.submit(() -> kind == 0 ? HeicDecoder.decode(bound, bands, 0, false, strip)
+                                    : kind == 1 ? HeicDecoder.decode(bound, bands, 500, false, strip)
+                                    : kind == 2 ? HeicDecoder.decode(bound, alpha, 90, true, 1) // strips: cropped draws
+                                    : HeicDecoder.decode(bound, thumb, 64, true, strip)));
+      }
+      for (Future<BufferedImage> future : futures) future.get(120, TimeUnit.SECONDS);
+    }
+    finally {
+      pool.shutdownNow();
+    }
+    assertEquals(NATIVE_DECODE_CALLS, seen, "every native decode call was made");
+    if (serialized) {
+      assertEquals(1, maxInside.get(), "native calls of different decodes overlapped");
+      // Full-size and ImageIO-scaled decodes copy outside the gate, the alpha-weighted strips inside it.
+      assertTrue(copiesInsideTheGate.get() > 0 && copiesInsideTheGate.get() < copies.get(),
+                 copiesInsideTheGate + " of " + copies + " copies inside the gate");
+    }
+    else {
+      assertTrue(maxInside.get() > 1, "unserialized decodes overlap: " + maxInside);
+      assertEquals(0, copiesInsideTheGate.get());
+    }
+    assertFalse(HeicDecoder.isInNativeDecode());
+  }
+
+  /**
+   * Decodes are serialized on Intel Macs, where concurrent ImageIO decodes crashed the JVM (see HeicDecoder), and not on
+   * Apple silicon, where they did not; the system property heic.mac.serializeDecodes overrides it.
+   */
+  @Test
+  void serializedOnIntelMacs() {
+    assertTrue(HeicDecoder.serializeByDefault("x86_64", null));
+    assertTrue(HeicDecoder.serializeByDefault("amd64", " "));
+    assertFalse(HeicDecoder.serializeByDefault("aarch64", null));
+    assertTrue(HeicDecoder.serializeByDefault("aarch64", "true"));
+    assertFalse(HeicDecoder.serializeByDefault("x86_64", "false"));
+    boolean intel = System.getProperty("os.arch").equals("x86_64") || System.getProperty("os.arch").equals("amd64");
+    if (System.getProperty("heic.mac.serializeDecodes") == null) {
+      assertEquals(intel, new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi()).serialized);
+    }
+  }
+
+  /**
+   * A decode waiting for the gate can be interrupted (the thumbnail executor is shut down when the plugin is unloaded):
+   * it fails with an InterruptedIOException and its thread stays interrupted; the running decode is not disturbed. A
+   * decode that fails inside the gate leaves it.
+   */
+  @Test
+  void waitingForTheGateIsInterruptible() throws Exception {
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch proceed = new CountDownLatch(1);
+    MacApi blocking = hooked((method, args) -> {
+      if (method.equals("cgImageSourceCreateThumbnailAtIndex")) {
+        entered.countDown();
+        assertTrue(proceed.await(60, TimeUnit.SECONDS));
+      }
+      return PROCEED;
+    });
+    byte[] data = Fixtures.bytes("rgb_sips.heic");
+    int strip = cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS;
+    HeicDecoder.Bound serialized = new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi(), true);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      Future<BufferedImage> first = pool.submit(() -> HeicDecoder.decode(new HeicDecoder.Bound(blocking, true), data, 0, false, strip));
+      assertTrue(entered.await(60, TimeUnit.SECONDS), "the first decode reached ImageIO");
+
+      AtomicReference<Thread> waiter = new AtomicReference<>();
+      Future<Boolean> second = pool.submit(() -> {
+        waiter.set(Thread.currentThread());
+        IOException e = assertThrows(IOException.class, () -> HeicDecoder.decode(serialized, data, 0, false, strip));
+        assertTrue(e instanceof InterruptedIOException, e.toString());
+        return Thread.currentThread().isInterrupted();
+      });
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+      while (waiter.get() == null || !HeicDecoder.isWaitingForNativeDecode(waiter.get())) {
+        assertTrue(System.nanoTime() < deadline, "the second decode did not wait for the gate");
+        Thread.sleep(1);
+      }
+      waiter.get().interrupt();
+      assertTrue(second.get(60, TimeUnit.SECONDS), "the thread stays interrupted");
+      assertFalse(first.isDone(), "the first decode is still in ImageIO");
+
+      proceed.countDown();
+      assertEquals(600, first.get(60, TimeUnit.SECONDS).getWidth());
+
+      // ImageIO returns no image: the decode fails inside the gate and leaves it.
+      MacApi failing = hooked((method, args) -> method.equals("cgImageSourceCreateThumbnailAtIndex") ? (Object) 0L : PROCEED);
+      assertThrows(IOException.class, () -> HeicDecoder.decode(new HeicDecoder.Bound(failing, true), data, 0, false, strip));
+      assertFalse(HeicDecoder.isInNativeDecode(), "a failed decode leaves the gate");
+      assertEquals(600, pool.submit(() -> HeicDecoder.decode(serialized, data, 0, false, strip)).get(60, TimeUnit.SECONDS).getWidth());
+    }
+    finally {
+      proceed.countDown();
       pool.shutdownNow();
     }
   }
