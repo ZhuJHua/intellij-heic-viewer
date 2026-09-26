@@ -52,15 +52,11 @@ final class Libheif {
   private final Function contextAlloc;
   private final Function contextFree;
   private final Function readFromMemoryWithoutCopy;
-  private final Function numberOfTopLevelImages;
-  private final Function listOfTopLevelImageIds;
-  private final Function primaryImageId;
   private final Function primaryImageHandle;
   private final Function handleRelease;
   private final Function handleWidth;
   private final Function handleHeight;
   private final Function handleHasAlpha;
-  private final Function handleLumaBits;
   private final Function handleRawColorProfileSize;
   private final Function handleRawColorProfile;
   private final Function decodeImage;
@@ -88,15 +84,11 @@ final class Libheif {
     contextAlloc = function("heif_context_alloc");
     contextFree = function("heif_context_free");
     readFromMemoryWithoutCopy = function("heif_context_read_from_memory_without_copy");
-    numberOfTopLevelImages = function("heif_context_get_number_of_top_level_images");
-    listOfTopLevelImageIds = function("heif_context_get_list_of_top_level_image_IDs");
-    primaryImageId = function("heif_context_get_primary_image_ID");
     primaryImageHandle = function("heif_context_get_primary_image_handle");
     handleRelease = function("heif_image_handle_release");
     handleWidth = function("heif_image_handle_get_width");
     handleHeight = function("heif_image_handle_get_height");
     handleHasAlpha = function("heif_image_handle_has_alpha_channel");
-    handleLumaBits = function("heif_image_handle_get_luma_bits_per_pixel");
     handleRawColorProfileSize = function("heif_image_handle_get_raw_color_profile_size");
     handleRawColorProfile = function("heif_image_handle_get_raw_color_profile");
     decodeImage = function("heif_decode_image");
@@ -274,28 +266,6 @@ final class Libheif {
                            "heif_context_read_from_memory_without_copy");
   }
 
-  int numberOfTopLevelImages(long context) {
-    return numberOfTopLevelImages.invokeInt(new Object[]{context});
-  }
-
-  /** Index of the primary image among the top-level images, or 0 if it cannot be determined. */
-  int primaryImageIndex(long context, int topLevelImages) {
-    if (topLevelImages <= 1) return 0;
-    int[] primary = new int[1];
-    try {
-      LibheifException.check(primaryImageId.invokeLong(new Object[]{context, primary}), "heif_context_get_primary_image_ID");
-    }
-    catch (LibheifException e) {
-      return 0;
-    }
-    int[] ids = new int[Math.min(topLevelImages, 4096)];
-    int n = listOfTopLevelImageIds.invokeInt(new Object[]{context, ids, ids.length});
-    for (int i = 0; i < Math.min(n, ids.length); i++) {
-      if (ids[i] == primary[0]) return i;
-    }
-    return 0;
-  }
-
   /** {@code heif_context_get_primary_image_handle}: a handle that must be {@linkplain #release released}. */
   long primaryImageHandle(long context) throws LibheifException {
     long[] handle = new long[1];
@@ -327,11 +297,6 @@ final class Libheif {
   /** Whether the color channels are premultiplied by alpha (libheif 1.12+; {@code false} before). */
   boolean isPremultipliedAlpha(long handle) {
     return handleIsPremultipliedAlpha != null && handleIsPremultipliedAlpha.invokeInt(new Object[]{handle}) != 0;
-  }
-
-  /** Bits per luma sample as stored, or -1 if unknown. */
-  int lumaBitsPerPixel(long handle) {
-    return handleLumaBits.invokeInt(new Object[]{handle});
   }
 
   /** The raw ICC profile ({@code colr} box of type {@code prof} or {@code rICC}), or {@code null}. */

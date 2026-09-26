@@ -43,6 +43,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 @EnabledOnOs(OS.WINDOWS)
 class WicNativeTest {
+  /** {@code DEFINE_MEDIATYPE_GUID(MFVideoFormat_H264, FCC('H264'))}: a decoder most systems have. */
+  private static final String MFVideoFormat_H264 = "34363248-0000-0010-8000-00aa00389b71";
   private static WicDecoder decoder;
 
   @BeforeAll
@@ -106,7 +108,7 @@ class WicNativeTest {
     BufferedImage image = decoder.decode(data, 500, false, 777);
     int[] expected = WicDecoder.targetSize(source.getWidth(), source.getHeight(), 500);
     assertEquals(expected[0] + "x" + expected[1], image.getWidth() + "x" + image.getHeight());
-    double mean = Fixtures.meanDifference(image, PixelPipeline.downscale(source, 500));
+    double mean = Fixtures.meanDifference(image, Fixtures.downscale(source, 500));
     assertTrue(mean < 6.0, "mean difference to Java's downscaling " + mean);
     BufferedImage small = decoder.decode(Fixtures.bytes("rgb.png"), 64, false, PixelPipeline.STRIP_PIXELS);
     assertEquals("64x43", small.getWidth() + "x" + small.getHeight());
@@ -183,7 +185,7 @@ class WicNativeTest {
   @Test
   void mediaFoundationEnumeration() {
     List<String> h264 = new ArrayList<>();
-    int hr = decoder.api().enumerateVideoDecoders(Guids.MFVideoFormat_H264, WicProbe.MFT_ENUM_FLAGS, h264);
+    int hr = decoder.api().enumerateVideoDecoders(MFVideoFormat_H264, WicProbe.MFT_ENUM_FLAGS, h264);
     System.out.println("H.264 decoders: " + Hresult.describe(hr) + " " + h264);
     assertTrue(Hresult.succeeded(hr), Hresult.describe(hr));
     for (String name : h264) assertFalse(name.isEmpty());
@@ -205,7 +207,7 @@ class WicNativeTest {
       assertEquals("600x400 TL=red TR=green BL=blue BR=white marker=TL", Fixtures.layout(backend.decode(heic, 0)));
       return;
     }
-    assertTrue(status.isUserInstallable() || status.reason() == HeifBackendStatus.Reason.ERROR, status.toString());
+    assertTrue(status.reason().isUserInstallable() || status.reason() == HeifBackendStatus.Reason.ERROR, status.toString());
     IOException e = assertThrows(IOException.class, () -> backend.decode(heic, 0));
     assertTrue(e.getMessage().contains(String.valueOf(status.reason())), e.getMessage());
     if (status.reason() == HeifBackendStatus.Reason.WINDOWS_HEIF_EXTENSION_MISSING) {

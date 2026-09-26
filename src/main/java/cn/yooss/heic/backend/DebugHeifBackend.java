@@ -10,9 +10,9 @@ import java.util.function.Supplier;
 /**
  * The backend {@link HeifBackends#DEBUG_STATUS_PROPERTY} asks for: it reports a forced unavailable status, e.g. to see
  * the install prompt of another OS. With {@link HeifBackends#DEBUG_RECOVER_PROPERTY} the first
- * {@link #recheckStatus()} ("Check Again", or the check when the IDE is activated after a remedy action) switches to
- * the real backend of the running OS, as if the missing component had just been installed: on macOS this shows the
- * whole way from the prompt to the loaded image. Touches no native code until it has switched.
+ * {@link #recheckStatus()} ("Check Again") switches to the real backend of the running OS, as if the missing component
+ * had just been installed: on macOS this shows the whole way from the prompt to the loaded image. Touches no native
+ * code until it has switched.
  */
 final class DebugHeifBackend implements HeifBackend {
   private final HeifBackendStatus forced;

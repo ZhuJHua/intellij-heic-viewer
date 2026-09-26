@@ -36,7 +36,7 @@ public final class HeifBackendStatus {
       this.userInstallable = userInstallable;
     }
 
-    /** Whether the user can fix this by installing a system component, i.e. whether the install prompt is shown. */
+    /** Whether the user can fix this by installing a system component (the banner is then a warning). */
     public boolean isUserInstallable() {
       return userInstallable;
     }
@@ -99,11 +99,6 @@ public final class HeifBackendStatus {
 
   public @Nullable String installCommand() {
     return installCommand;
-  }
-
-  /** Whether the install prompt should be shown for this status. */
-  public boolean isUserInstallable() {
-    return reason != null && reason.isUserInstallable();
   }
 
   private static @Nullable String blankToNull(@Nullable String value) {

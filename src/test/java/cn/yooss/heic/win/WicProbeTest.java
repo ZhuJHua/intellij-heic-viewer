@@ -104,7 +104,7 @@ class WicProbeTest {
     assertNotNull(remedy);
     assertEquals(HeifRemedy.Action.openUrl("remedy.action.open.store", status.installUrl()), remedy.actions().get(0));
     assertEquals(status.installCommand(), remedy.command());
-    assertTrue(status.isUserInstallable());
+    assertTrue(status.reason().isUserInstallable());
     assertTrue(status.detail().contains("0x88982F8B (WINCODEC_ERR_COMPONENTINITIALIZEFAILURE)"), status.detail());
     assertTrue(status.detail().contains("HEVC decoders: none"), status.detail());
   }

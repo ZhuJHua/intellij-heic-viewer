@@ -90,7 +90,7 @@ class PluginDescriptorTest {
     keys.addAll(List.of("notification.group.heic", "remedy.command.label", "remedy.banner.command", "remedy.command.copied",
                         "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
                         "remedy.action.copy.command", "remedy.action.check.again", "remedy.action.learn.more",
-                        "remedy.action.report", "remedy.action.dont.show.again", "remedy.action.more",
+                        "remedy.action.more",
                         "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title",
                         "remedy.check.missing.restart"));
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
@@ -116,8 +116,8 @@ class PluginDescriptorTest {
   }
 
   /**
-   * The decoder UI: the editor banner (the listener asks for it when a HEIC file is opened), the diff hook and the
-   * re-check on activation, all dynamic extension points and declarative listeners.
+   * The decoder UI: the editor banner (the listener asks for it when a HEIC file is opened) and the diff hook, all
+   * dynamic extension points and declarative listeners.
    */
   @Test
   void decoderUiIsRegistered() throws Exception {
@@ -128,11 +128,6 @@ class PluginDescriptorTest {
     List<Element> diff = elements(plugin, "diff.DiffExtension");
     assertEquals(1, diff.size());
     assertEquals("cn.yooss.heic.ui.HeicDiffExtension", diff.get(0).getAttribute("implementation"));
-    List<String> topics = new ArrayList<>();
-    for (Element listener : elements(plugin, "listener")) {
-      if (listener.getAttribute("class").equals("cn.yooss.heic.ui.HeicActivationListener")) topics.add(listener.getAttribute("topic"));
-    }
-    assertEquals(List.of("com.intellij.openapi.application.ApplicationActivationListener"), topics);
     List<Element> projectListeners = elements(plugin, "projectListeners");
     assertEquals(1, projectListeners.size());
     NodeList opened = projectListeners.get(0).getElementsByTagName("listener");
@@ -150,13 +145,13 @@ class PluginDescriptorTest {
       classes.add(name);
       Class.forName(name, false, getClass().getClassLoader());
     }
-    assertEquals(7, classes.size(), classes::toString);
+    assertEquals(6, classes.size(), classes::toString);
   }
 
   @Test
   void referencedClassesArePluginClasses() throws Exception {
     List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
-    assertEquals(7, classes.size(), classes::toString);
+    assertEquals(6, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
       assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);
@@ -166,7 +161,6 @@ class PluginDescriptorTest {
   private static List<String> implementationClasses(Document plugin) {
     List<String> classes = new ArrayList<>();
     for (Element listener : elements(plugin, "listener")) classes.add(listener.getAttribute("class"));
-    for (Element provider : elements(plugin, "fileIconProvider")) classes.add(provider.getAttribute("implementation"));
     for (Element provider : elements(plugin, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
     for (Element provider : elements(plugin, "editorNotificationProvider")) classes.add(provider.getAttribute("implementation"));
     for (Element extension : elements(plugin, "diff.DiffExtension")) classes.add(extension.getAttribute("implementation"));

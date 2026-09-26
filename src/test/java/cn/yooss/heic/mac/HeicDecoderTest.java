@@ -48,22 +48,22 @@ class HeicDecoderTest {
 
   @ParameterizedTest
   @CsvSource({
-      "rgb_sips.heic,     600, 400, 1, 600, 400, false, 8",
-      "rgb_libheif.heic,  600, 400, 1, 600, 400, false, 8",
-      "exif3_apple.heic,  600, 400, 3, 600, 400, false, 8",
-      "exif5_apple.heic,  600, 400, 5, 400, 600, false, 8",
-      "exif6_apple.heic,  600, 400, 6, 400, 600, false, 8",
-      "rot90_irot.heic,   600, 400, 6, 400, 600, false, 8",
-      "fliph_imir.heic,   600, 400, 2, 600, 400, false, 8",
-      "alpha_sips.heic,   400, 300, 1, 400, 300, true,  8",
-      "alpha_libheif.heic,400, 300, 1, 400, 300, true,  8",
-      "rgb16_sips.heic,   512, 256, 1, 512, 256, false, 10",
-      "ten_bit.heic,      512, 256, 1, 512, 256, false, 10",
-      "grid_libheif.heic, 600, 400, 1, 600, 400, false, 8",
-      "multi.heic,        600, 400, 1, 600, 400, false, 8",
-      "seq.heics,         600, 400, 1, 600, 400, false, 8",
+      "rgb_sips.heic,     600, 400, 1, 600, 400, false",
+      "rgb_libheif.heic,  600, 400, 1, 600, 400, false",
+      "exif3_apple.heic,  600, 400, 3, 600, 400, false",
+      "exif5_apple.heic,  600, 400, 5, 400, 600, false",
+      "exif6_apple.heic,  600, 400, 6, 400, 600, false",
+      "rot90_irot.heic,   600, 400, 6, 400, 600, false",
+      "fliph_imir.heic,   600, 400, 2, 600, 400, false",
+      "alpha_sips.heic,   400, 300, 1, 400, 300, true",
+      "alpha_libheif.heic,400, 300, 1, 400, 300, true",
+      "rgb16_sips.heic,   512, 256, 1, 512, 256, false",
+      "ten_bit.heic,      512, 256, 1, 512, 256, false",
+      "grid_libheif.heic, 600, 400, 1, 600, 400, false",
+      "multi.heic,        600, 400, 1, 600, 400, false",
+      "seq.heics,         600, 400, 1, 600, 400, false",
   })
-  void readInfo(String name, int rawWidth, int rawHeight, int orientation, int width, int height, boolean alpha, int depth)
+  void readInfo(String name, int rawWidth, int rawHeight, int orientation, int width, int height, boolean alpha)
       throws IOException {
     HeifImageInfo info = HeicDecoder.readInfo(Fixtures.bytes(name));
     assertEquals(rawWidth, info.rawWidth(), "rawWidth");
@@ -72,15 +72,6 @@ class HeicDecoderTest {
     assertEquals(width, info.width(), "display width");
     assertEquals(height, info.height(), "display height");
     assertEquals(alpha, info.hasAlpha(), "hasAlpha");
-    assertEquals(depth, info.bitDepth(), "bitDepth");
-    assertEquals(0, info.primaryIndex());
-  }
-
-  @Test
-  void typeIdentifierAndImageCount() throws IOException {
-    assertEquals("public.heic", HeicDecoder.readInfo(Fixtures.bytes("rgb_sips.heic")).typeIdentifier());
-    assertEquals("public.heics", HeicDecoder.readInfo(Fixtures.bytes("seq.heics")).typeIdentifier());
-    assertEquals(2, HeicDecoder.readInfo(Fixtures.bytes("multi.heic")).imageCount());
   }
 
   /** Expected layouts of the quadrant fixture after orientation. */
@@ -351,13 +342,13 @@ class HeicDecoderTest {
   /** Which decodes are downscaled alpha-weighted: with alpha, smaller than the image, at most 64 megapixels. */
   @Test
   void alphaWeightedOnlyForSmallerImagesWithAlphaOfAtMost64Megapixels() {
-    HeifImageInfo alpha = new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, true);
+    HeifImageInfo alpha = new HeifImageInfo(8000, 6000, 1, true);
     assertTrue(HeicDecoder.isAlphaWeighted(alpha, 256));
     assertFalse(HeicDecoder.isAlphaWeighted(alpha, 0), "full size");
     assertFalse(HeicDecoder.isAlphaWeighted(alpha, 8000), "not smaller");
-    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 6000, 1, 8, false), 256));
-    assertTrue(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8000, 8000, 1, 8, true), 256));
-    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo("public.heic", 1, 0, 8001, 8000, 1, 8, true), 256),
+    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo(8000, 6000, 1, false), 256));
+    assertTrue(HeicDecoder.isAlphaWeighted(new HeifImageInfo(8000, 8000, 1, true), 256));
+    assertFalse(HeicDecoder.isAlphaWeighted(new HeifImageInfo(8001, 8000, 1, true), 256),
                 "above 64 MP: ImageIO's scaler, whose decode needs no second full-size copy");
   }
 
@@ -612,17 +603,13 @@ class HeicDecoderTest {
     assertFalse(HeicDecoder.isInNativeDecode());
   }
 
-  /** Decodes are serialized on Intel Macs and not on Apple silicon; the system property heic.mac.serializeDecodes overrides it. */
+  /** Decodes are serialized on Intel Macs and not on Apple silicon. */
   @Test
   void serializedOnIntelMacs() {
-    assertTrue(HeicDecoder.serializeByDefault("x86_64", null));
-    assertTrue(HeicDecoder.serializeByDefault("amd64", " "));
-    assertFalse(HeicDecoder.serializeByDefault("aarch64", null));
-    assertTrue(HeicDecoder.serializeByDefault("aarch64", "true"));
-    assertFalse(HeicDecoder.serializeByDefault("x86_64", "false"));
-    if (System.getProperty("heic.mac.serializeDecodes") == null) {
-      assertEquals(isIntel(), new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi()).serialized);
-    }
+    assertTrue(HeicDecoder.serializeByDefault("x86_64"));
+    assertTrue(HeicDecoder.serializeByDefault("amd64"));
+    assertFalse(HeicDecoder.serializeByDefault("aarch64"));
+    assertEquals(isIntel(), new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi()).serialized);
   }
 
   /**

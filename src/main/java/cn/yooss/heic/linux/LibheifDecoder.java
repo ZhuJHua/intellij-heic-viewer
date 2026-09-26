@@ -5,11 +5,9 @@ import cn.yooss.heic.backend.PixelPipeline;
 import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
 import cn.yooss.heic.backend.PlaneConverter;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
@@ -55,7 +53,7 @@ final class LibheifDecoder {
   @NotNull HeifImageInfo readInfo(byte[] data) throws IOException {
     try (Session session = new Session()) {
       session.open(data);
-      return session.info(data);
+      return session.info();
     }
   }
 
@@ -81,12 +79,6 @@ final class LibheifDecoder {
     if (width <= 0 || height <= 0) throw new IOException("Invalid image size " + width + "x" + height);
   }
 
-  /** Major brand of the {@code ftyp} box (e.g. {@code heic}, {@code mif1}), used as the type identifier. */
-  static @Nullable String majorBrand(byte[] data) {
-    if (data.length < 12) return null;
-    return new String(data, 8, 4, StandardCharsets.ISO_8859_1).trim();
-  }
-
   /** One decode: the native copy of the data, a context, the primary image handle and a decoded image. */
   private final class Session implements AutoCloseable {
     private long memory;
@@ -102,15 +94,12 @@ final class LibheifDecoder {
       primary = lib.primaryImageHandle(context);
     }
 
-    HeifImageInfo info(byte[] data) throws IOException {
+    HeifImageInfo info() throws IOException {
       int width = lib.width(primary);
       int height = lib.height(primary);
       checkSize(width, height);
-      int count = Math.max(1, lib.numberOfTopLevelImages(context));
-      int index = lib.primaryImageIndex(context, count);
       // Transformations are applied by libheif: the stored size is the displayed size, orientation 1.
-      return new HeifImageInfo(majorBrand(data), count, index, width, height, 1, lib.lumaBitsPerPixel(primary),
-                               lib.hasAlpha(primary));
+      return new HeifImageInfo(width, height, 1, lib.hasAlpha(primary));
     }
 
     /** Decodes the primary image and converts it (see {@link PlaneConverter}). */

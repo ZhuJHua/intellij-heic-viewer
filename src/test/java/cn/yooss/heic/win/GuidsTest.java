@@ -10,7 +10,6 @@ import java.awt.color.ICC_Profile;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,7 +29,6 @@ class GuidsTest {
   void fourCc() {
     byte[] hevc = Guids.bytes(Guids.MFVideoFormat_HEVC);
     assertEquals("HEVC", new String(hevc, 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
-    assertEquals("H264", new String(Guids.bytes(Guids.MFVideoFormat_H264), 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
     assertEquals("vids", new String(Guids.bytes(Guids.MFMediaType_Video), 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
   }
 
@@ -66,15 +64,14 @@ class GuidsTest {
   @Test
   void iccProfiles() {
     byte[] srgb = ICC_Profile.getInstance(ColorSpace.CS_sRGB).getData();
-    assertTrue(IccProfiles.isSrgb(srgb), IccProfiles.description(srgb));
+    assertTrue(IccProfiles.isSrgb(srgb), "sRGB");
     byte[] linear = ICC_Profile.getInstance(ColorSpace.CS_LINEAR_RGB).getData();
-    assertFalse(IccProfiles.isSrgb(linear), IccProfiles.description(linear));
+    assertFalse(IccProfiles.isSrgb(linear), "linear sRGB: sRGB colorants, but must be converted");
     byte[] gray = ICC_Profile.getInstance(ColorSpace.CS_GRAY).getData();
     assertFalse(IccProfiles.isSrgb(gray), "not an RGB profile");
     assertFalse(IccProfiles.isSrgb(new byte[200]));
     assertFalse(IccProfiles.isSrgb(new byte[3]));
-    assertNull(IccProfiles.description(null));
-    assertEquals("linear sRGB", IccProfiles.description(linear).trim(), "named sRGB, but linear: must be converted");
+    assertFalse(IccProfiles.isSrgb(null));
     for (String p3 : new String[]{"/System/Library/ColorSync/Profiles/Display P3.icc"}) {
       java.nio.file.Path path = java.nio.file.Paths.get(p3);
       if (java.nio.file.Files.isRegularFile(path)) {

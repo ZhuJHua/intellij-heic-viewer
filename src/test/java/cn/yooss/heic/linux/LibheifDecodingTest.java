@@ -36,34 +36,31 @@ class LibheifDecodingTest {
     return TestLibheif.backend();
   }
 
-  /** Name, display size, alpha, bit depth as stored, number of top-level images. */
+  /** Name, display size, alpha. */
   @ParameterizedTest
   @CsvSource({
-      "rgb_sips.heic,        600,  400, false, 8,  1",
-      "rgb_libheif.heic,     600,  400, false, 8,  1",
-      "alpha_sips.heic,      400,  300, true,  8,  1",
-      "alpha_libheif.heic,   400,  300, true,  8,  1",
-      "rgb16_sips.heic,      512,  256, false, 10, 1",
-      "ten_bit.heic,         512,  256, false, 10, 1",
-      "exif3_apple.heic,     600,  400, false, 8,  1",
-      "exif5_apple.heic,     400,  600, false, 8,  1",
-      "exif6_apple.heic,     400,  600, false, 8,  1",
-      "rot90_irot.heic,      400,  600, false, 8,  1",
-      "fliph_imir.heic,      600,  400, false, 8,  1",
-      "grid_libheif.heic,    600,  400, false, 8,  1",
-      "multi.heic,           600,  400, false, 8,  2",
-      "seq.heics,            600,  400, false, 8,  1",
-      "bands_2000x1200.heic, 2000, 1200, false, 8, 1",
-      "bands_exif6.heic,     1200, 2000, false, 8, 1",
+      "rgb_sips.heic,        600,  400, false",
+      "rgb_libheif.heic,     600,  400, false",
+      "alpha_sips.heic,      400,  300, true",
+      "alpha_libheif.heic,   400,  300, true",
+      "rgb16_sips.heic,      512,  256, false",
+      "ten_bit.heic,         512,  256, false",
+      "exif3_apple.heic,     600,  400, false",
+      "exif5_apple.heic,     400,  600, false",
+      "exif6_apple.heic,     400,  600, false",
+      "rot90_irot.heic,      400,  600, false",
+      "fliph_imir.heic,      600,  400, false",
+      "grid_libheif.heic,    600,  400, false",
+      "multi.heic,           600,  400, false",
+      "seq.heics,            600,  400, false",
+      "bands_2000x1200.heic, 2000, 1200, false",
+      "bands_exif6.heic,     1200, 2000, false",
   })
-  void info(String name, int width, int height, boolean alpha, int bitDepth, int images) throws IOException {
+  void info(String name, int width, int height, boolean alpha) throws IOException {
     HeifImageInfo info = backend().readInfo(Fixtures.bytes(name));
     assertEquals(width + "x" + height, info.width() + "x" + info.height(), name);
     assertEquals(1, info.orientation(), "libheif applies irot/imir itself: " + info);
     assertEquals(alpha, info.hasAlpha(), name);
-    assertEquals(bitDepth, info.bitDepth(), name);
-    assertEquals(images, info.imageCount(), name);
-    assertEquals(0, info.primaryIndex(), name);
     BufferedImage image = backend().decode(Fixtures.bytes(name), 0);
     assertEquals(width + "x" + height, image.getWidth() + "x" + image.getHeight(), name);
     assertEquals(alpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB, image.getType(), name);

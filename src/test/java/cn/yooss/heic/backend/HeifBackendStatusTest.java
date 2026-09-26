@@ -18,7 +18,6 @@ class HeifBackendStatusTest {
     HeifBackendStatus status = HeifBackendStatus.available("macOS ImageIO.framework");
     assertTrue(status.isAvailable());
     assertNull(status.reason());
-    assertFalse(status.isUserInstallable());
     assertEquals("macOS ImageIO.framework", status.detail());
     assertEquals("AVAILABLE: macOS ImageIO.framework", status.toString());
   }
@@ -29,7 +28,6 @@ class HeifBackendStatusTest {
       .withInstallCommand("  sudo apt install libheif1 libheif-plugin-libde265 ")
       .withInstallUrl("https://example.org/libheif");
     assertFalse(status.isAvailable());
-    assertTrue(status.isUserInstallable());
     assertEquals(HeifBackendStatus.Reason.LINUX_LIBHEIF_MISSING, status.reason());
     assertEquals("sudo apt install libheif1 libheif-plugin-libde265", status.installCommand(), "trimmed");
     assertEquals("https://example.org/libheif", status.installUrl());

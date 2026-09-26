@@ -116,8 +116,6 @@ public interface WinApi {
   /** {@code GetProfileBytes(buffer.length, buffer, &actual[0])}; a {@code null} buffer asks for the size. */
   int getProfileBytes(long context, byte @Nullable [] buffer, int[] actual);
 
-  int getExifColorSpace(long context, int[] value);
-
   // ---------------------------------------------------------------- IWICPixelFormatInfo2
   /** {@code IWICPixelFormatInfo2::SupportsTransparency(&supported[0])} (a {@code BOOL}). */
   int supportsTransparency(long pixelFormatInfo2, int[] supported);

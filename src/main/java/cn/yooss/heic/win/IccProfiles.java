@@ -34,27 +34,6 @@ final class IccProfiles {
     return true;
   }
 
-  /** The profile description ({@code desc} tag, v2 {@code desc} or v4 {@code mluc} type), or {@code null}. */
-  static String description(byte[] profile) {
-    int[] tag = tag(profile, "desc");
-    if (tag == null) return null;
-    int start = tag[0], end = tag[0] + tag[1];
-    String type = ascii(profile, start, 4);
-    if ("desc".equals(type)) {
-      long length = u32(profile, start + 8);
-      if (length <= 0 || start + 12 + length > end) return null;
-      return trimNul(new String(profile, start + 12, (int) length, StandardCharsets.ISO_8859_1));
-    }
-    if ("mluc".equals(type)) {
-      long records = u32(profile, start + 8);
-      if (records < 1 || tag[1] < 28) return null;
-      long length = u32(profile, start + 20), textOffset = u32(profile, start + 24);
-      if (textOffset < 0 || length < 0 || textOffset + length > tag[1]) return null;
-      return trimNul(new String(profile, (int) (start + textOffset), (int) length, StandardCharsets.UTF_16BE));
-    }
-    return null;
-  }
-
   /** {@code {offset, size}} of the tag {@code signature}, or {@code null}. */
   private static int[] tag(byte[] profile, String signature) {
     if (profile == null || profile.length < 132) return null;
@@ -91,11 +70,6 @@ final class IccProfiles {
       return tag[1] >= 16 && Math.abs(s15Fixed16(profile, tag[0] + 12) - 1.0) > 0.01;
     }
     return false;
-  }
-
-  private static String trimNul(String text) {
-    int end = text.indexOf('\0');
-    return end >= 0 ? text.substring(0, end) : text;
   }
 
   private static String ascii(byte[] b, int offset, int length) {

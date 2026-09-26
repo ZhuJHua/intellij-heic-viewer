@@ -9,9 +9,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
-import java.util.Locale;
 
 /**
  * Decodes images with the Windows Imaging Component (WIC), written against {@link WinApi}.
@@ -57,33 +55,23 @@ public final class WicDecoder {
   static final long ALPHA_WEIGHTED_MAX_PIXELS = 64_000_000L;
   /** {@code System.Photo.Orientation} photo metadata policy: the EXIF-style orientation still to be applied. */
   static final String ORIENTATION_POLICY = "System.Photo.Orientation";
-  /**
-   * System property: {@code false} switches the color fixes ({@link SingleImageGrid}, {@link NclxTransfer}) off,
-   * so that HEIF files are decoded exactly as WIC decodes them.
-   */
-  public static final String COLOR_FIXES_PROPERTY = "heic.viewer.windows.colorFixes";
 
   private final WinApi api;
   private final boolean colorFixes;
 
   public WicDecoder(@NotNull WinApi api) {
-    this(api, !"false".equalsIgnoreCase(System.getProperty(COLOR_FIXES_PROPERTY, "true").trim()));
+    this(api, true);
   }
 
-  /** @param colorFixes whether the color fixes are applied ({@link #COLOR_FIXES_PROPERTY}) */
+  /** @param colorFixes whether the color fixes are applied (tests turn them off) */
   WicDecoder(@NotNull WinApi api, boolean colorFixes) {
     this.api = api;
     this.colorFixes = colorFixes;
   }
 
-  /** Whether the color fixes are applied ({@link #COLOR_FIXES_PROPERTY}). */
-  public boolean colorFixes() {
-    return colorFixes;
-  }
-
   /**
    * The data WIC gets for a HEIF file: a rewritten copy with the color fixes, or {@code data} itself if none
-   * applies (or they are switched off).
+   * applies (or they are turned off).
    */
   byte @NotNull [] forDecoder(byte @NotNull [] data) {
     if (!colorFixes) return data;
@@ -112,8 +100,6 @@ public final class WicDecoder {
 
   /** What {@link Session#open} found out about the data. */
   static final class Opened {
-    final String containerFormat;
-    final int frameCount;
     final long frame;
     final int width;
     final int height;
@@ -123,10 +109,7 @@ public final class WicDecoder {
     final long transform;
     final int orientation;
 
-    Opened(String containerFormat, int frameCount, long frame, int width, int height, String pixelFormat, Alpha alpha,
-           long transform, int orientation) {
-      this.containerFormat = containerFormat;
-      this.frameCount = frameCount;
+    Opened(long frame, int width, int height, String pixelFormat, Alpha alpha, long transform, int orientation) {
       this.frame = frame;
       this.width = width;
       this.height = height;
@@ -146,8 +129,7 @@ public final class WicDecoder {
   public @NotNull HeifImageInfo readInfo(byte @NotNull [] data, boolean requireHeif) throws IOException {
     try (Session session = new Session(api)) {
       Opened opened = session.open(data, requireHeif);
-      return new HeifImageInfo(typeIdentifier(data, opened.containerFormat), Math.max(1, opened.frameCount), 0,
-                               opened.width, opened.height, opened.orientation, -1, opened.alpha != Alpha.NONE);
+      return new HeifImageInfo(opened.width, opened.height, opened.orientation, opened.alpha != Alpha.NONE);
     }
   }
 
@@ -186,27 +168,10 @@ public final class WicDecoder {
 
   /**
    * The size of the result for {@code maxPixelSize}: the image itself when it fits (or for {@code 0}), otherwise the
-   * longer side becomes {@code maxPixelSize}, aspect ratio kept (like {@link PixelPipeline#downscale}).
+   * longer side becomes {@code maxPixelSize}, aspect ratio kept.
    */
   static int[] targetSize(int width, int height, int maxPixelSize) {
     return PixelPipeline.targetSize(width, height, maxPixelSize);
-  }
-
-  /** A short format name for {@link HeifImageInfo#typeIdentifier()}: the HEIF major brand, e.g. {@code heic}. */
-  static String typeIdentifier(byte[] data, String containerFormat) {
-    if (Guids.GUID_ContainerFormatHeif.equals(containerFormat)) {
-      if (data.length >= 12) {
-        String brand = new String(data, 8, 4, StandardCharsets.ISO_8859_1).trim();
-        if (!brand.isEmpty() && brand.chars().allMatch(c -> c > 0x20 && c < 0x7F)) return brand.toLowerCase(Locale.ROOT);
-      }
-      return "heif";
-    }
-    if (Guids.GUID_ContainerFormatPng.equals(containerFormat)) return "png";
-    if (Guids.GUID_ContainerFormatJpeg.equals(containerFormat)) return "jpeg";
-    if (Guids.GUID_ContainerFormatTiff.equals(containerFormat)) return "tiff";
-    if (Guids.GUID_ContainerFormatBmp.equals(containerFormat)) return "bmp";
-    if (Guids.GUID_ContainerFormatGif.equals(containerFormat)) return "gif";
-    return "wic:" + containerFormat;
   }
 
   /** Whether a failed {@code CreateDecoder}/{@code CreateDecoderFromStream} means that WIC has no usable HEIF decoder. */
@@ -341,7 +306,7 @@ public final class WicDecoder {
       if (alpha == Alpha.NONE && hasTransparency(pixelFormat[0])) {
         alpha = Alpha.IN_PIXELS; // other formats; a HEIF decoder whose frames carry alpha themselves
       }
-      return new Opened(container[0], count[0], frame, size[0], size[1], pixelFormat[0], alpha, transform, orientation(frame));
+      return new Opened(frame, size[0], size[1], pixelFormat[0], alpha, transform, orientation(frame));
     }
 
     /** {@code IWICPixelFormatInfo2::SupportsTransparency} of a pixel format; {@code false} if unknown. */

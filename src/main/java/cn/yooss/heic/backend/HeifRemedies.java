@@ -28,7 +28,7 @@ import java.util.Locale;
  *   {@linkplain HeifRemedy#isHostCommand() host command}, with its own texts), Check Again, Learn More
  *   ({@link #LINUX_HELP_URL}); without a command (an older Flatpak runtime, an unknown distribution): Installation
  *   Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
- *   <tr><td>{@code ERROR}</td><td>Check Again, Report a Problem</td></tr>
+ *   <tr><td>{@code ERROR}</td><td>Check Again</td></tr>
  *   <tr><td>{@code UNSUPPORTED_OS}</td><td>Learn More</td></tr>
  * </table>
  * The Microsoft Store data (product ids, pages) is {@link WindowsCodecs}'; the Linux install commands come from the
@@ -46,7 +46,6 @@ public final class HeifRemedies {
   public static final String WINDOWS_HELP_URL = PROJECT_URL + "#windows-heif-and-hevc-extensions";
   /** README section with the install commands of every distribution and Flatpak. */
   public static final String LINUX_HELP_URL = PROJECT_URL + "#linux-libheif";
-  static final String ISSUES_URL = PROJECT_URL + "/issues";
 
   private HeifRemedies() {
   }
@@ -58,11 +57,6 @@ public final class HeifRemedies {
     String installUrl = isAllowedUrl(status.installUrl()) ? status.installUrl() : null;
     String command = isAllowedCommand(status.installCommand()) ? status.installCommand() : null;
     return build(reason, installUrl, command);
-  }
-
-  /** The remedy of {@code reason} with the default install page and no command. */
-  public static @NotNull HeifRemedy forReason(@NotNull Reason reason) {
-    return build(reason, null, null);
   }
 
   /**
@@ -95,7 +89,6 @@ public final class HeifRemedies {
       case ERROR:
         // The probe failed unexpectedly.
         actions.add(Action.checkAgain());
-        actions.add(Action.openUrl("remedy.action.report", ISSUES_URL));
         return new HeifRemedy(reason, command, actions);
       case UNSUPPORTED_OS:
       default:

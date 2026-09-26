@@ -194,11 +194,6 @@ jobs:
           ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
-      # The color report of WicColorTest.
-      - name: Windows color report
-        if: ${{ !cancelled() && runner.os == 'Windows' }}
-        run: cat build/reports/color/wic-colors.txt 2> /dev/null || echo "no color report (no HEVC codec here)"
-
       # Lists the IDE's JNA native directories and JNA version.
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}

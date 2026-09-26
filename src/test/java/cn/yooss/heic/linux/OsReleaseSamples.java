@@ -223,6 +223,6 @@ final class OsReleaseSamples {
   }
 
   static LinuxDistribution parse(String osRelease) {
-    return LinuxDistribution.parse(osRelease, false, false);
+    return LinuxDistribution.parse(osRelease, false);
   }
 }

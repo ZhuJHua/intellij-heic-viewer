@@ -30,7 +30,6 @@ final class FakeWinApi implements WinApi {
     boolean initialized;
     int contextType;
     byte[] profile;
-    int exifColorSpace;
 
     Obj(Kind kind) {
       this.kind = kind;
@@ -349,7 +348,6 @@ final class FakeWinApi implements WinApi {
     if (exifColorSpace != 0) {
       Obj exif = new Obj(Kind.COLOR_CONTEXT);
       exif.contextType = WicDecoder.WICColorContextExifColorSpace;
-      exif.exifColorSpace = exifColorSpace;
       available.add(exif);
     }
     if (iccProfile != null) {
@@ -367,7 +365,6 @@ final class FakeWinApi implements WinApi {
       Obj target = get(contexts[i], Kind.COLOR_CONTEXT);
       target.contextType = available.get(i).contextType;
       target.profile = available.get(i).profile;
-      target.exifColorSpace = available.get(i).exifColorSpace;
     }
     actual[0] = n;
     return Hresult.S_OK;
@@ -490,13 +487,6 @@ final class FakeWinApi implements WinApi {
       if (buffer.length < obj.profile.length) return Hresult.WINCODEC_ERR_INSUFFICIENTBUFFER;
       System.arraycopy(obj.profile, 0, buffer, 0, obj.profile.length);
     }
-    return Hresult.S_OK;
-  }
-
-  @Override
-  public int getExifColorSpace(long context, int[] value) {
-    Obj obj = get(context, Kind.COLOR_CONTEXT);
-    value[0] = obj.exifColorSpace;
     return Hresult.S_OK;
   }
 

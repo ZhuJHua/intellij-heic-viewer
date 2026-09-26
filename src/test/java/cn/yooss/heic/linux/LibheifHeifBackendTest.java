@@ -56,7 +56,7 @@ class LibheifHeifBackendTest {
     assertTrue(status.detail().contains("Ubuntu 24.04.3 LTS"), status.detail());
     assertEquals("sudo apt install libheif1 libheif-plugin-libde265", status.installCommand());
     assertEquals(LibheifRemedy.HELP_URL, status.installUrl());
-    assertTrue(status.isUserInstallable());
+    assertTrue(status.reason().isUserInstallable());
     IOException e = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
     assertTrue(e.getMessage().contains("LINUX_LIBHEIF_MISSING"), e.getMessage());
     assertThrows(IOException.class, () -> backend.readInfo(Fixtures.bytes("rgb_sips.heic")));

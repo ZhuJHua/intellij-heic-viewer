@@ -57,7 +57,7 @@ public interface HeifBackend {
 
   /**
    * Forgets the cached status and probes again, e.g. after the user installed the missing system component
-   * ("Check again" in the install prompt). Never throws.
+   * ("Check Again" in the install prompt). Never throws.
    */
   @NotNull HeifBackendStatus recheckStatus();
 

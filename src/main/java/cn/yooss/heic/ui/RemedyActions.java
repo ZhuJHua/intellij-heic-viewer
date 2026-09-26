@@ -63,15 +63,13 @@ final class RemedyActions {
           showCopied(anchor, target);
           break;
         case CHECK_AGAIN:
-          DecoderStatus.recheck(DecoderStatus.Trigger.USER, project);
+          DecoderStatus.recheck(project);
           break;
       }
     }
     catch (RuntimeException e) {
       LOG.warn("Cannot perform " + action, e);
     }
-    // The user may install the component outside the IDE now: check again when the IDE is activated.
-    if (action.type().startsInstallation()) DecoderStatus.remedyActionPerformed();
   }
 
   /** A short confirmation below the clicked link: what was copied and what to do next. */

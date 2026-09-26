@@ -22,11 +22,6 @@ public final class Guids {
   // ---------------------------------------------------------------- container formats (wincodec.idl)
   /** Windows 10 1809+: the container format of the "HEIF Image Extension" decoder. */
   public static final String GUID_ContainerFormatHeif = "e1e62521-6787-405b-a339-500715b5763f";
-  public static final String GUID_ContainerFormatPng = "1b7cfaf4-713f-473c-bbcd-6137425faeaf";
-  public static final String GUID_ContainerFormatJpeg = "19e4a5aa-5662-4fc5-a0c0-1758028e1057";
-  public static final String GUID_ContainerFormatTiff = "163bcc30-e2e9-4f0b-961d-a3e9fdb788a3";
-  public static final String GUID_ContainerFormatBmp = "0af1d87e-fcfe-4188-bdeb-a7906471cbe3";
-  public static final String GUID_ContainerFormatGif = "1f8a5601-7d4d-4cbd-9c82-1bc8d4eeb9a5";
 
   // ---------------------------------------------------------------- pixel formats (wincodec.idl)
   public static final String GUID_WICPixelFormat32bppBGR = "6fddc324-4e03-4bfe-b185-3d77768dc90e";
@@ -39,8 +34,6 @@ public final class Guids {
   public static final String MFMediaType_Video = "73646976-0000-0010-8000-00aa00389b71";
   /** {@code DEFINE_MEDIATYPE_GUID(MFVideoFormat_HEVC, FCC('HEVC'))}. */
   public static final String MFVideoFormat_HEVC = "43564548-0000-0010-8000-00aa00389b71";
-  /** {@code DEFINE_MEDIATYPE_GUID(MFVideoFormat_H264, FCC('H264'))} (tests: a decoder most systems have). */
-  public static final String MFVideoFormat_H264 = "34363248-0000-0010-8000-00aa00389b71";
   public static final String MFT_FRIENDLY_NAME_Attribute = "314ffbae-5b41-4c95-9c19-4e7d586face3";
 
   /**

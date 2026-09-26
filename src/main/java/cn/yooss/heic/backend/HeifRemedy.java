@@ -29,15 +29,7 @@ public final class HeifRemedy {
     /** Forgets the cached status and probes the system decoder again; HEIC images load without a restart once it is there. */
     CHECK_AGAIN,
     /** Opens {@link Action#target()} ({@code https:}): documentation of the requirements. */
-    LEARN_MORE;
-
-    /**
-     * Whether performing the action may make the user install something outside the IDE, after which the plugin
-     * checks again when the IDE window is activated.
-     */
-    public boolean startsInstallation() {
-      return this == OPEN_URL || this == COPY_COMMAND;
-    }
+    LEARN_MORE
   }
 
   /** One action: its type, the bundle key of its label and its target (URL, command or none). */
@@ -174,14 +166,6 @@ public final class HeifRemedy {
   /** The actions in the order they are offered (the most useful first). */
   public @NotNull List<Action> actions() {
     return actions;
-  }
-
-  /** The first action of {@code type}, or {@code null}. */
-  public @Nullable Action action(@NotNull ActionType type) {
-    for (Action action : actions) {
-      if (action.type() == type) return action;
-    }
-    return null;
   }
 
   /** Bundle key of the title of {@code reason}. */

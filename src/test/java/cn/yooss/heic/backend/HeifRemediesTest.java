@@ -40,10 +40,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HeifRemediesTest {
   private static final List<String> BUNDLES = List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties");
 
+  /** The remedy of {@code reason} with the default install page and no command. */
+  private static HeifRemedy forReason(Reason reason) {
+    return HeifRemedies.forStatus(HeifBackendStatus.unavailable(reason, "test"));
+  }
+
   @ParameterizedTest
   @EnumSource(Reason.class)
   void everyReasonHasARemedyWithTextsInEveryBundle(Reason reason) throws IOException {
-    HeifRemedy remedy = HeifRemedies.forReason(reason);
+    HeifRemedy remedy = forReason(reason);
     assertSame(reason, remedy.reason());
     assertEquals("remedy.title." + reason.name(), remedy.titleKey());
     assertEquals(reason.bundleKey(), remedy.explanationKey());
@@ -59,7 +64,7 @@ class HeifRemediesTest {
   @ParameterizedTest
   @EnumSource(Reason.class)
   void urlsAreHttpsOrMicrosoftStoreAndCommandsAreSingleLines(Reason reason) {
-    HeifRemedy remedy = HeifRemedies.forReason(reason);
+    HeifRemedy remedy = forReason(reason);
     for (Action action : remedy.actions()) {
       String target = action.target();
       switch (action.type()) {
@@ -91,7 +96,7 @@ class HeifRemediesTest {
   @ParameterizedTest
   @EnumSource(Reason.class)
   void actionsFitTheReason(Reason reason) {
-    HeifRemedy remedy = HeifRemedies.forReason(reason);
+    HeifRemedy remedy = forReason(reason);
     Set<ActionType> types = new TreeSet<>();
     for (Action action : remedy.actions()) types.add(action.type());
     assertEquals(remedy.actions().size(), new TreeSet<>(remedy.actions().stream().map(Action::toString).toList()).size(),
@@ -114,7 +119,7 @@ class HeifRemediesTest {
   @Test
   void windowsRemediesOpenTheMicrosoftStoreFirst() {
     for (Reason reason : List.of(Reason.WINDOWS_HEIF_EXTENSION_MISSING, Reason.WINDOWS_HEVC_EXTENSION_MISSING)) {
-      HeifRemedy remedy = HeifRemedies.forReason(reason);
+      HeifRemedy remedy = forReason(reason);
       Action store = remedy.actions().get(0);
       assertEquals(ActionType.OPEN_URL, store.type());
       assertEquals("remedy.action.open.store", store.textKey());
@@ -126,10 +131,10 @@ class HeifRemediesTest {
       assertEquals(Action.learnMore(HeifRemedies.WINDOWS_HELP_URL), remedy.actions().get(3));
       assertNull(remedy.command());
     }
-    assertEquals(WindowsCodecs.HEIF_STORE_APP_URL, HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(0).target());
-    assertEquals(WindowsCodecs.HEIF_STORE_URL, HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(2).target());
-    assertEquals(WindowsCodecs.HEVC_STORE_APP_URL, HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(0).target());
-    assertEquals(WindowsCodecs.HEVC_STORE_URL, HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(2).target());
+    assertEquals(WindowsCodecs.HEIF_STORE_APP_URL, forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(0).target());
+    assertEquals(WindowsCodecs.HEIF_STORE_URL, forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING).actions().get(2).target());
+    assertEquals(WindowsCodecs.HEVC_STORE_APP_URL, forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(0).target());
+    assertEquals(WindowsCodecs.HEVC_STORE_URL, forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING).actions().get(2).target());
     assertEquals("ms-windows-store://pdp/?ProductId=9PMMSR1CGPWG", WindowsCodecs.HEIF_STORE_APP_URL);
     assertEquals("https://apps.microsoft.com/detail/9NMZLZ57R3T7", WindowsCodecs.HEVC_STORE_URL);
   }
@@ -153,7 +158,7 @@ class HeifRemediesTest {
 
     HeifRemedy hevc = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test")
                                                .withInstallUrl(WindowsCodecs.HEVC_STORE_APP_URL));
-    assertEquals(HeifRemedies.forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING), hevc);
+    assertEquals(forReason(Reason.WINDOWS_HEVC_EXTENSION_MISSING), hevc);
   }
 
   /**
@@ -171,7 +176,7 @@ class HeifRemediesTest {
                            Action.learnMore(HeifRemedies.LINUX_HELP_URL)), remedy.actions());
       assertEquals("sudo pacman -S --needed libheif libde265", remedy.command());
 
-      HeifRemedy noCommand = HeifRemedies.forReason(reason);
+      HeifRemedy noCommand = forReason(reason);
       assertNull(noCommand.command(), "no default command: a Debian command would be wrong elsewhere");
       assertEquals(List.of(Action.openUrl("remedy.action.open.install.page", HeifRemedies.LINUX_HELP_URL), Action.checkAgain()),
                    noCommand.actions());
@@ -216,7 +221,7 @@ class HeifRemediesTest {
     assertNotNull(distribution);
     assertFalse(distribution.isHostCommand());
     assertEquals(Reason.LINUX_HEVC_PLUGIN_MISSING.bundleKey(), distribution.explanationKey());
-    assertFalse(HeifRemedies.forReason(Reason.LINUX_HEVC_PLUGIN_MISSING).isHostCommand());
+    assertFalse(forReason(Reason.LINUX_HEVC_PLUGIN_MISSING).isHostCommand());
   }
 
   /** The README sections the remedies link to exist (GitHub's heading anchors); the tests run in the project directory. */
@@ -246,7 +251,7 @@ class HeifRemediesTest {
                                                  .withInstallCommand("sudo dnf install libheif-freeworld"));
     assertNotNull(fedora);
     assertEquals("sudo dnf install libheif-freeworld", fedora.command());
-    assertEquals("sudo dnf install libheif-freeworld", fedora.action(ActionType.COPY_COMMAND).target());
+    assertEquals("sudo dnf install libheif-freeworld", fedora.actions().get(0).target());
 
     HeifRemedy docs = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
                                                .withInstallUrl("https://example.org/libheif"));
@@ -272,7 +277,7 @@ class HeifRemediesTest {
                                                  .withInstallUrl("file:///C:/Windows/System32/calc.exe")
                                                  .withInstallCommand("echo a\nrm -rf ~"));
     assertNotNull(remedy);
-    assertEquals(HeifRemedies.forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING), remedy);
+    assertEquals(forReason(Reason.WINDOWS_HEIF_EXTENSION_MISSING), remedy);
   }
 
   @ParameterizedTest
@@ -311,13 +316,9 @@ class HeifRemediesTest {
     assertEquals(Action.checkAgain().hashCode(), Action.checkAgain().hashCode());
     assertEquals("CHECK_AGAIN(remedy.action.check.again)", Action.checkAgain().toString());
     assertEquals(Action.copyCommand("sudo apt install libheif1"), Action.copyCommand("sudo apt install libheif1"));
-    assertEquals(HeifRemedies.forReason(Reason.ERROR), HeifRemedies.forReason(Reason.ERROR));
-    assertEquals(HeifRemedies.forReason(Reason.ERROR).hashCode(), HeifRemedies.forReason(Reason.ERROR).hashCode());
-    assertThrows(UnsupportedOperationException.class, () -> HeifRemedies.forReason(Reason.ERROR).actions().clear());
-    assertTrue(ActionType.OPEN_URL.startsInstallation());
-    assertTrue(ActionType.COPY_COMMAND.startsInstallation());
-    assertFalse(ActionType.CHECK_AGAIN.startsInstallation());
-    assertFalse(ActionType.LEARN_MORE.startsInstallation());
+    assertEquals(forReason(Reason.ERROR), forReason(Reason.ERROR));
+    assertEquals(forReason(Reason.ERROR).hashCode(), forReason(Reason.ERROR).hashCode());
+    assertThrows(UnsupportedOperationException.class, () -> forReason(Reason.ERROR).actions().clear());
   }
 
   /** Every remedy.* text exists in both bundles; MessageFormat patterns (with {0}) have no stray single quotes. */

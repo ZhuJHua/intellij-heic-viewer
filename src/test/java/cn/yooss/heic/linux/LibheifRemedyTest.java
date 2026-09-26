@@ -101,14 +101,11 @@ class LibheifRemedyTest {
     assertNull(LibheifRemedy.note(parse(OsReleaseSamples.NIXOS)));
     assertNull(missing(""));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING,
-                                            LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)));
+                                            LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true)));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
-                                            LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)));
-    assertTrue(LibheifRemedy.note(LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)).contains("Flatpak"));
+                                            LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true)));
+    assertTrue(LibheifRemedy.note(LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true)).contains("Flatpak"));
     assertNull(LibheifRemedy.note(parse(OsReleaseSamples.UBUNTU_24_04)));
-    // Snaps of JetBrains IDEs use classic confinement: the system's packages apply
-    assertEquals("sudo apt install libheif1 libheif-plugin-libde265",
-                 LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING, LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, false, true)));
     for (Reason reason : Reason.values()) {
       if (reason != Reason.LINUX_LIBHEIF_MISSING && reason != Reason.LINUX_HEVC_PLUGIN_MISSING) {
         assertNull(LibheifRemedy.installCommand(reason, parse(OsReleaseSamples.UBUNTU_24_04)), reason.name());
@@ -122,17 +119,17 @@ class LibheifRemedyTest {
    */
   @Test
   void flatpakRuntimes() {
-    LinuxDistribution runtime2608 = LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_26_08, true, false);
+    LinuxDistribution runtime2608 = LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_26_08, true);
     assertEquals("flatpak install flathub org.freedesktop.Platform.codecs-extra//26.08-extra",
                  LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING, runtime2608));
     assertEquals("flatpak install flathub org.freedesktop.Platform.codecs-extra//25.08-extra",
                  LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
-                                              LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_25_08, true, false)));
+                                              LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_25_08, true)));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING, runtime2608), "libheif is part of the runtime");
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_HEVC_PLUGIN_MISSING,
-                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true, false)));
+                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true)));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING,
-                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true, false)));
+                                            LinuxDistribution.parse(OsReleaseSamples.FREEDESKTOP_24_08, true)));
     // Not detected as a Flatpak (no /.flatpak-info): an unknown distribution, no command.
     assertNull(hevc(OsReleaseSamples.FREEDESKTOP_26_08));
     assertTrue(LibheifRemedy.note(runtime2608).contains("org.freedesktop.Platform.codecs-extra"), LibheifRemedy.note(runtime2608));
@@ -150,7 +147,7 @@ class LibheifRemedyTest {
       if (!Modifier.isStatic(field.getModifiers()) || field.getType() != String.class) continue;
       field.setAccessible(true);
       for (boolean flatpak : new boolean[]{false, true}) {
-        LinuxDistribution distribution = LinuxDistribution.parse((String) field.get(null), flatpak, false);
+        LinuxDistribution distribution = LinuxDistribution.parse((String) field.get(null), flatpak);
         for (Reason reason : new Reason[]{Reason.LINUX_LIBHEIF_MISSING, Reason.LINUX_HEVC_PLUGIN_MISSING}) {
           String command = LibheifRemedy.installCommand(reason, distribution);
           HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(reason, "test")
@@ -163,7 +160,7 @@ class LibheifRemedyTest {
             commands++;
             assertTrue(HeifRemedies.isAllowedCommand(command), name + ": " + command);
             assertEquals(HeifRemedy.Action.copyCommand(command), first, name);
-            assertEquals(HeifRemedy.Action.learnMore(LibheifRemedy.HELP_URL), remedy.action(HeifRemedy.ActionType.LEARN_MORE), name);
+            assertEquals(HeifRemedy.Action.learnMore(LibheifRemedy.HELP_URL), remedy.actions().get(2), name);
           }
           else {
             assertEquals(HeifRemedy.Action.openUrl("remedy.action.open.install.page", LibheifRemedy.HELP_URL), first, name);

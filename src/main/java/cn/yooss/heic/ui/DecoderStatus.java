@@ -12,10 +12,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -25,28 +23,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  *   <li>{@link #status()}: the cached status, or a probe on a pooled thread. When a probe finds the decoder missing,
  *   the editor banners are updated (they were collected while the status was unknown and showed nothing).</li>
- *   <li>{@link #recheck}: "Check Again", and the automatic re-check when the IDE window is activated after the user
- *   clicked a remedy action (Microsoft Store, copied command, ...): forgets the cached status and probes again. If the
- *   decoder is now available, banners disappear and open HEIC editors reload ({@link HeicViews#decoderBecameAvailable()}),
- *   so no restart is needed.</li>
+ *   <li>{@link #recheck}: "Check Again": forgets the cached status and probes again. If the decoder is now available,
+ *   banners disappear and open HEIC editors reload ({@link HeicViews#decoderBecameAvailable()}), so no restart is
+ *   needed.</li>
  * </ul>
  * A start where the decoder is available posts nothing to the EDT: on Java 17 an EDT event created by plugin code can
  * keep the plugin class loader alive (see {@code HeicFileTypeMappingRepair}).
  */
 public final class DecoderStatus {
   private static final Logger LOG = Logger.getInstance(DecoderStatus.class);
-  /** After a remedy action, activating the IDE re-checks the decoder for this long. */
-  static final long ACTIVATION_CHECK_MILLIS = TimeUnit.MINUTES.toMillis(30);
-  /** Minimum time between two re-checks on activation. */
-  static final long ACTIVATION_DEBOUNCE_MILLIS = 3000;
-
-  /** Who asked for a re-check. */
-  enum Trigger {
-    /** "Check Again": the result is always reported. */
-    USER,
-    /** The IDE window was activated after a remedy action: only a decoder that became available is reported. */
-    ACTIVATION
-  }
 
   /** What {@link #status()} answers while the plugin is being unloaded. */
   private static final HeifBackendStatus SHUT_DOWN =
@@ -57,13 +42,6 @@ public final class DecoderStatus {
   private static CompletableFuture<HeifBackendStatus> firstProbe;
   private static final AtomicBoolean startupCheck = new AtomicBoolean();
   private static final AtomicBoolean rechecking = new AtomicBoolean();
-  /** A "Check Again" not answered yet: it may come while a re-check (e.g. on activation) runs. */
-  private static final AtomicBoolean userRecheckPending = new AtomicBoolean();
-  /** The project of the last "Check Again", for its balloon (weakly: a static field must not keep a closed project). */
-  private static volatile @Nullable WeakReference<Project> userRecheckProject;
-  /** Until when (epoch millis) activating the IDE re-checks the decoder; 0: not armed. */
-  private static volatile long activationCheckUntil;
-  private static volatile long lastActivationCheck;
   private static volatile boolean shutDown;
 
   private DecoderStatus() {
@@ -138,93 +116,43 @@ public final class DecoderStatus {
   }
 
   /**
-   * Forgets the cached status and probes again on a pooled thread, one re-check at a time. A decoder that became
-   * available refreshes every view ({@link HeicViews#decoderBecameAvailable()}) and is reported in a balloon; the result
-   * of {@link Trigger#USER "Check Again"} is always reported. A "Check Again" while a re-check runs (e.g. the one on
-   * activation, when the user comes back to the IDE by clicking it) is answered by that re-check if it has not probed
-   * yet, otherwise by one more probe right after it; an activation re-check while one runs is dropped.
+   * "Check Again": forgets the cached status and probes again on a pooled thread, one re-check at a time (a click while
+   * one runs is answered by it). The result is reported in a balloon; a decoder that became available also refreshes
+   * every view ({@link HeicViews#decoderBecameAvailable()}).
    */
-  static void recheck(@NotNull Trigger trigger, @Nullable Project project) {
-    if (shutDown) return;
-    if (trigger == Trigger.USER) {
-      userRecheckProject = project != null ? new WeakReference<>(project) : null;
-      userRecheckPending.set(true); // before the compareAndSet: a running re-check sees it at the latest in its finally
-    }
-    if (!rechecking.compareAndSet(false, true)) return;
+  static void recheck(@Nullable Project project) {
+    if (shutDown || !rechecking.compareAndSet(false, true)) return;
     boolean started = execute(() -> {
       try {
-        boolean user = userRecheckPending.getAndSet(false);
-        runRecheck(user ? Trigger.USER : trigger, user ? userRecheckProject() : project);
+        runRecheck(project);
       }
       finally {
         rechecking.set(false);
-        if (userRecheckPending.get()) recheck(Trigger.USER, userRecheckProject()); // "Check Again" during this probe
       }
     });
-    if (!started) {
-      rechecking.set(false);
-      userRecheckPending.set(false);
-    }
-  }
-
-  private static @Nullable Project userRecheckProject() {
-    WeakReference<Project> project = userRecheckProject;
-    return project != null ? project.get() : null;
+    if (!started) rechecking.set(false);
   }
 
   /** Pooled thread. */
-  private static void runRecheck(Trigger trigger, @Nullable Project project) {
+  private static void runRecheck(@Nullable Project project) {
     HeifBackend backend = HeifBackends.current();
     HeifBackendStatus before = backend.cachedStatus();
     HeifBackendStatus after = backend.recheckStatus();
-    log("HEIC decoder checked again (" + trigger + "): ", after);
+    log("HEIC decoder checked again: ", after);
     if (shutDown) return;
     if (after.isAvailable()) {
-      activationCheckUntil = 0;
-      boolean becameAvailable = before == null || !before.isAvailable();
-      if (becameAvailable) HeicViews.decoderBecameAvailable();
-      if (becameAvailable || trigger == Trigger.USER) DecoderPrompt.showAvailable(project);
+      if (before == null || !before.isAvailable()) HeicViews.decoderBecameAvailable();
+      DecoderPrompt.showAvailable(project);
     }
     else {
       if (!after.equals(before)) HeicViews.updateBanners(); // e.g. the HEIF extension is there now, HEVC is still missing
-      if (trigger == Trigger.USER) DecoderPrompt.showStillMissing(after, project);
+      DecoderPrompt.showStillMissing(after, project);
     }
   }
 
-  /**
-   * The user clicked a remedy action that may make them install something outside the IDE (a Store page, a copied
-   * command): for the next {@link #ACTIVATION_CHECK_MILLIS}, activating the IDE again re-checks the decoder.
-   */
-  static void remedyActionPerformed() {
-    if (!shutDown) activationCheckUntil = System.currentTimeMillis() + ACTIVATION_CHECK_MILLIS;
-  }
-
-  /** An IDE window was activated (EDT). Free unless a remedy action was performed; debounced. */
-  static void applicationActivated() {
-    long until = activationCheckUntil;
-    if (until == 0) return;
-    long now = System.currentTimeMillis();
-    if (now > until) {
-      activationCheckUntil = 0;
-      return;
-    }
-    if (now - lastActivationCheck < ACTIVATION_DEBOUNCE_MILLIS) return;
-    lastActivationCheck = now;
-    recheck(Trigger.ACTIVATION, null);
-  }
-
-  /** Whether activating the IDE currently re-checks the decoder. */
-  static boolean isActivationCheckArmed() {
-    long until = activationCheckUntil;
-    return until != 0 && System.currentTimeMillis() <= until;
-  }
-
-  /** Before the plugin is unloaded: no more probes, re-checks or activation checks. */
+  /** Before the plugin is unloaded: no more probes or re-checks. */
   static void shutDown() {
     shutDown = true;
-    activationCheckUntil = 0;
-    userRecheckPending.set(false);
-    userRecheckProject = null;
   }
 
   /** Tests: forgets the per-session state (the backend is replaced through {@code HeifBackends.replaceForTests}). */
@@ -234,16 +162,7 @@ public final class DecoderStatus {
       firstProbe = null;
     }
     startupCheck.set(false);
-    activationCheckUntil = 0;
-    lastActivationCheck = 0;
-    userRecheckPending.set(false);
-    userRecheckProject = null;
     shutDown = false;
-  }
-
-  @TestOnly
-  static void resetActivationDebounceForTests() {
-    lastActivationCheck = 0;
   }
 
   @TestOnly

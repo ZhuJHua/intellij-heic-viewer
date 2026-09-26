@@ -351,7 +351,7 @@ class HeicImageReaderSpiTest {
 
     @Override
     public HeifImageInfo readInfo(byte[] data) {
-      return new HeifImageInfo("public.heic", 1, 0, width, height, 1, 8, alpha);
+      return new HeifImageInfo(width, height, 1, alpha);
     }
 
     @Override

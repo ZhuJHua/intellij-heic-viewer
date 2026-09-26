@@ -46,7 +46,7 @@ class AbstractHeifBackendTest {
     @Override
     protected @NotNull HeifImageInfo doReadInfo(byte[] data) {
       decodes.incrementAndGet();
-      return new HeifImageInfo("heic", 1, 0, 6, 4, 1, 8, false);
+      return new HeifImageInfo(6, 4, 1, false);
     }
 
     @Override

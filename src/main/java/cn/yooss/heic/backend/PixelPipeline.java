@@ -4,7 +4,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.color.ColorSpace;
 import java.awt.color.ICC_ColorSpace;
 import java.awt.color.ICC_Profile;
@@ -21,24 +20,10 @@ import java.util.Locale;
 
 /**
  * Shared, pure-Java pixel handling for the backends: native pixel buffers to {@link BufferedImage}s in strips,
- * un-premultiplication, the EXIF/HEIF orientation, downscaling and ICC profile to sRGB conversion. Every backend
- * produces the same kind of image ({@link HeifBackend}): {@code TYPE_INT_RGB} when opaque, non-premultiplied
- * {@code TYPE_INT_ARGB} with alpha, 8-bit sRGB, orientation applied.
+ * un-premultiplication, the EXIF/HEIF orientation and ICC profile to sRGB conversion. Every backend produces the same
+ * kind of image ({@link HeifBackend}): {@code TYPE_INT_RGB} when opaque, non-premultiplied {@code TYPE_INT_ARGB} with
+ * alpha, 8-bit sRGB, orientation applied.
  * <p>
- * Typical use by a backend whose decoder hands out an 8-bit buffer:
- * <pre>{@code
- * BufferedImage image = PixelPipeline.newImage(width, height, hasAlpha);
- * int stripRows = PixelPipeline.stripRows(width, height, PixelPipeline.STRIP_PIXELS);
- * byte[] strip = new byte[stride * stripRows];
- * for (int y0 = 0; y0 < height; y0 += stripRows) {
- *   int rows = Math.min(stripRows, height - y0);
- *   // copy rows y0 .. y0+rows-1 of the native buffer into strip (e.g. Pointer.read)
- *   PixelPipeline.writeByteRows(image, y0, rows, strip, 0, stride, ByteLayout.BGRA, premultiplied);
- * }
- * if (iccProfile != null) PixelPipeline.convertToSrgb(image, iccProfile);
- * image = PixelPipeline.applyOrientation(image, orientation);   // unless the decoder applied it
- * image = PixelPipeline.downscale(image, maxPixelSize);         // unless the decoder scaled already
- * }</pre>
  * All images are written with {@code WritableRaster.setDataElements}, which keeps them "managed" (hardware
  * accelerated when painted).
  */
@@ -51,14 +36,7 @@ public final class PixelPipeline {
   /** Byte order of an 8-bit-per-channel native pixel buffer. */
   public enum ByteLayout {
     RGB(3, -1, 0, 1, 2),
-    BGR(3, -1, 2, 1, 0),
-    RGBA(4, 3, 0, 1, 2),
-    BGRA(4, 3, 2, 1, 0),
-    ARGB(4, 0, 1, 2, 3),
-    /** 4 bytes per pixel, the 4th is ignored (opaque). */
-    RGBX(4, -1, 0, 1, 2),
-    /** 4 bytes per pixel, the 4th is ignored (opaque); on little-endian machines the int layout of TYPE_INT_RGB. */
-    BGRX(4, -1, 2, 1, 0);
+    RGBA(4, 3, 0, 1, 2);
 
     private final int bytesPerPixel;
     private final int alpha, red, green, blue;
@@ -103,7 +81,7 @@ public final class PixelPipeline {
   /**
    * The size of a {@code width x height} image decoded with {@code maxPixelSize}: the image itself when it fits (or for
    * {@code 0}), otherwise the longer side becomes {@code maxPixelSize} and the other side keeps the aspect ratio
-   * (rounded, at least 1). The rule of {@link #downscale}, {@link PlaneConverter} and the backends' scalers.
+   * (rounded, at least 1). The rule of {@link PlaneConverter} and the backends' scalers.
    */
   public static int[] targetSize(int width, int height, int maxPixelSize) {
     int longest = Math.max(width, height);
@@ -130,16 +108,8 @@ public final class PixelPipeline {
 
   /**
    * Converts {@code rows} rows of an 8-bit buffer (starting at {@code offset}, {@code stride} bytes per row) and
-   * writes them at row {@code y0} of {@code target} (see {@link #writeArgbRows}).
-   */
-  public static void writeByteRows(@NotNull BufferedImage target, int y0, int rows, byte[] source, int offset,
-                                   int stride, @NotNull ByteLayout layout, boolean premultiplied) {
-    writeByteRows(target, y0, rows, source, offset, stride, layout, premultiplied, null);
-  }
-
-  /**
-   * {@link #writeByteRows(BufferedImage, int, int, byte[], int, int, ByteLayout, boolean)} with a scratch array for the
-   * converted pixels, reused when it holds at least {@code target.getWidth() * rows} pixels ({@code null}: a new one), so
+   * writes them at row {@code y0} of {@code target} (see {@link #writeArgbRows}). {@code scratch} holds the converted
+   * pixels and is reused when it holds at least {@code target.getWidth() * rows} pixels ({@code null}: a new one), so
    * that a strip loop allocates it once.
    *
    * @return the scratch array used (pass it to the next call)
@@ -229,46 +199,6 @@ public final class PixelPipeline {
       out.getRaster().setDataElements(0, y0, dw, rows, strip);
     }
     return out;
-  }
-
-  /**
-   * {@code image} scaled down so that its longer side is {@code maxPixelSize} (aspect ratio preserved, each side at
-   * least 1 pixel), or {@code image} itself if {@code maxPixelSize} is {@code 0} or the image already fits. Bilinear
-   * halving steps followed by one bilinear step, so every source pixel contributes (no aliasing); the type is kept.
-   */
-  public static @NotNull BufferedImage downscale(@NotNull BufferedImage image, int maxPixelSize) {
-    int w = image.getWidth(), h = image.getHeight();
-    int longest = Math.max(w, h);
-    if (maxPixelSize <= 0 || longest <= maxPixelSize) return image;
-    double scale = (double) maxPixelSize / longest;
-    int targetW = w >= h ? maxPixelSize : (int) Math.max(1, Math.min(maxPixelSize, Math.round(w * scale)));
-    int targetH = h > w ? maxPixelSize : (int) Math.max(1, Math.min(maxPixelSize, Math.round(h * scale)));
-    int type = image.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
-    BufferedImage current = image;
-    int cw = w, ch = h;
-    while (cw >= 2 * targetW && ch >= 2 * targetH) {
-      cw /= 2;
-      ch /= 2;
-      current = draw(current, cw, ch, type);
-    }
-    if (cw != targetW || ch != targetH || current == image) current = draw(current, targetW, targetH, type);
-    return current;
-  }
-
-  private static BufferedImage draw(BufferedImage source, int width, int height, int type) {
-    BufferedImage result = new BufferedImage(width, height, type);
-    Graphics2D g = result.createGraphics();
-    try {
-      g.setComposite(AlphaComposite.Src);
-      g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-      g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-      g.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
-      g.drawImage(source, 0, 0, width, height, null);
-    }
-    finally {
-      g.dispose();
-    }
-    return result;
   }
 
   /**

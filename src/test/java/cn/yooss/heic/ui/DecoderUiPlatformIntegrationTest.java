@@ -11,7 +11,6 @@ import cn.yooss.heic.backend.HeifRemedy;
 import cn.yooss.heic.win.WindowsCodecs;
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.requests.SimpleDiffRequest;
-import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -61,7 +60,7 @@ import java.util.function.Function;
 /**
  * The decoder UI inside a light IDE (IntelliJ test framework, the {@code test} task only), with a {@link FakeHeifBackend}
  * standing in for the system decoder: the banner of HEIC image editors, the probe that never runs on the EDT, "Check
- * Again", the once-per-session balloon, the re-check on activation, and the diff hook.
+ * Again", the once-per-session balloon and the diff hook.
  */
 public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   private static final HeifBackendStatus HEIF_MISSING =
@@ -90,7 +89,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       FileEditorManager manager = FileEditorManager.getInstance(getProject());
       for (VirtualFile file : manager.getOpenFiles()) manager.closeFile(file);
       if (backendReplaced) HeifBackends.replaceForTests(previousBackend);
-      for (Reason reason : Reason.values()) PropertiesComponent.getInstance().unsetValue(DecoderPrompt.DISMISSED_KEY_PREFIX + reason.name());
       resetUi();
     }
     catch (Throwable e) {
@@ -235,13 +233,12 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       missing.getActions().forEach(action -> balloonActions.add(action.getTemplateText()));
       List<String> expected = new ArrayList<>();
       for (HeifRemedy.Action action : actions) expected.add(HeicBundle.message(action.textKey()));
-      expected.add(HeicBundle.message("remedy.action.dont.show.again"));
       assertEquals(status.toString(), expected, balloonActions);
       if (remedy.command() != null) {
         assertTrue(missing.getContent(), missing.getContent().contains(StringUtil.escapeXmlEntities(remedy.command())));
       }
 
-      if (remedy.action(HeifRemedy.ActionType.CHECK_AGAIN) == null) {
+      if (!remedy.actions().contains(HeifRemedy.Action.checkAgain())) {
         assertEquals(Reason.UNSUPPORTED_OS, status.reason());
         continue;
       }
@@ -292,7 +289,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     VirtualFile file = heicFile("now.heic");
     ImageFileEditor editor = createImageEditor(file);
     assertNotNull(banner(file, editor));
-    DecoderStatus.remedyActionPerformed();
 
     clickCheckAgain(file, editor);
     waitFor("the result balloon", () -> !notifications.isEmpty());
@@ -302,7 +298,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertEquals(HeicBundle.message("remedy.check.available.title"), result.getTitle());
     assertEquals(NotificationType.INFORMATION, result.getType());
     assertNull("no banner any more", new HeicDecoderNotificationProvider().collectNotificationData(getProject(), file));
-    assertFalse("no more checks on activation", DecoderStatus.isActivationCheckArmed());
     // An image editor can be told to load its file again (it only loads on open or change).
     assertTrue(HeicViews.refresh(editor.getImageEditor()));
   }
@@ -337,7 +332,7 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertFalse(notifications.get(0).getContent(), notifications.get(0).getContent().contains(HeicBundle.message("remedy.check.missing.restart")));
   }
 
-  public void testMissingBalloonOncePerSessionAndNotWhenDismissed() {
+  public void testMissingBalloonOncePerSession() {
     use(FakeHeifBackend.probed(HEIF_MISSING));
     DecoderPrompt.decodeUnavailable(HEIF_MISSING, getProject());
     DecoderPrompt.decodeUnavailable(HEIF_MISSING, getProject());
@@ -347,16 +342,10 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertEquals(HeicBundle.message(HeifRemedy.titleKey(Reason.WINDOWS_HEIF_EXTENSION_MISSING)), missing.getTitle());
     List<String> actions = new ArrayList<>();
     missing.getActions().forEach(action -> actions.add(action.getTemplateText()));
+    List<String> expected = new ArrayList<>();
+    for (HeifRemedy.Action action : HeifRemedies.forStatus(HEIF_MISSING).actions()) expected.add(HeicBundle.message(action.textKey()));
+    assertEquals("the remedy's actions", expected, actions);
     assertEquals(HeicBundle.message("remedy.action.open.store"), actions.get(0));
-    assertTrue(actions.toString(), actions.contains(HeicBundle.message("remedy.action.dont.show.again")));
-
-    DecoderPrompt.resetForTests();
-    notifications.clear();
-    PropertiesComponent.getInstance().setValue(DecoderPrompt.DISMISSED_KEY_PREFIX + Reason.WINDOWS_HEIF_EXTENSION_MISSING.name(), true);
-    DecoderPrompt.decodeUnavailable(HEIF_MISSING, getProject());
-    assertEquals("dismissed", 0, notifications.size());
-    DecoderPrompt.decodeUnavailable(HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test"), getProject());
-    assertEquals("dismissed per reason", 1, notifications.size());
   }
 
   /** The platform collects banners by itself only for text editors: opening a HEIC file asks for its banner. */
@@ -411,31 +400,18 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertFalse(HeicDiffExtension.showsHeicFile(text));
   }
 
-  public void testCopyCommandAndActivationCheck() throws Exception {
+  /** Copy Command puts the command on the clipboard; only "Check Again" probes again. */
+  public void testCopyCommand() throws Exception {
     HeifBackendStatus libheifMissing = HeifBackendStatus.unavailable(Reason.LINUX_LIBHEIF_MISSING, "test")
       .withInstallCommand("sudo zypper install libheif1");
     FakeHeifBackend backend = use(FakeHeifBackend.probed(libheifMissing));
     HeifRemedy remedy = HeifRemedies.forStatus(libheifMissing);
     assertNotNull(remedy);
-    assertFalse(DecoderStatus.isActivationCheckArmed());
     RemedyActions.perform(remedy.actions().get(0), getProject(), null);
     assertEquals("sudo zypper install libheif1", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor));
-    assertTrue("copying the command arms the check on activation", DecoderStatus.isActivationCheckArmed());
-
-    DecoderStatus.applicationActivated();
-    waitFor("the re-check on activation", () -> backend.rechecks.get() == 1 && !isRechecking());
-    DecoderStatus.applicationActivated(); // debounced
     PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
-    assertEquals(1, backend.rechecks.get());
-    assertEquals("still missing: nothing is reported for an automatic check", 0, notifications.size());
-
-    backend.recheckResult = HeifBackendStatus.available("test: installed");
-    DecoderStatus.resetActivationDebounceForTests();
-    DecoderStatus.applicationActivated();
-    waitFor("the success balloon", () -> !notifications.isEmpty());
-    assertEquals(2, backend.rechecks.get());
-    assertEquals(HeicBundle.message("remedy.check.available.title"), notifications.get(0).getTitle());
-    assertFalse(DecoderStatus.isActivationCheckArmed());
+    assertEquals(0, backend.rechecks.get());
+    assertEquals(0, notifications.size());
   }
 
   /** The removal of this plugin's banners before unloading reaches the platform under either of its names. */
@@ -470,8 +446,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     DecoderUi.shutDown();
     assertTrue("balloons expire before the plugin is unloaded", notifications.get(0).isExpired());
     assertNull(banner(file, editor));
-    DecoderStatus.remedyActionPerformed();
-    assertFalse(DecoderStatus.isActivationCheckArmed());
+    DecoderStatus.recheck(getProject());
+    assertFalse("no re-check after the shutdown", isRechecking());
     // The backend is released right after: nothing may look it up (and create a new one) any more.
     HeifBackends.replaceForTests(null);
     assertNull(DecoderStatus.cached());
@@ -480,36 +456,24 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertNull("no backend was created", HeifBackends.replaceForTests(null));
   }
 
-  /**
-   * "Check Again" clicked while the re-check on activation is still probing is answered by one more probe; the balloon
-   * (with the Store again) is shown once.
-   */
-  public void testCheckAgainDuringTheActivationRecheckIsAnswered() throws Exception {
+  /** "Check Again" clicked while a re-check runs is answered by that re-check: one probe, one balloon. */
+  public void testCheckAgainWhileARecheckRuns() throws Exception {
     FakeHeifBackend backend = use(FakeHeifBackend.probed(HEIF_MISSING));
     backend.recheckResult = HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test: HEVC missing");
     CountDownLatch entered = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
     backend.recheckEntered = entered;
     backend.recheckRelease = release;
-    DecoderStatus.remedyActionPerformed();
-    DecoderStatus.applicationActivated();
-    assertTrue("the re-check on activation probes", entered.await(10, TimeUnit.SECONDS));
+    RemedyActions.perform(HeifRemedy.Action.checkAgain(), getProject(), null);
+    assertTrue("the re-check probes", entered.await(10, TimeUnit.SECONDS));
 
     RemedyActions.perform(HeifRemedy.Action.checkAgain(), getProject(), null);
     release.countDown();
-    waitFor("the answer to Check Again", () -> backend.rechecks.get() == 2 && !isRechecking() && !notifications.isEmpty());
+    waitFor("the answer to Check Again", () -> backend.rechecks.get() == 1 && !isRechecking() && !notifications.isEmpty());
     PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
-    assertEquals(2, backend.rechecks.get());
+    assertEquals(1, backend.rechecks.get());
     assertEquals(1, notifications.size());
     assertEquals(HeicBundle.message("remedy.check.missing.title"), notifications.get(0).getTitle());
-
-    // Without a Check Again, a still missing decoder is not reported after an activation.
-    notifications.clear();
-    DecoderStatus.resetActivationDebounceForTests();
-    DecoderStatus.applicationActivated();
-    waitFor("the re-check on activation", () -> backend.rechecks.get() == 3 && !isRechecking());
-    PlatformTestUtil.dispatchAllEventsInIdeEventQueue();
-    assertEquals(0, notifications.size());
   }
 
   /**
@@ -605,7 +569,7 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
         List<?> shown = (List<?>) DecoderPrompt.shownNotificationsForTests();
         assertEquals(1, shown.size());
         balloon = (Notification) shown.get(0);
-        assertEquals(5, balloon.getActions().size()); // the four actions of the remedy and "Don't Show Again"
+        assertEquals(4, balloon.getActions().size()); // the four actions of the remedy
       }
       finally {
         PlatformTestUtil.forceCloseProjectWithoutSaving(other);

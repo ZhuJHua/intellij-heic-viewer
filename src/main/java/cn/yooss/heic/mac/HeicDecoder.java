@@ -169,8 +169,7 @@ public final class HeicDecoder {
   /**
    * The gate of the native part of a decode on Intel Macs ({@link Bound#serialized}): one decode at a time per process,
    * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source, because
-   * ImageIO's GPU pixel conversion is not reliable on Intel Macs while decodes overlap. The system property
-   * {@code heic.mac.serializeDecodes} ({@code true}/{@code false}) overrides the default.
+   * ImageIO's GPU pixel conversion is not reliable on Intel Macs while decodes overlap.
    * <p>
    * A fair leaf lock (nothing else is locked while it is held), acquired uninterruptibly, so a thread whose interrupt
    * flag is set still decodes. Copying the pixels into the Java image runs outside it ({@link Session#render}), except
@@ -188,12 +187,8 @@ public final class HeicDecoder {
     return NATIVE_DECODE.hasQueuedThread(thread);
   }
 
-  /**
-   * Whether decodes are serialized ({@link #NATIVE_DECODE}) unless a {@link Bound} says otherwise: on x86_64, or as the
-   * system property {@code heic.mac.serializeDecodes} ({@code true}/{@code false}) says.
-   */
-  static boolean serializeByDefault(String arch, String property) {
-    if (property != null && !property.isBlank()) return Boolean.parseBoolean(property.trim());
+  /** Whether decodes are serialized ({@link #NATIVE_DECODE}) unless a {@link Bound} says otherwise: on x86_64. */
+  static boolean serializeByDefault(String arch) {
     return arch.equals("x86_64") || arch.equals("amd64");
   }
 
@@ -212,12 +207,11 @@ public final class HeicDecoder {
     final long kCGImagePropertyPixelWidth;
     final long kCGImagePropertyPixelHeight;
     final long kCGImagePropertyOrientation;
-    final long kCGImagePropertyDepth;
     final long kCGImagePropertyHasAlpha;
     final long kCGColorSpaceSRGB;
 
     Bound(MacApi api) {
-      this(api, serializeByDefault(System.getProperty("os.arch", ""), System.getProperty("heic.mac.serializeDecodes")));
+      this(api, serializeByDefault(System.getProperty("os.arch", "")));
     }
 
     Bound(MacApi api, boolean serialized) {
@@ -233,7 +227,6 @@ public final class HeicDecoder {
       kCGImagePropertyPixelWidth = imageIO("kCGImagePropertyPixelWidth");
       kCGImagePropertyPixelHeight = imageIO("kCGImagePropertyPixelHeight");
       kCGImagePropertyOrientation = imageIO("kCGImagePropertyOrientation");
-      kCGImagePropertyDepth = imageIO("kCGImagePropertyDepth");
       kCGImagePropertyHasAlpha = imageIO("kCGImagePropertyHasAlpha");
       kCGColorSpaceSRGB = api.constant(MacApi.Framework.CORE_GRAPHICS, "kCGColorSpaceSRGB");
     }
@@ -253,9 +246,7 @@ public final class HeicDecoder {
     private long buffer;
     private long source;
     private long data;
-    private String type;
     private long properties;
-    private long count;
     private long index;
     private HeifImageInfo info;
 
@@ -310,10 +301,10 @@ public final class HeicDecoder {
       long options = dictionary(k.kCGImageSourceShouldCache, Boolean.FALSE);
       source = own(api.cgImageSourceCreateWithData(data, options));
       if (source == 0) throw new IOException("Not an image that ImageIO.framework can read");
-      type = api.cfString(api.cgImageSourceGetType(source));
+      String type = api.cfString(api.cgImageSourceGetType(source));
       if (!isHeifType(type)) throw new IOException("Not a HEIF image (ImageIO.framework type " + type + ")");
 
-      count = api.cgImageSourceGetCount(source);
+      long count = api.cgImageSourceGetCount(source);
       if (count < 1) throw new IOException("No image found (image source status " + api.cgImageSourceGetStatus(source) + ")");
       long primary = api.cgImageSourceGetPrimaryImageIndex(source);
       index = primary >= 0 && primary < count ? primary : 0;
@@ -333,13 +324,11 @@ public final class HeicDecoder {
       }
       long orientation = property(k.kCGImagePropertyOrientation, 1);
       if (orientation < 1 || orientation > 8) orientation = 1;
-      int depth = (int) property(k.kCGImagePropertyDepth, -1);
       // kCGImagePropertyHasAlpha is only present when the file has alpha. Thumbnails are always RGBA, so when the
       // property is missing, ask a lazily created (not yet decoded) image for its alpha info instead.
       long hasAlpha = property(k.kCGImagePropertyHasAlpha, -1);
       boolean alpha = hasAlpha >= 0 ? hasAlpha != 0 : lazyImageHasAlpha();
-      info = new HeifImageInfo(type, (int) Math.min(count, Integer.MAX_VALUE), (int) index, (int) width, (int) height,
-                               (int) orientation, depth, alpha);
+      info = new HeifImageInfo((int) width, (int) height, (int) orientation, alpha);
       return info;
     }
 

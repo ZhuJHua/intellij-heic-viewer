@@ -96,7 +96,7 @@ final class IsoBoxes {
         if (constructionMethod != 0 || dataReferenceIndex != 0) continue; // idat / item / external data
         long start = baseOffset + extentOffset;
         long end = extentLength == 0 ? start : start + extentLength; // length 0 = up to the end of the file
-        if (start < 0 || end < start) return null; // overflow: not something we understand
+        if (start < 0 || end < start) return null; // overflow: not understood
         if (end > data.length || (extentLength == 0 && start >= data.length)) {
           return String.format(Locale.ROOT, "item %d needs data up to byte %d but the file has only %d bytes",
                                itemId, end, data.length);

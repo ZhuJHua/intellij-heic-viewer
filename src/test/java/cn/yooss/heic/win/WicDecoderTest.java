@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class WicDecoderTest {
   private static final byte[] DATA = {1, 2, 3};
+  /** {@code GUID_ContainerFormatPng} (wincodec.idl): a container other than HEIF. */
+  private static final String GUID_ContainerFormatPng = "1b7cfaf4-713f-473c-bbcd-6137425faeaf";
 
   /** 4x3 with a distinct color per pixel. */
   private static FakeWinApi fake() {
@@ -79,7 +81,7 @@ class WicDecoderTest {
   @Test
   void otherFormatsWithAlphaKeepTheirAlpha() throws IOException {
     FakeWinApi api = fake();
-    api.containerFormat = Guids.GUID_ContainerFormatPng;
+    api.containerFormat = GUID_ContainerFormatPng;
     api.framePixelFormat = Guids.GUID_WICPixelFormat32bppBGRA;
     api.pixels[5] = 0x40123456;
     BufferedImage image = new WicDecoder(api).decode(DATA, 0, false, 7);
@@ -103,7 +105,7 @@ class WicDecoderTest {
   @Test
   void heifOnlyUnlessATestAsksOtherwise() {
     FakeWinApi api = fake();
-    api.containerFormat = Guids.GUID_ContainerFormatPng;
+    api.containerFormat = GUID_ContainerFormatPng;
     IOException e = assertThrows(IOException.class, () -> new WicDecoder(api).decode(DATA, 0, true, 7));
     assertTrue(e.getMessage().contains("did not read the data as HEIF"), e.getMessage());
     api.assertClean();
@@ -203,11 +205,8 @@ class WicDecoderTest {
   @Test
   void readInfo() throws IOException {
     FakeWinApi api = fake();
-    api.frameCount = 3;
     byte[] heic = cn.yooss.heic.Fixtures.bytes("rgb_sips.heic");
     HeifImageInfo info = new WicDecoder(api).readInfo(heic, true);
-    assertEquals("heic", info.typeIdentifier());
-    assertEquals(3, info.imageCount());
     assertEquals("4x3", info.width() + "x" + info.height());
     assertFalse(info.hasAlpha());
     assertFalse(api.calls.contains("CopyPixels"), "no pixels decoded");
@@ -325,7 +324,7 @@ class WicDecoderTest {
     api.assertClean();
   }
 
-  /** HEIF data goes to WIC with the color workarounds: a rewritten copy for a single 8-bit image (macOS: both). */
+  /** HEIF data goes to WIC with the color fixes: a rewritten copy for a single 8-bit image (macOS: both). */
   @Test
   void colorFixesRewriteTheData() throws IOException {
     byte[] heic = cn.yooss.heic.Fixtures.bytes("rgb_sips.heic"); // single 8-bit image, nclx (2, 2, 6, 1)
@@ -381,13 +380,5 @@ class WicDecoderTest {
     assertEquals(16, up.length);
     assertEquals(0, up[0] & 0xFF);
     assertEquals(255, up[3] & 0xFF);
-  }
-
-  @Test
-  void typeIdentifier() {
-    assertEquals("heic", WicDecoder.typeIdentifier(cn.yooss.heic.Fixtures.bytes("rgb_sips.heic"), Guids.GUID_ContainerFormatHeif));
-    assertEquals("msf1", WicDecoder.typeIdentifier(cn.yooss.heic.Fixtures.bytes("seq.heics"), Guids.GUID_ContainerFormatHeif));
-    assertEquals("heif", WicDecoder.typeIdentifier(new byte[4], Guids.GUID_ContainerFormatHeif));
-    assertEquals("png", WicDecoder.typeIdentifier(DATA, Guids.GUID_ContainerFormatPng));
   }
 }

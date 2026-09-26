@@ -2,9 +2,8 @@ package cn.yooss.heic.win;
 
 /**
  * The Microsoft Store packages that make Windows decode HEIC: the HEIF Image Extension ({@link #HEIF_PRODUCT_ID}) and
- * the HEVC Video Extensions ({@link #HEVC_PRODUCT_ID}); {@link #HEVC_DEVICE_MANUFACTURER_PRODUCT_ID} is the HEVC variant
- * that PC makers preinstall. The backend's statuses carry the Store app page and, for the HEIF Image Extension, the
- * winget command; {@code backend.HeifRemedies} turns them into actions.
+ * the HEVC Video Extensions ({@link #HEVC_PRODUCT_ID}). The backend's statuses carry the Store app page and, for the
+ * HEIF Image Extension, the winget command; {@code backend.HeifRemedies} turns them into actions.
  */
 public final class WindowsCodecs {
   private WindowsCodecs() {
@@ -12,7 +11,6 @@ public final class WindowsCodecs {
 
   public static final String HEIF_PRODUCT_ID = "9PMMSR1CGPWG";
   public static final String HEVC_PRODUCT_ID = "9NMZLZ57R3T7";
-  public static final String HEVC_DEVICE_MANUFACTURER_PRODUCT_ID = "9N4WGH0Z6VHQ";
 
   /** Opens in any browser; the page offers to continue in the Microsoft Store app. */
   public static final String HEIF_STORE_URL = "https://apps.microsoft.com/detail/" + HEIF_PRODUCT_ID;

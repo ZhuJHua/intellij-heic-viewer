@@ -47,7 +47,6 @@ public final class PlaneConverter {
   public static @NotNull BufferedImage convert(int width, int height, int stride, @NotNull ByteLayout layout,
                                                boolean premultiplied, boolean alpha, int maxPixelSize, @NotNull Rows rows)
     throws IOException {
-    if (layout != ByteLayout.RGB && layout != ByteLayout.RGBA) throw new IllegalArgumentException("RGB or RGBA: " + layout);
     if (width <= 0 || height <= 0) throw new IOException("Invalid decoded image size " + width + "x" + height);
     if (stride < (long) width * layout.bytesPerPixel()) {
       throw new IOException("Invalid stride " + stride + " for " + width + " pixels of " + layout);

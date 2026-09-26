@@ -73,10 +73,7 @@ class PixelPipelineTest {
   }
 
   @ParameterizedTest
-  @CsvSource({
-      "RGB,  false", "BGR,  false", "RGBA, false", "BGRA, false", "ARGB, false", "RGBX, false", "BGRX, false",
-      "RGBA, true",  "BGRA, true",  "ARGB, true",
-  })
+  @CsvSource({"RGB, false", "RGBA, false", "RGBA, true"})
   void writeByteRowsForEveryLayout(PixelPipeline.ByteLayout layout, boolean premultiplied) throws IOException {
     // Two rows of two pixels with padding at the end of each row (stride > width * bpp).
     int[] argb = {0xFF102030, 0x80402000, 0x00000000, 0xC0306090};
@@ -101,7 +98,7 @@ class PixelPipelineTest {
       }
     }
     BufferedImage image = PixelPipeline.newImage(2, 2, layout.hasAlpha());
-    PixelPipeline.writeByteRows(image, 0, 2, buffer, 5, stride, layout, premultiplied);
+    PixelPipeline.writeByteRows(image, 0, 2, buffer, 5, stride, layout, premultiplied, null);
     for (int i = 0; i < argb.length; i++) {
       int expected = layout.hasAlpha() ? argb[i] : 0xFF000000 | argb[i];
       if ((expected >>> 24) == 0) expected = layout.hasAlpha() ? 0 : expected;
@@ -113,7 +110,7 @@ class PixelPipelineTest {
       }
     }
     assertThrows(IllegalArgumentException.class,
-                 () -> PixelPipeline.writeByteRows(image, 0, 1, buffer, 0, 2 * bpp - 1, layout, false), "stride too small");
+                 () -> PixelPipeline.writeByteRows(image, 0, 1, buffer, 0, 2 * bpp - 1, layout, false, null), "stride too small");
   }
 
   /** The quadrant layout: TL red, TR green, BL blue, BR white, 3x2 pixels + a marker at (0,0). */
@@ -179,27 +176,9 @@ class PixelPipelineTest {
   @ParameterizedTest
   @CsvSource({"600, 400, 150, 150x100", "400, 600, 150, 100x150", "600, 400, 600, 600x400", "600, 400, 0, 600x400",
               "5000, 3, 100, 100x1", "600, 400, 599, 599x399"})
-  void downscale(int width, int height, int max, String expected) {
-    BufferedImage source = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-    BufferedImage result = PixelPipeline.downscale(source, max);
-    assertEquals(expected, result.getWidth() + "x" + result.getHeight());
-    if (max == 0 || Math.max(width, height) <= max) assertSame(source, result);
-  }
-
-  @Test
-  void downscaleKeepsColorsAndAlpha() {
-    BufferedImage source = new BufferedImage(400, 200, BufferedImage.TYPE_INT_ARGB);
-    Graphics2D g = source.createGraphics();
-    g.setColor(Color.RED);
-    g.fillRect(0, 0, 200, 200);
-    g.setColor(new Color(0, 0, 255, 128));
-    g.fillRect(200, 0, 200, 200);
-    g.dispose();
-    BufferedImage result = PixelPipeline.downscale(source, 40);
-    assertEquals(BufferedImage.TYPE_INT_ARGB, result.getType());
-    assertEquals(0xFFFF0000, result.getRGB(5, 10));
-    int blue = result.getRGB(35, 10);
-    assertTrue(Math.abs((blue >>> 24) - 128) <= 1 && (blue & 0xFF) >= 250, String.format("%08x", blue));
+  void targetSize(int width, int height, int max, String expected) {
+    int[] size = PixelPipeline.targetSize(width, height, max);
+    assertEquals(expected, size[0] + "x" + size[1]);
   }
 
   @Test

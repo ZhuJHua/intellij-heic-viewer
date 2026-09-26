@@ -64,7 +64,7 @@ class HeifBackendContractTest {
     assertFalse(BACKEND.id().isEmpty());
     assertFalse(BACKEND.displayName().isEmpty());
     if (status.installUrl() != null || status.installCommand() != null) {
-      assertTrue(status.isUserInstallable(), "install hints only for installable components: " + status);
+      assertTrue(status.reason() != null && status.reason().isUserInstallable(), "install hints only for installable components: " + status);
     }
     // The banner and the notifications must accept what the backend offers (they ignore other URL schemes and
     // multi-line commands).
@@ -108,7 +108,6 @@ class HeifBackendContractTest {
     HeifImageInfo info = BACKEND.readInfo(data);
     assertEquals(width + "x" + height, info.width() + "x" + info.height(), "display size of " + name);
     assertEquals(alpha, info.hasAlpha(), "alpha of " + name);
-    assertTrue(info.imageCount() >= 1);
 
     BufferedImage image = BACKEND.decode(data, 0);
     assertEquals(width + "x" + height, image.getWidth() + "x" + image.getHeight(), "decoded size of " + name);

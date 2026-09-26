@@ -35,7 +35,7 @@ public final class HeicImageReaderSpi extends ImageReaderSpi {
   /** File extensions mapped to the "Image" file type (see META-INF/plugin.xml). */
   public static final String[] SUFFIXES = {"heic", "heif", "hif", "heics"};
   static final String[] MIME_TYPES = {"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"};
-  /** Larger inputs are left to other readers (and would not be worth decoding into an IDE preview). */
+  /** Larger inputs are left to other readers. */
   public static final long MAX_INPUT_BYTES = 512L * 1024 * 1024;
   /** Bound for {@link #REPORTED_FAILURES}. */
   private static final int MAX_REPORTED_FAILURES = 16;

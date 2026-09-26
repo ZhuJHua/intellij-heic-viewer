@@ -14,8 +14,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Shows the "decoder missing" balloon ({@link DecoderPrompt}, once per session) when a diff of HEIC files is opened
- * while the system decoder is unavailable, since the diff viewer has no editor banner. Runs on the EDT: it only compares
- * file extensions and reads the cached status.
+ * while the system decoder is unavailable, since the diff viewer has no editor banner. Runs on the EDT: it compares file
+ * extensions and never probes on the EDT ({@link DecoderStatus#status()}).
  */
 public final class HeicDiffExtension extends DiffExtension {
   @Override

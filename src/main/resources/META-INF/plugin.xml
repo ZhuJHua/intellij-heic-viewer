@@ -34,9 +34,6 @@
     <!-- Registration of the javax.imageio reader at IDE start and on dynamic load; deregistration before unload. -->
     <listener class="cn.yooss.heic.HeicAppLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
     <listener class="cn.yooss.heic.HeicDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
-    <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action. -->
-    <listener class="cn.yooss.heic.ui.HeicActivationListener"
-              topic="com.intellij.openapi.application.ApplicationActivationListener"/>
   </applicationListeners>
 
   <projectListeners>

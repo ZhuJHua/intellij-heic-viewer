@@ -58,8 +58,6 @@ final class WicProbe {
 
   /** The native binding, e.g. {@code "JNA 5.17.0 (amd64)"}. */
   String bridge = "?";
-  /** Whether the decoder applies the color fixes ({@link WicDecoder#COLOR_FIXES_PROPERTY}). */
-  boolean colorFixes = true;
   /** {@code HRESULT} of {@code IWICImagingFactory::CreateDecoder(GUID_ContainerFormatHeif)}, if it could be called. */
   @Nullable Integer createDecoderHr;
   /** Why {@code CreateDecoder} could not be called (COM or the factory failed), or {@code null}. */
@@ -85,7 +83,6 @@ final class WicProbe {
     WicProbe probe = new WicProbe();
     WinApi api = decoder.api();
     probe.bridge = api.name();
-    probe.colorFixes = decoder.colorFixes();
     try (WicDecoder.Session session = new WicDecoder.Session(api)) {
       long[] heif = new long[1];
       probe.createDecoderHr = api.createDecoder(session.factory(), Guids.GUID_ContainerFormatHeif, heif);
@@ -225,7 +222,6 @@ final class WicProbe {
     text.append("; HEVC decoders: ");
     if (hevcDecoders != null) text.append(hevcDecoders.isEmpty() ? "none" : String.join(", ", hevcDecoders));
     else text.append(hevcProblem);
-    if (!colorFixes) text.append("; color fixes off (").append(WicDecoder.COLOR_FIXES_PROPERTY).append("=false)");
     return text.toString();
   }
 }

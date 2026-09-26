@@ -28,7 +28,6 @@ class LinuxDistributionTest {
     assertTrue(d.isLike("ubuntu"));
     assertFalse(d.isLike("fedora"));
     assertFalse(d.isFlatpak());
-    assertFalse(d.isSnap());
   }
 
   @Test
@@ -77,7 +76,7 @@ class LinuxDistributionTest {
 
   @Test
   void emptyOrMissingFile() {
-    LinuxDistribution d = LinuxDistribution.parse("", false, false);
+    LinuxDistribution d = LinuxDistribution.parse("", false);
     assertEquals("", d.id());
     assertEquals(List.of(), d.idLike());
     assertEquals(-1, d.versionNumber());
@@ -86,10 +85,9 @@ class LinuxDistributionTest {
 
   @Test
   void sandboxesAndValueSemantics() {
-    LinuxDistribution flatpak = LinuxDistribution.parse(OsReleaseSamples.FEDORA_42, true, false);
+    LinuxDistribution flatpak = LinuxDistribution.parse(OsReleaseSamples.FEDORA_42, true);
     assertTrue(flatpak.isFlatpak());
     assertTrue(flatpak.toString().contains("Flatpak"), flatpak.toString());
-    assertTrue(LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, false, true).isSnap());
     assertEquals(parse(OsReleaseSamples.ARCH), parse(OsReleaseSamples.ARCH));
     assertEquals(parse(OsReleaseSamples.ARCH).hashCode(), parse(OsReleaseSamples.ARCH).hashCode());
     assertNotEquals(parse(OsReleaseSamples.ARCH), parse(OsReleaseSamples.MANJARO));

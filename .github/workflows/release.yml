@@ -58,13 +58,7 @@ jobs:
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
-        run: |
-          # 0.1.0 is not published from here: it is only built and signed.
-          if [ "${{ github.event.release.tag_name }}" = "0.1.0" ]; then
-            ./gradlew signPlugin
-          else
-            ./gradlew publishPlugin
-          fi
+        run: ./gradlew publishPlugin
 
       # Upload an artifact as a release asset
       - name: Upload Release Asset

@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 
 /**
  * The Linux distribution the IDE runs on, from {@code os-release(5)} ({@code /etc/os-release}, falling back to
- * {@code /usr/lib/os-release}), plus whether the IDE runs in a Flatpak or Snap sandbox. Used to tell the user the exact
+ * {@code /usr/lib/os-release}), plus whether the IDE runs in a Flatpak sandbox. Used to tell the user the exact
  * command that installs libheif ({@link LibheifRemedy}). Pure Java; never throws (an unreadable file gives an unknown
  * distribution).
  * <p>
@@ -30,12 +30,10 @@ public final class LinuxDistribution {
 
   private final Map<String, String> fields;
   private final boolean flatpak;
-  private final boolean snap;
 
-  private LinuxDistribution(Map<String, String> fields, boolean flatpak, boolean snap) {
+  private LinuxDistribution(Map<String, String> fields, boolean flatpak) {
     this.fields = Collections.unmodifiableMap(fields);
     this.flatpak = flatpak;
-    this.snap = snap;
   }
 
   /** The running system (reads the files each time; cheap). */
@@ -51,8 +49,7 @@ public final class LinuxDistribution {
       }
     }
     boolean flatpak = exists("/.flatpak-info") || System.getenv("FLATPAK_ID") != null;
-    boolean snap = System.getenv("SNAP") != null && System.getenv("SNAP_NAME") != null;
-    return parse(content, flatpak, snap);
+    return parse(content, flatpak);
   }
 
   private static boolean exists(String path) {
@@ -68,7 +65,7 @@ public final class LinuxDistribution {
    * Parses the content of an {@code os-release} file: {@code KEY=value} lines, values optionally in double or single
    * quotes with the shell escapes {@code \" \\ \$ \`} (in double quotes), {@code #} comments.
    */
-  public static @NotNull LinuxDistribution parse(@NotNull String osRelease, boolean flatpak, boolean snap) {
+  public static @NotNull LinuxDistribution parse(@NotNull String osRelease, boolean flatpak) {
     Map<String, String> fields = new HashMap<>();
     for (String rawLine : osRelease.split("\\r?\\n")) {
       String line = rawLine.trim();
@@ -79,7 +76,7 @@ public final class LinuxDistribution {
       if (!key.matches("[A-Za-z0-9_]+")) continue;
       fields.put(key, unquote(line.substring(eq + 1).trim()));
     }
-    return new LinuxDistribution(fields, flatpak, snap);
+    return new LinuxDistribution(fields, flatpak);
   }
 
   private static String unquote(String value) {
@@ -151,11 +148,6 @@ public final class LinuxDistribution {
     return flatpak;
   }
 
-  /** Whether the IDE runs as a Snap (JetBrains snaps use classic confinement and see the system's libraries). */
-  public boolean isSnap() {
-    return snap;
-  }
-
   /**
    * The major and minor number of {@code VERSION_ID} (e.g. 24.04 as {@code 2404}, 12 as {@code 1200}, 15.6 as
    * {@code 1506}), or -1 if there is none.
@@ -179,17 +171,17 @@ public final class LinuxDistribution {
     if (this == o) return true;
     if (!(o instanceof LinuxDistribution)) return false;
     LinuxDistribution other = (LinuxDistribution) o;
-    return flatpak == other.flatpak && snap == other.snap && fields.equals(other.fields);
+    return flatpak == other.flatpak && fields.equals(other.fields);
   }
 
   @Override
   public int hashCode() {
-    return 31 * (31 * fields.hashCode() + (flatpak ? 1 : 0)) + (snap ? 1 : 0);
+    return 31 * fields.hashCode() + (flatpak ? 1 : 0);
   }
 
   @Override
   public String toString() {
     return prettyName() + " (ID=" + id() + ", ID_LIKE=" + String.join(" ", idLike()) + ", VERSION_ID=" + versionId()
-           + (flatpak ? ", Flatpak" : "") + (snap ? ", Snap" : "") + ")";
+           + (flatpak ? ", Flatpak" : "") + ")";
   }
 }

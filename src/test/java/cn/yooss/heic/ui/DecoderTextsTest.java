@@ -24,7 +24,7 @@ class DecoderTextsTest {
   @ParameterizedTest
   @EnumSource(Reason.class)
   void everyReasonHasBannerAndBalloonTexts(Reason reason) {
-    HeifRemedy remedy = HeifRemedies.forReason(reason);
+    HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(reason, "test"));
     String banner = HeicDecoderNotificationProvider.text(remedy);
     assertFalse(banner.contains("<"), "plain text (ends with ... when the editor is narrow): " + banner);
     assertTrue(banner.startsWith(cn.yooss.heic.HeicBundle.message(remedy.titleKey())), banner);

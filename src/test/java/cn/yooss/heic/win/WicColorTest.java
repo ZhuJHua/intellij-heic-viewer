@@ -5,7 +5,6 @@ import cn.yooss.heic.backend.HeifBackend;
 import cn.yooss.heic.backend.HeifBackends;
 import cn.yooss.heic.backend.PixelPipeline;
 import cn.yooss.heic.win.jna.JnaWinApi;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -15,9 +14,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,22 +23,21 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * The colors of the color fixtures against their sources, with the system decoder. On Windows with the HEIF Image
  * Extension and the HEVC Video Extension each fixture is decoded twice: as WIC decodes it (color fixes off) and as the
- * plugin decodes it (on); only the second must match. The pixel values and differences go to
- * {@code build/reports/color/wic-colors.txt} (and the test output). On macOS the same comparisons check the fixtures
- * and their references.
+ * plugin decodes it (on); only the second must match. The pixel values and differences go to the test output. On
+ * macOS the same comparisons check the fixtures and their references.
  */
 @EnabledOnOs({OS.WINDOWS, OS.MAC})
 class WicColorTest {
-  private static final StringBuilder REPORT = new StringBuilder();
   private static final String HEADER = String.format(Locale.ROOT, "%-34s %-6s | %-44s | %-44s%n", "fixture", "fixes",
-                                                     "as WIC decodes it: TL TR BL BR, mean difference, ms",
-                                                     "with the workaround (the plugin)");
+                                                     "as WIC decodes it: TL TR BL BR, mean difference",
+                                                     "with the color fixes (the plugin)");
+  private static boolean headerPrinted;
 
   /**
    * @param path        the HEIF resource
    * @param reference   its source PNG
    * @param orientation the EXIF orientation that turns the source into the displayed image
-   * @param tolerance   the largest mean difference (per channel, 0-255) allowed with the workaround
+   * @param tolerance   the largest mean difference (per channel, 0-255) allowed with the color fixes
    */
   @ParameterizedTest(name = "{0}")
   @CsvSource(delimiter = '|', value = {
@@ -79,7 +74,7 @@ class WicColorTest {
     BufferedImage expected = PixelPipeline.applyOrientation(
       ImageIO.read(new ByteArrayInputStream(SingleImageGridTest.resource(reference))), orientation);
     String name = path.substring(path.lastIndexOf('/') + 1);
-    // which workarounds apply: g = SingleImageGrid, t = NclxTransfer
+    // which color fixes apply: g = SingleImageGrid, t = NclxTransfer
     byte[] srgb = NclxTransfer.asSrgb(data);
     String wrapped = (SingleImageGrid.wrap(srgb != null ? srgb : data) != null ? "g" : "") + (srgb != null ? "t" : "");
     if (wrapped.isEmpty()) wrapped = "-";
@@ -111,37 +106,32 @@ class WicColorTest {
   }
 
   private static Result decode(WicDecoder decoder, byte[] data, BufferedImage expected) throws IOException {
-    decoder.decode(data, 0, true, PixelPipeline.STRIP_PIXELS); // warm up (the first decode loads the codecs)
-    return measure(d -> decoder.decode(d, 0, true, PixelPipeline.STRIP_PIXELS), data, expected);
+    return compare(d -> decoder.decode(d, 0, true, PixelPipeline.STRIP_PIXELS), data, expected);
   }
 
   private static Result decode(HeifBackend backend, byte[] data, BufferedImage expected) throws IOException {
-    return measure(d -> backend.decode(d, 0), data, expected);
+    return compare(d -> backend.decode(d, 0), data, expected);
   }
 
-  private static Result measure(Decoder decoder, byte[] data, BufferedImage expected) throws IOException {
-    long start = System.nanoTime();
+  private static Result compare(Decoder decoder, byte[] data, BufferedImage expected) throws IOException {
     BufferedImage image = decoder.decode(data);
-    long millis = (System.nanoTime() - start) / 1_000_000;
-    return new Result(image, Fixtures.meanDifference(image, expected), millis);
+    return new Result(image, Fixtures.meanDifference(image, expected));
   }
 
   private static final class Result {
     final BufferedImage image;
     final double mean;
-    final long millis;
 
-    Result(BufferedImage image, double mean, long millis) {
+    Result(BufferedImage image, double mean) {
       this.image = image;
       this.mean = mean;
-      this.millis = millis;
     }
 
     @Override
     public String toString() {
       int w = image.getWidth(), h = image.getHeight();
-      return String.format(Locale.ROOT, "%s %s %s %s %5.2f %4d", hex(w / 4, h / 4), hex(3 * w / 4, h / 4),
-                           hex(w / 4, 3 * h / 4), hex(3 * w / 4, 3 * h / 4), mean, millis);
+      return String.format(Locale.ROOT, "%s %s %s %s %5.2f", hex(w / 4, h / 4), hex(3 * w / 4, h / 4),
+                           hex(w / 4, 3 * h / 4), hex(3 * w / 4, 3 * h / 4), mean);
     }
 
     private String hex(int x, int y) {
@@ -150,19 +140,11 @@ class WicColorTest {
   }
 
   private static synchronized void report(String line) {
-    if (REPORT.length() == 0) {
-      REPORT.append("Backend: ").append(HeifBackends.current().status()).append(System.lineSeparator());
-      REPORT.append(HEADER);
+    if (!headerPrinted) {
+      headerPrinted = true;
+      System.out.println("Backend: " + HeifBackends.current().status());
+      System.out.print(HEADER);
     }
-    REPORT.append(line);
     System.out.print(line);
-  }
-
-  @AfterAll
-  static void writeReport() throws IOException {
-    if (REPORT.length() == 0) return;
-    Path file = Path.of(System.getProperty("user.dir"), "build", "reports", "color", "wic-colors.txt");
-    Files.createDirectories(file.getParent());
-    Files.write(file, REPORT.toString().getBytes(StandardCharsets.UTF_8));
   }
 }

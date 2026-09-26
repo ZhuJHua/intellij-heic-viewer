@@ -33,7 +33,7 @@ import java.util.Locale;
  * IWICFormatConverter        8 Initialize
  * IWICBitmapScaler           8 Initialize
  * IWICBitmapSourceTransform  3 CopyPixels  4 GetClosestSize  5 GetClosestPixelFormat
- * IWICColorContext           6 GetType  7 GetProfileBytes  8 GetExifColorSpace
+ * IWICColorContext           6 GetType  7 GetProfileBytes
  * IWICMetadataQueryReader    5 GetMetadataByName
  * IWICPixelFormatInfo2       16 SupportsTransparency  (IWICComponentInfo 3-10, IWICPixelFormatInfo 11-15)
  * IMFActivate                13 GetAllocatedString  (IMFAttributes 3-32)
@@ -337,12 +337,6 @@ public final class JnaWinApi implements WinApi {
   @Override
   public int getProfileBytes(long context, byte @Nullable [] buffer, int[] actual) {
     return call(context, 7, buffer == null ? 0 : buffer.length, buffer, actual);
-  }
-
-  /** {@code GetExifColorSpace(UINT*)}: slot 8. */
-  @Override
-  public int getExifColorSpace(long context, int[] value) {
-    return call(context, 8, (Object) value);
   }
 
   // ---------------------------------------------------------------- IWICPixelFormatInfo2

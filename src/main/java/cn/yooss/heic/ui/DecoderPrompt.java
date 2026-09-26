@@ -4,7 +4,6 @@ import cn.yooss.heic.HeicBundle;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifRemedies;
 import cn.yooss.heic.backend.HeifRemedy;
-import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationGroupManager;
@@ -25,9 +24,8 @@ import java.util.List;
 /**
  * The balloons (notification group {@value #NOTIFICATION_GROUP}, declared in plugin.xml):
  * <ul>
- *   <li><b>Decoder missing</b>, at most once per session and never for a reason the user dismissed ("Don't Show
- *   Again"): when a HEIC image fails to load where no banner explains why (the diff viewer), and right after the plugin
- *   was installed. It offers the remedy's actions.</li>
+ *   <li><b>Decoder missing</b>, at most once per session: when a HEIC image fails to load where no banner explains why
+ *   (the diff viewer), and right after the plugin was installed. It offers the remedy's actions.</li>
  *   <li><b>Result of "Check Again"</b>: available now, or still missing (with the actions again).</li>
  * </ul>
  * {@link #shutDown()} expires the notifications on screen before the plugin is unloaded (their actions are plugin
@@ -38,8 +36,6 @@ public final class DecoderPrompt {
   private static final Logger LOG = Logger.getInstance(DecoderPrompt.class);
   /** Notification group declared in plugin.xml. */
   public static final String NOTIFICATION_GROUP = "HEIC Viewer";
-  /** Prefix of the application-level {@link PropertiesComponent} flag set by "Don't Show Again" (+ reason name). */
-  static final String DISMISSED_KEY_PREFIX = "heic.viewer.decoder.prompt.dismissed.";
 
   private static final Object LOCK = new Object();
   /** Whether the "decoder missing" balloon was shown in this session (guarded by {@link #LOCK}). */
@@ -53,27 +49,27 @@ public final class DecoderPrompt {
 
   /**
    * A HEIC image could not be decoded because the system decoder is unavailable, where no banner tells why (the diff
-   * viewer): shows the "decoder missing" balloon unless it was shown in this session or dismissed. Any thread.
+   * viewer): shows the "decoder missing" balloon unless it was shown in this session. Any thread.
    */
   public static void decodeUnavailable(@NotNull HeifBackendStatus status, @Nullable Project project) {
     showMissing(status, project);
   }
 
-  /** The "decoder missing" balloon, once per session and not for a dismissed reason. Any thread. */
+  /** The "decoder missing" balloon, once per session. Any thread. */
   static void showMissing(@NotNull HeifBackendStatus status, @Nullable Project project) {
     HeifRemedy remedy = HeifRemedies.forStatus(status);
-    if (remedy == null || isDismissed(remedy.reason())) return;
+    if (remedy == null) return;
     synchronized (LOCK) {
       if (missingShown || shutDown) return;
       missingShown = true;
     }
-    show(HeicBundle.message(remedy.titleKey()), content(remedy), NotificationType.WARNING, remedy, true, project);
+    show(HeicBundle.message(remedy.titleKey()), content(remedy), NotificationType.WARNING, remedy, project);
   }
 
   /** "Check Again" found the decoder, or the decoder appeared after a remedy action. Any thread. */
   static void showAvailable(@Nullable Project project) {
     show(HeicBundle.message("remedy.check.available.title"), HeicBundle.message("remedy.check.available.content"),
-         NotificationType.INFORMATION, null, false, project);
+         NotificationType.INFORMATION, null, project);
   }
 
   /** "Check Again" did not find the decoder: what is missing (maybe something else now) and the actions again. */
@@ -85,7 +81,7 @@ public final class DecoderPrompt {
       // A running process may not see a Store package installed after it started: say what else helps.
       content += "<br>" + HeicBundle.message("remedy.check.missing.restart");
     }
-    show(HeicBundle.message("remedy.check.missing.title"), content, NotificationType.WARNING, remedy, false, project);
+    show(HeicBundle.message("remedy.check.missing.title"), content, NotificationType.WARNING, remedy, project);
   }
 
   private static boolean isStoreExtension(HeifBackendStatus.Reason reason) {
@@ -106,7 +102,7 @@ public final class DecoderPrompt {
   }
 
   private static void show(@NotNull String title, @NotNull String content, @NotNull NotificationType type,
-                           @Nullable HeifRemedy remedy, boolean dismissible, @Nullable Project project) {
+                           @Nullable HeifRemedy remedy, @Nullable Project project) {
     Notification notification = NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
       .createNotification(title, content, type);
     if (remedy != null) {
@@ -119,12 +115,6 @@ public final class DecoderPrompt {
         else {
           notification.addAction(NotificationAction.create(text, (event, n) -> RemedyActions.perform(action, event.getProject(), source(event))));
         }
-      }
-      if (dismissible) {
-        HeifBackendStatus.Reason reason = remedy.reason();
-        notification.addAction(NotificationAction.createSimpleExpiring(
-          HeicBundle.message("remedy.action.dont.show.again"),
-          () -> PropertiesComponent.getInstance().setValue(DISMISSED_KEY_PREFIX + reason.name(), true)));
       }
     }
     // Not kept once it expired (e.g. "Check Again" in it was clicked).
@@ -148,15 +138,6 @@ public final class DecoderPrompt {
   private static @Nullable Component source(@Nullable AnActionEvent event) {
     InputEvent input = event != null ? event.getInputEvent() : null;
     return input != null ? input.getComponent() : null;
-  }
-
-  private static boolean isDismissed(HeifBackendStatus.Reason reason) {
-    try {
-      return PropertiesComponent.getInstance().getBoolean(DISMISSED_KEY_PREFIX + reason.name());
-    }
-    catch (RuntimeException | LinkageError e) {
-      return false;
-    }
   }
 
   /** Before the plugin is unloaded: expires the notifications and shows no new ones. */
