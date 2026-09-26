@@ -9,7 +9,6 @@ import cn.yooss.heic.mac.jna.JnaMacApi;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InterruptedIOException;
 import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
@@ -17,10 +16,9 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Decodes HEIC/HEIF files into {@link BufferedImage}s with macOS ImageIO.framework.
  * <p>
- * ImageIO.framework picks the codec by content, so only HEIF data may reach it, whoever the caller is (the image
- * reader, whatever way it was looked up, or the thumbnail icons): {@link HeifInput#check} rejects anything whose header
- * is not a HEIC/HEIF {@code ftyp} box (pure Java) and truncated files before any native call, and the image source must
- * report a HEIF-family type.
+ * ImageIO.framework picks the codec by content, so only HEIF data may reach it: {@link HeifInput#check} rejects anything
+ * whose header is not a HEIC/HEIF {@code ftyp} box (pure Java) and truncated files before any native call, and the image
+ * source must report a HEIF-family type.
  * <p>
  * Algorithm (see README): {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} ->
  * primary image -> properties -> {@code CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform,
@@ -35,8 +33,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
  * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
  * in {@code finally}), so the class is thread-safe; on Intel Macs the native part of the decodes runs on one thread at
- * a time ({@link #NATIVE_DECODE}: concurrent ImageIO decodes crashed the JVM in VideoToolbox). All failures, including
- * a missing native layer, surface as {@link IOException}; only {@link OutOfMemoryError} and other VM errors propagate.
+ * a time ({@link #NATIVE_DECODE}). All failures, including a missing native layer, surface as {@link IOException}; only
+ * {@link OutOfMemoryError} and other VM errors propagate.
  */
 public final class HeicDecoder {
   /** Type identifiers of ImageIO.framework's ISO-BMFF image formats (the HEIF family). */
@@ -166,10 +164,8 @@ public final class HeicDecoder {
   /**
    * The most strips one decode draws when it draws in strips (the alpha-weighted downscaling, or {@link Session#render}
    * when the full-size bitmap cannot be allocated). A cropped view shares the decoded pixels only while ImageIO.framework
-   * keeps them cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), the
-   * thumbnail is a lazy image and every draw runs the whole HEIF decode again (about 1.1 s for a 1 kB file that declares
-   * 50362 x 12301, at any output size). Fewer, taller strips cost a larger native scratch buffer (1/8 of the image),
-   * next to ImageIO's cached copy of the whole image.
+   * keeps them cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), every
+   * draw runs the whole HEIF decode again. Fewer, taller strips cost a larger native scratch buffer (1/8 of the image).
    */
   static final int MAX_DRAWS = 8;
   /** Largest image with alpha that is downscaled alpha-weighted (64 MP), see {@link #isAlphaWeighted}. */
@@ -177,30 +173,15 @@ public final class HeicDecoder {
 
   /**
    * The gate of the native part of a decode on Intel Macs ({@link Bound#serialized}): one decode at a time per process,
-   * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source. Fair: a decode
-   * waits at most for those that asked before it.
+   * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source. ImageIO
+   * converts the pixels of every HEIC decode on the GPU (VideoToolbox's Metal pixel transfer), which is not reliable on
+   * Intel Macs while decodes overlap. The system property {@code heic.mac.serializeDecodes} ({@code true}/{@code false})
+   * overrides the default.
    * <p>
-   * ImageIO converts the pixels of every HEIC decode on the GPU, with VideoToolbox's Metal pixel transfer (the first
-   * decode loads the Metal driver, whatever the options; {@link #readInfo}, which is not gated, does not). On the GitHub
-   * macOS 15 Intel runner (a VM with Apple's paravirtualized GPU) that GPU work fails under load from concurrent decodes:
-   * decodes come out with other pixels (1-2 levels off, or without their colors) and the JVM crashes with SIGSEGV
-   * (address 0x20) or SIGFPE (integer division by zero) in {@code VTMetalTransferSession...} code, in every thread, and
-   * every process, that has a transfer in flight, even in a process that decodes on one thread. The load comes from the
-   * decoding threads, from ImageIO's own threads (grid images are transferred tile by tile on
-   * {@code com.apple.cmphoto.canvasTransferQueue}) and from other processes. Serializing the decodes of each process
-   * removes most of it: three processes decoding on eight threads each crashed in 7 of 45 runs of 90 s without the gate
-   * and in none of 48 with it (dev/0.2-vtcrash). Neither Apple silicon (an M4 Pro, and the paravirtualized GPU of the
-   * GitHub arm64 runner under the same load) nor ImageIO's private options against hardware decoding
-   * ({@code kCGImageSourceUseHardwareAcceleration}) or parallel decoding ({@code kCGImageSourceDisableParallelDecode})
-   * changed anything, so the gate is for Intel Macs only; the system property {@code heic.mac.serializeDecodes}
-   * ({@code true}/{@code false}) overrides that.
-   * <p>
-   * The plugin decodes on a few threads at most (two for the thumbnail icons, the image viewer, the two sides of a
-   * diff). A decode that does not overlap another costs the same; on the Intel runner, two threads decode about a third
-   * fewer images per second (6.7 instead of 10.3 of a mix of thumbnails and 2-megapixel images), and while the two
-   * thumbnail threads are busy a 12-megapixel viewer decode takes about 1.05 instead of 0.95 s (median). The Java side of
-   * a decode (copying the pixels into the Java image) runs outside the gate ({@link Session#render}), except for the
-   * images drawn in strips.
+   * A fair leaf lock: a decode waits at most for those that asked before it, and nothing else is locked while it is
+   * held. It is acquired uninterruptibly, so a thread whose interrupt flag is set still decodes. The Java side of a
+   * decode (copying the pixels into the Java image) runs outside it ({@link Session#render}), except for the images drawn
+   * in strips.
    */
   private static final ReentrantLock NATIVE_DECODE = new ReentrantLock(true);
 
@@ -292,19 +273,12 @@ public final class HeicDecoder {
     }
 
     /**
-     * Waits until no other decode is in its native part ({@link #NATIVE_DECODE}); left by {@link #leaveGate()} or
-     * {@link #close()}. Interruptible: an interrupted wait fails with an {@link InterruptedIOException} (the thread
-     * stays interrupted), e.g. when the thumbnail executor is shut down.
+     * Waits until no other decode is in its native part ({@link #NATIVE_DECODE}), ignoring interrupts; left by
+     * {@link #leaveGate()} or {@link #close()}.
      */
-    void enterGate() throws InterruptedIOException {
+    void enterGate() {
       if (!k.serialized) return;
-      try {
-        NATIVE_DECODE.lockInterruptibly();
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new InterruptedIOException("Interrupted while waiting for another HEIC decode");
-      }
+      NATIVE_DECODE.lock();
       gated = true;
     }
 
@@ -409,13 +383,8 @@ public final class HeicDecoder {
     /**
      * Draws {@code image} once into an sRGB 8-bit bitmap of its size (native memory), releases the image, its source and
      * the data (ImageIO.framework's decoded copy), and only then copies the bitmap into a new {@link BufferedImage}, in
-     * chunks of about {@code stripPixels} pixels.
-     * <p>
-     * One draw, because a draw of an image that ImageIO.framework could not cache (a malformed file) decodes the whole
-     * image again: drawn in eight strips, a 1 kB file declaring 50362 x 12301 took 8 s to decode (about a minute when
-     * the IDE was busy), drawn once 1 s, at any output size. For ordinary images the time is the same (48 MP: 230 ms,
-     * 134 MP: 490 ms on an M4 Pro), and the peak memory of the process is lower than with strips, because ImageIO's
-     * copy is freed before the Java image is allocated (48 MP: 680 instead of 725 MB, 134 MP: 1.76 instead of 1.90 GB).
+     * chunks of about {@code stripPixels} pixels. One draw, because a draw of an image that ImageIO.framework could not
+     * cache (a malformed file) decodes the whole image again; ImageIO's copy is freed before the Java image is allocated.
      * If the bitmap cannot be allocated, the image is drawn in strips instead ({@link #renderStrips}).
      */
     BufferedImage render(long image, boolean alpha, int stripPixels) throws IOException {

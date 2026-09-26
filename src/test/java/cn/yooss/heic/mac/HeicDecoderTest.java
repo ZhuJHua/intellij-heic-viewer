@@ -15,7 +15,6 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -84,7 +83,7 @@ class HeicDecoderTest {
     assertEquals(2, HeicDecoder.readInfo(Fixtures.bytes("multi.heic")).imageCount());
   }
 
-  /** Expected layouts of the quadrant fixture after orientation, verified against sips/Preview. */
+  /** Expected layouts of the quadrant fixture after orientation. */
   @ParameterizedTest
   @CsvSource(delimiter = '|', value = {
       "rgb_sips.heic     | 600x400 TL=red TR=green BL=blue BR=white marker=TL",
@@ -208,9 +207,8 @@ class HeicDecoderTest {
   }
 
   /**
-   * A full-size (or ImageIO-scaled) decode draws the image once, into a bitmap of its size: a draw of an image that
-   * ImageIO.framework could not cache (a malformed file whose {@code ispe} does not match the coded image) decodes the
-   * whole image again, so eight strips took eight times as long. The Java side still copies small chunks.
+   * A full-size (or ImageIO-scaled) decode draws the image once, into a bitmap of its size, whatever size the chunks the
+   * Java side copies.
    */
   @Test
   void aDecodeDrawsOnce() throws Throwable {
@@ -233,8 +231,7 @@ class HeicDecoderTest {
    */
   @Test
   void stripsWhenTheFullSizeBitmapCannotBeAllocated() throws Throwable {
-    // The strip plan: at most MAX_DRAWS strips, e.g. for the crafted file below at the size the old 64 MP budget gave
-    // it (3952x16187, which used to be 62 strips: about a minute when every draw decodes again).
+    // The strip plan: at most MAX_DRAWS strips, e.g. for a 3952x16187 image.
     int[] plan = HeicDecoder.stripPlan(3952, 16187, cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS);
     assertTrue((16187 + plan[0] - 1) / plan[0] <= HeicDecoder.MAX_DRAWS, "rows per strip " + plan[0]);
     assertEquals(cn.yooss.heic.backend.PixelPipeline.stripRows(3952, 16187, cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS),
@@ -258,9 +255,8 @@ class HeicDecoderTest {
   }
 
   /**
-   * Regression test of a crafted file (review finding A7): exif5_apple.heic, 1 kB, with an {@code ispe} of 50362 x 12301.
-   * ImageIO.framework decodes such an image again on every draw (about a second each on an M4 Pro), so it took about
-   * 8 s in eight strips (a minute when the IDE was busy). Drawn once, it takes about a second at any size.
+   * A file whose declared size ({@code ispe} 50362 x 12301, exif5_apple.heic otherwise) does not match its coded image,
+   * which ImageIO.framework decodes again on every draw, is drawn once.
    */
   @Test
   void malformedFileIsDrawnOnce() throws Throwable {
@@ -330,9 +326,8 @@ class HeicDecoderTest {
   }
 
   /**
-   * An image with alpha that is requested smaller is downscaled alpha-weighted, by the plugin rather than ImageIO's
-   * thumbnail scaler, which darkens the edges on some Macs (red at a quarter alpha: 128 on the GitHub runners). Also
-   * for thumbnails; the strip layout (at most MAX_DRAWS draws) does not change the pixels.
+   * An image with alpha that is requested smaller is downscaled alpha-weighted: the color under transparent pixels does
+   * not darken the edges. The strip layout (at most MAX_DRAWS draws) does not change the pixels.
    */
   @ParameterizedTest
   @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
@@ -469,11 +464,9 @@ class HeicDecoderTest {
   }
 
   /**
-   * Decodes on 16 threads give the pixels of a decode on one thread, within 2 levels per channel: on the macOS 15 Intel
-   * runner, ImageIO's GPU conversion sometimes takes another path while other processes (the other test JVMs) decode,
-   * e.g. 0xFF0000FF instead of 0xFF0000FE, even with the decodes serialized. (Unserialized, a concurrent decode of
-   * alpha_sips.heic there came out as 0x80FB0000 instead of 0x80F90202, and the JVM crashed in VideoToolbox moments
-   * later; see HeicDecoder.) All decodes have finished before the results are checked, so none runs into the next test.
+   * Decodes on 16 threads give the pixels of a decode on one thread: exactly on Apple silicon, within 2 levels per
+   * channel on Intel Macs, where ImageIO's GPU conversion may round differently while other processes decode. All
+   * decodes have finished before the results are checked.
    */
   @Test
   void concurrentDecodesAreIdentical() throws Exception {
@@ -495,15 +488,26 @@ class HeicDecoderTest {
       pool.shutdownNow();
       assertTrue(pool.awaitTermination(120, TimeUnit.SECONDS), "decodes still running");
     }
+    int tolerance = isIntel() ? 2 : 0;
     for (int i = 0; i < results.size(); i++) {
+      String name = names[i % names.length];
       int[] want = expected.get(i % names.length), got = results.get(i);
-      assertEquals(want.length, got.length, names[i % names.length]);
+      if (tolerance == 0) {
+        assertArrayEquals(want, got, name);
+        continue;
+      }
+      assertEquals(want.length, got.length, name);
       for (int p = 0; p < want.length; p++) {
-        if (maxChannelDifference(want[p], got[p]) > 2) {
-          assertEquals(String.format("%08X", want[p]), String.format("%08X", got[p]), names[i % names.length] + " pixel " + p);
+        if (maxChannelDifference(want[p], got[p]) > tolerance) {
+          assertEquals(String.format("%08X", want[p]), String.format("%08X", got[p]), name + " pixel " + p);
         }
       }
     }
+  }
+
+  private static boolean isIntel() {
+    String arch = System.getProperty("os.arch");
+    return arch.equals("x86_64") || arch.equals("amd64");
   }
 
   private static int maxChannelDifference(int a, int b) {
@@ -540,16 +544,14 @@ class HeicDecoderTest {
   }
 
   /**
-   * Serialized, one decode at a time is in its native part, for every kind of decode: full size, scaled by ImageIO,
-   * alpha-weighted (drawn in strips) and embedded thumbnails; only the Java side (copying the pixels) runs in parallel.
-   * Not serialized, the same decodes do overlap (so the test can tell); not on Intel Macs, where concurrent decodes are
-   * what crashed the JVM.
+   * Serialized, one decode at a time is in its native part, for every kind of decode: full size, scaled by ImageIO and
+   * alpha-weighted (drawn in strips); only the Java side (copying the pixels) runs in parallel. Not serialized, the same
+   * decodes do overlap (so the test can tell); that variant runs on Apple silicon only.
    */
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   void serializedNativeDecodesNeverOverlap(boolean serialized) throws Exception {
-    assumeTrue(serialized || !HeicDecoder.serializeByDefault(System.getProperty("os.arch"), null),
-               "unserialized concurrent decodes are not run on Intel Macs");
+    assumeTrue(serialized || !isIntel(), "unserialized concurrent decodes run on Apple silicon only");
     AtomicInteger inside = new AtomicInteger();
     AtomicInteger maxInside = new AtomicInteger();
     AtomicInteger copies = new AtomicInteger();
@@ -610,10 +612,7 @@ class HeicDecoderTest {
     assertFalse(HeicDecoder.isInNativeDecode());
   }
 
-  /**
-   * Decodes are serialized on Intel Macs, where concurrent ImageIO decodes crashed the JVM (see HeicDecoder), and not on
-   * Apple silicon, where they did not; the system property heic.mac.serializeDecodes overrides it.
-   */
+  /** Decodes are serialized on Intel Macs and not on Apple silicon; the system property heic.mac.serializeDecodes overrides it. */
   @Test
   void serializedOnIntelMacs() {
     assertTrue(HeicDecoder.serializeByDefault("x86_64", null));
@@ -621,19 +620,29 @@ class HeicDecoderTest {
     assertFalse(HeicDecoder.serializeByDefault("aarch64", null));
     assertTrue(HeicDecoder.serializeByDefault("aarch64", "true"));
     assertFalse(HeicDecoder.serializeByDefault("x86_64", "false"));
-    boolean intel = System.getProperty("os.arch").equals("x86_64") || System.getProperty("os.arch").equals("amd64");
     if (System.getProperty("heic.mac.serializeDecodes") == null) {
-      assertEquals(intel, new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi()).serialized);
+      assertEquals(isIntel(), new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi()).serialized);
     }
   }
 
   /**
-   * A decode waiting for the gate can be interrupted (the thumbnail executor is shut down when the plugin is unloaded):
-   * it fails with an InterruptedIOException and its thread stays interrupted; the running decode is not disturbed. A
-   * decode that fails inside the gate leaves it.
+   * A thread whose interrupt flag is set still decodes through the gate, also while it waits for another decode, and its
+   * flag stays set. A decode that fails inside the gate leaves it.
    */
   @Test
-  void waitingForTheGateIsInterruptible() throws Exception {
+  void interruptedThreadStillDecodes() throws Exception {
+    byte[] data = Fixtures.bytes("rgb_sips.heic");
+    int strip = cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS;
+    HeicDecoder.Bound serialized = new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi(), true);
+    Thread.currentThread().interrupt();
+    try {
+      assertEquals(600, HeicDecoder.decode(serialized, data, 0, strip).getWidth());
+      assertTrue(Thread.currentThread().isInterrupted(), "the interrupt flag is kept");
+    }
+    finally {
+      Thread.interrupted();
+    }
+
     CountDownLatch entered = new CountDownLatch(1);
     CountDownLatch proceed = new CountDownLatch(1);
     MacApi blocking = hooked((method, args) -> {
@@ -643,32 +652,36 @@ class HeicDecoderTest {
       }
       return PROCEED;
     });
-    byte[] data = Fixtures.bytes("rgb_sips.heic");
-    int strip = cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS;
-    HeicDecoder.Bound serialized = new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi(), true);
     ExecutorService pool = Executors.newFixedThreadPool(2);
     try {
       Future<BufferedImage> first = pool.submit(() -> HeicDecoder.decode(new HeicDecoder.Bound(blocking, true), data, 0, strip));
       assertTrue(entered.await(60, TimeUnit.SECONDS), "the first decode reached ImageIO");
 
       AtomicReference<Thread> waiter = new AtomicReference<>();
-      Future<Boolean> second = pool.submit(() -> {
+      Future<Integer> second = pool.submit(() -> {
         waiter.set(Thread.currentThread());
-        IOException e = assertThrows(IOException.class, () -> HeicDecoder.decode(serialized, data, 0, strip));
-        assertTrue(e instanceof InterruptedIOException, e.toString());
-        return Thread.currentThread().isInterrupted();
+        Thread.currentThread().interrupt();
+        try {
+          int width = HeicDecoder.decode(serialized, data, 0, strip).getWidth();
+          assertTrue(Thread.currentThread().isInterrupted(), "the interrupt flag is kept");
+          return width;
+        }
+        finally {
+          Thread.interrupted();
+        }
       });
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
       while (waiter.get() == null || !HeicDecoder.isWaitingForNativeDecode(waiter.get())) {
         assertTrue(System.nanoTime() < deadline, "the second decode did not wait for the gate");
         Thread.sleep(1);
       }
-      waiter.get().interrupt();
-      assertTrue(second.get(60, TimeUnit.SECONDS), "the thread stays interrupted");
-      assertFalse(first.isDone(), "the first decode is still in ImageIO");
+      waiter.get().interrupt(); // interrupted again while waiting
+      Thread.sleep(50);
+      assertFalse(second.isDone(), "still waiting for the first decode");
 
       proceed.countDown();
       assertEquals(600, first.get(60, TimeUnit.SECONDS).getWidth());
+      assertEquals(600, second.get(60, TimeUnit.SECONDS));
 
       // ImageIO returns no image: the decode fails inside the gate and leaves it.
       MacApi failing = hooked((method, args) -> method.equals("cgImageSourceCreateThumbnailAtIndex") ? (Object) 0L : PROCEED);

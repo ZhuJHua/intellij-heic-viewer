@@ -331,10 +331,8 @@ testJdk17.configure {
 }
 tasks.check { dependsOn(testJdk21, testJdk17) }
 
-// On Intel Macs the test JVMs take turns instead of running in parallel. ImageIO converts the pixels of every HEIC decode
-// on the GPU, and on the GitHub macOS 15 Intel runner (a VM with a paravirtualized GPU) that work fails under load from
-// concurrent decodes of several processes: a test JVM crashed in VideoToolbox during a single-threaded test while the
-// other two decoded, although HeicDecoder serializes the decodes within each process (see there).
+// On Intel Macs the test JVMs run one at a time: ImageIO's GPU conversion is not reliable there while several processes
+// decode (HeicDecoder serializes the decodes within one process).
 abstract class IntelMacDecoderTests : BuildService<BuildServiceParameters.None>
 if (System.getProperty("os.name").lowercase().startsWith("mac") && System.getProperty("os.arch") in setOf("x86_64", "amd64")) {
     val oneTestJvm = gradle.sharedServices.registerIfAbsent("intelMacDecoderTests", IntelMacDecoderTests::class) {
