@@ -88,7 +88,6 @@ class LibheifHeifBackendTest {
     IOException e = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
     assertTrue(e.getMessage().contains("LINUX_LIBHEIF_MISSING"), e.getMessage());
     assertThrows(IOException.class, () -> backend.readInfo(Fixtures.bytes("rgb_sips.heic")));
-    assertThrows(IOException.class, () -> backend.decodeThumbnail(Fixtures.bytes("rgb_sips.heic"), 64));
     assertEquals(Reason.LINUX_LIBHEIF_MISSING, backend.recheckStatus().reason());
   }
 

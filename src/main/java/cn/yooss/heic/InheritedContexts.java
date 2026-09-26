@@ -16,28 +16,22 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Releases the plugin class loader from threads that merely inherited it, right before the plugin is unloaded
+ * Releases the plugin class loader from threads that inherited it, right before the plugin is unloaded
  * ({@link HeicDynamicPluginListener#beforePluginUnload}).
  * <p>
- * <b>Why.</b> On Java 17-23 (IntelliJ 2024.1 on JBR 17, 2024.2-2025.3 on JBR 21) every new thread stores the
- * {@code AccessControlContext} of the code that created it: the {@code ProtectionDomain} of every class on the creating
- * stack, and a plugin class's domain references the plugin class loader. The thread keeps that context, and so the
- * class loader, for as long as it lives. Threads are created in plugin code far more often than it seems: submitting
- * work to the IDE's application pool starts a pool thread when none is idle (for example the decoder check that
- * {@code appFrameCreated} submits early during startup, or a thumbnail decode), and so do coroutine dispatches, timers
- * and JNA. {@code Executors.privilegedThreadFactory()}, which the application pool uses, does not help: it runs the tasks
- * with its own context, but the thread still stores its creator's. Such a pool thread lives until it has been idle for a
- * minute, and an unload in that time failed with "class loader cannot be unloaded" (reproduced on IntelliJ IDEA 2024.1.7:
- * the IDE's memory snapshot shows {@code Thread.inheritedAccessControlContext} -> {@code ProtectionDomain} ->
- * {@code PluginClassLoader}).
+ * On Java 17-23 every new thread stores the {@code AccessControlContext} of the code that created it: the
+ * {@code ProtectionDomain} of every class on the creating stack, and a plugin class's domain references the plugin class
+ * loader. The thread keeps that context, and so the class loader, for as long as it lives. Plugin code creates threads
+ * indirectly, e.g. a task submitted to the IDE's application pool starts a pool thread when none is idle.
+ * {@code Executors.privilegedThreadFactory()}, which the application pool uses, runs the tasks with its own context,
+ * but the thread still stores its creator's.
  * <p>
- * <b>What.</b> {@link #release()} goes through all live threads and replaces an inherited context that contains a
- * domain of this plugin's class loader with the same context without those domains (a domain combiner, e.g. that of a
- * JAAS {@code Subject}, is kept). Without a security manager, which IntelliJ-based IDEs never install, nothing checks
- * these contexts; a thread of the application pool even runs every task with its factory's context. The contexts are
- * read through public API only (a {@link DomainCombiner} is handed the domains of a context); writing the field needs
- * {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which every IDE launcher passes (without it nothing is changed).
- * Java 24 and newer no longer have inherited access control contexts: nothing to do.
+ * {@link #release()} goes through all live threads and replaces an inherited context that contains a domain of this
+ * plugin's class loader with the same context without those domains (a domain combiner, e.g. that of a JAAS
+ * {@code Subject}, is kept). Without a security manager, which IntelliJ-based IDEs never install, nothing checks these
+ * contexts. The contexts are read through public API only (a {@link DomainCombiner} is handed the domains of a
+ * context); writing the field needs {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which every IDE launcher passes
+ * (without it nothing is changed). Java 24 and newer have no inherited access control contexts.
  */
 @SuppressWarnings("removal") // AccessController & co.: deprecated for removal since Java 17, gone in effect from Java 24
 public final class InheritedContexts {

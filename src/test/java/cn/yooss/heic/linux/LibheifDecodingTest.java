@@ -190,33 +190,11 @@ class LibheifDecodingTest {
                message);
   }
 
-  /** thumb_irot.heic has irot (portrait 400x600) and a 64x96 thumbnail, used when it is at least as large as requested. */
+  /** A file with an embedded thumbnail decodes to its primary image. */
   @Test
-  void embeddedThumbnail() throws IOException {
+  void primaryImageOfAFileWithAThumbnail() throws IOException {
     byte[] data = Fixtures.bytes("thumb_irot.heic");
-    assertEquals("thumbnail 64x96", decoder().thumbnailChoice(data, 64));
-    assertEquals("thumbnail 64x96", decoder().thumbnailChoice(data, 96));
-    assertEquals("primary", decoder().thumbnailChoice(data, 97));
-    BufferedImage small = backend().decodeThumbnail(data, 64);
-    assertEquals("43x64", small.getWidth() + "x" + small.getHeight());
-    String quadrants = "TL=blue TR=red BL=white BR=green"; // like rot90_irot.heic: the thumbnail's irot is applied
-    assertTrue(Fixtures.layout(small).contains(quadrants), Fixtures.layout(small));
-    BufferedImage large = backend().decodeThumbnail(data, 200);
-    assertEquals("133x200", large.getWidth() + "x" + large.getHeight());
-    assertTrue(Fixtures.layout(large).contains(quadrants), Fixtures.layout(large));
-    // decode() never uses the thumbnail
     assertEquals("400x600 TL=blue TR=red BL=white BR=green marker=TR", Fixtures.layout(backend().decode(data, 0)));
-  }
-
-  @Test
-  void thumbnailsWithoutEmbeddedThumbnail() throws IOException {
-    LibheifHeifBackend backend = TestLibheif.backend();
-    assertEquals("primary", decoder().thumbnailChoice(Fixtures.bytes("exif6_apple.heic"), 64));
-    BufferedImage portrait = backend.decodeThumbnail(Fixtures.bytes("exif6_apple.heic"), 64);
-    assertEquals("43x64", portrait.getWidth() + "x" + portrait.getHeight());
-    BufferedImage alpha = backend.decodeThumbnail(Fixtures.bytes("alpha_sips.heic"), 32);
-    assertEquals(BufferedImage.TYPE_INT_ARGB, alpha.getType());
-    assertEquals("32x24", alpha.getWidth() + "x" + alpha.getHeight());
   }
 
   @Test
@@ -236,36 +214,32 @@ class LibheifDecodingTest {
   void libheifErrorsBecomeIOExceptions() {
     byte[] full = Fixtures.bytes("rgb_libheif.heic");
     byte[] ftypOnly = Arrays.copyOf(full, 32);
-    LibheifException e = assertThrows(LibheifException.class, () -> decoder().decode(ftypOnly, 0, false));
+    LibheifException e = assertThrows(LibheifException.class, () -> decoder().decode(ftypOnly, 0));
     assertTrue(e.getMessage().startsWith("heif_context_read_from_memory_without_copy failed: "), e.getMessage());
   }
 
   /**
-   * A primary image above the decode limit ({@link LibheifDecoder#MAX_DECODE_SIDE} squared pixels, made small here) is
-   * not decoded: libheif would build it at full size in native memory. The declared size is checked in Java, and libheif
-   * checks the image it builds, so that a small declared size ({@code ispe}) cannot get around the limit. Reading the
-   * size and embedded thumbnails are not limited.
+   * An image above the decode limit ({@link LibheifDecoder#MAX_DECODE_SIDE} squared pixels, made small here) is not
+   * decoded, also when its declared size ({@code ispe}) is small; reading the size is not limited.
    */
   @Test
   void imagesAboveTheDecodeLimitAreNotDecoded() throws IOException {
     Libheif lib = TestLibheif.backend().library();
     byte[] grid = Fixtures.bytes("grid_libheif.heic"); // 600x400, a grid of 128x128 tiles
-    IOException tooLarge = assertThrows(IOException.class, () -> new LibheifDecoder(lib, 256).decode(grid, 0, false));
+    IOException tooLarge = assertThrows(IOException.class, () -> new LibheifDecoder(lib, 256).decode(grid, 0));
     assertTrue(tooLarge.getMessage().contains("too large to decode"), tooLarge.getMessage());
     assertEquals("600x400", size(new LibheifDecoder(lib, 256).readInfo(grid)));
-    BufferedImage fits = new LibheifDecoder(lib, 1024).decode(grid, 0, false);
+    BufferedImage fits = new LibheifDecoder(lib, 1024).decode(grid, 0);
     assertEquals("600x400", fits.getWidth() + "x" + fits.getHeight());
-    byte[] withThumbnail = Fixtures.bytes("thumb_irot.heic"); // 400x600 with a 64x96 thumbnail
-    assertEquals("43x64", size(new LibheifDecoder(lib, 16).decode(withThumbnail, 64, true)));
 
     assumeTrue(lib.canLimitDecodeSize(), "libheif " + lib.version() + " has no heif_context_set_maximum_image_size_limit");
     byte[] claimsSmall = TestLibheif.withIspe(grid, 600, 400, 64, 64); // the grid says 64x64, its canvas is still 600x400
     assertEquals("64x64", size(new LibheifDecoder(lib, 256).readInfo(claimsSmall)));
-    LibheifException limited = assertThrows(LibheifException.class, () -> new LibheifDecoder(lib, 256).decode(claimsSmall, 0, false));
+    LibheifException limited = assertThrows(LibheifException.class, () -> new LibheifDecoder(lib, 256).decode(claimsSmall, 0));
     assertEquals(6, limited.code(), limited.getMessage()); // heif_error_Memory_allocation_error
     assertEquals(1000, limited.subcode(), limited.getMessage()); // heif_suberror_Security_limit_exceeded
     try {
-      new LibheifDecoder(lib, 1024).decode(claimsSmall, 0, false); // decodes with some versions, others refuse the ispe
+      new LibheifDecoder(lib, 1024).decode(claimsSmall, 0); // decodes with some versions, others refuse the ispe
     }
     catch (LibheifException e) {
       assertNotEquals(1000, e.subcode(), "not the limit: " + e.getMessage());

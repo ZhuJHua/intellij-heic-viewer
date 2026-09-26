@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -74,9 +73,6 @@ final class Libheif {
   private final Function handleHeight;
   private final Function handleHasAlpha;
   private final Function handleLumaBits;
-  private final Function handleNumberOfThumbnails;
-  private final Function handleThumbnailIds;
-  private final Function handleThumbnail;
   private final Function handleRawColorProfileSize;
   private final Function handleRawColorProfile;
   private final Function decodeImage;
@@ -113,9 +109,6 @@ final class Libheif {
     handleHeight = function("heif_image_handle_get_height");
     handleHasAlpha = function("heif_image_handle_has_alpha_channel");
     handleLumaBits = function("heif_image_handle_get_luma_bits_per_pixel");
-    handleNumberOfThumbnails = function("heif_image_handle_get_number_of_thumbnails");
-    handleThumbnailIds = function("heif_image_handle_get_list_of_thumbnail_IDs");
-    handleThumbnail = function("heif_image_handle_get_thumbnail");
     handleRawColorProfileSize = function("heif_image_handle_get_raw_color_profile_size");
     handleRawColorProfile = function("heif_image_handle_get_raw_color_profile");
     decodeImage = function("heif_decode_image");
@@ -358,24 +351,6 @@ final class Libheif {
   /** Bits per luma sample as stored, or -1 if unknown. */
   int lumaBitsPerPixel(long handle) {
     return handleLumaBits.invokeInt(new Object[]{handle});
-  }
-
-  /** Item ids of the thumbnails of the image {@code handle}. */
-  int @NotNull [] thumbnailIds(long handle) {
-    int count = handleNumberOfThumbnails.invokeInt(new Object[]{handle});
-    if (count <= 0) return new int[0];
-    int[] ids = new int[Math.min(count, 64)];
-    int n = handleThumbnailIds.invokeInt(new Object[]{handle, ids, ids.length});
-    return n >= ids.length ? ids : Arrays.copyOf(ids, Math.max(0, n));
-  }
-
-  /** {@code heif_image_handle_get_thumbnail}: a handle that must be {@linkplain #release released}. */
-  long thumbnail(long handle, int thumbnailId) throws LibheifException {
-    long[] thumbnail = new long[1];
-    LibheifException.check(handleThumbnail.invokeLong(new Object[]{handle, thumbnailId, thumbnail}),
-                           "heif_image_handle_get_thumbnail");
-    if (thumbnail[0] == 0) throw new LibheifException("heif_image_handle_get_thumbnail", 0, 0);
-    return thumbnail[0];
   }
 
   /** The raw ICC profile ({@code colr} box of type {@code prof} or {@code rICC}), or {@code null}. */

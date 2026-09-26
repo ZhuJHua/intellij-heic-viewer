@@ -22,16 +22,9 @@
          type, like the bundled WebP support). -->
     <fileType name="Image" extensions="heic;heif;hif;heics"/>
 
-    <advancedSetting id="heic.viewer.project.view.thumbnails" default="true" bundle="messages.HeicBundle"
-                     groupKey="group.advanced.settings.heic"/>
     <!-- Linux only (os="linux": not registered elsewhere): a libheif.so.1 outside the dynamic linker's search path. -->
     <advancedSetting id="heic.viewer.libheif.path" default="" os="linux" bundle="messages.HeicBundle"
                      groupKey="group.advanced.settings.heic"/>
-
-    <!-- Thumbnail icons for HEIC files. order="first": it only answers for local HEIC files whose thumbnail is
-         ready (null otherwise), and must not be preempted by a generic provider. Decoding happens on the plugin's
-         own bounded executor, never in getIcon. -->
-    <fileIconProvider implementation="cn.yooss.heic.thumbnail.HeicThumbnailIconProvider" order="first"/>
 
     <!-- Registers the javax.imageio reader in the command-line diff and merge starters (`studio diff a.heic b.heic`
          while the IDE is not running), which never fire appFrameCreated: asked before an image viewer is created for
@@ -40,7 +33,7 @@
 
     <!-- When the system decoder is unavailable (e.g. the Windows HEIF/HEVC extensions or the Linux libheif packages
          are missing), the user is told where a HEIC image fails to load, with the remedy (package cn.yooss.heic.ui):
-         a banner above the HEIC image editor, and for the diff viewer and the thumbnail icons one balloon per session
+         a banner above the HEIC image editor, and for the diff viewer one balloon per session
          (also right after installing the plugin); "Check Again" and the results are balloons too. Never probes the
          decoder on the EDT. -->
     <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
@@ -59,11 +52,6 @@
          unload). -->
     <listener class="cn.yooss.heic.HeicAppLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
     <listener class="cn.yooss.heic.HeicDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
-    <!-- Thumbnail icons: apply a toggled setting to icons already shown; refresh icons of HEIC files changed on disk. -->
-    <listener class="cn.yooss.heic.thumbnail.HeicThumbnailSettingsListener"
-              topic="com.intellij.openapi.options.advanced.AdvancedSettingsChangeListener"/>
-    <listener class="cn.yooss.heic.thumbnail.HeicThumbnailFileListener"
-              topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
     <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action (a Store page, a
          copied install command); a volatile read otherwise. -->
     <listener class="cn.yooss.heic.ui.HeicActivationListener"

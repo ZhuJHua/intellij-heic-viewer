@@ -1,6 +1,8 @@
 package cn.yooss.heic.linux;
 
 import cn.yooss.heic.Fixtures;
+import cn.yooss.heic.backend.jna.JnaLibraries;
+import com.sun.jna.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -53,10 +55,14 @@ class LibheifAbiTest {
     }
   }
 
-  /** A thumbnail id that does not exist: an error whose subcode is far above the 16-bit range of a code. */
+  /**
+   * {@code heif_image_handle_get_thumbnail} with an item id that does not exist: an error whose subcode is far above the
+   * range of a code.
+   */
   @Test
   void missingItemHasCodeAndSubcode() throws IOException {
     Libheif lib = lib();
+    Function getThumbnail = JnaLibraries.open(lib.source).getFunction("heif_image_handle_get_thumbnail");
     byte[] data = Fixtures.bytes("rgb_libheif.heic");
     long memory = Libheif.copyToNative(data);
     long context = lib.contextAlloc();
@@ -65,7 +71,9 @@ class LibheifAbiTest {
       lib.readFromMemoryWithoutCopy(context, memory, data.length);
       handle = lib.primaryImageHandle(context);
       long primary = handle;
-      LibheifException e = assertThrows(LibheifException.class, () -> lib.thumbnail(primary, 12345));
+      long[] thumbnail = new long[1];
+      LibheifException e = assertThrows(LibheifException.class, () -> LibheifException.check(
+        getThumbnail.invokeLong(new Object[]{primary, 12345, thumbnail}), "heif_image_handle_get_thumbnail"));
       System.out.println("missing item: " + e.getMessage());
       assertTrue(e.code() == 2 || e.code() == 5, e.getMessage()); // Invalid_input or Usage_error
       assertEquals(2000, e.subcode(), e.getMessage()); // Nonexisting_item_referenced

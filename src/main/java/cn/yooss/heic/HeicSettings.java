@@ -7,8 +7,6 @@ import com.intellij.openapi.options.advanced.AdvancedSettings;
  * {@code messages/HeicBundle.properties}).
  */
 public final class HeicSettings {
-  /** Boolean: show thumbnails as the icons of HEIC files (project view, editor tabs, ...). */
-  public static final String PROJECT_VIEW_THUMBNAILS = "heic.viewer.project.view.thumbnails";
   /**
    * String, registered on Linux only: the {@code libheif.so.1} (or the directory that contains it) to use instead of
    * the system's; empty for the system's. Read by every availability probe (IDE start, "Check Again").
@@ -16,11 +14,6 @@ public final class HeicSettings {
   public static final String LIBHEIF_PATH = "heic.viewer.libheif.path";
 
   private HeicSettings() {
-  }
-
-  /** Whether HEIC files are shown with a thumbnail icon; {@code true} when the setting is unavailable. */
-  public static boolean projectViewThumbnails() {
-    return getBoolean(PROJECT_VIEW_THUMBNAILS, true);
   }
 
   /** The configured libheif location (Linux), trimmed; empty for the system's libheif or when the setting is unavailable. */

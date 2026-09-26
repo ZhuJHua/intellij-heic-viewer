@@ -71,39 +71,26 @@ public final class HeicDecoder {
    */
   public static BufferedImage decode(byte[] data, int maxPixelSize) throws IOException {
     if (maxPixelSize < 0) throw new IllegalArgumentException("maxPixelSize must be >= 0: " + maxPixelSize);
-    return decode(data, maxPixelSize, false, PixelPipeline.STRIP_PIXELS);
-  }
-
-  /**
-   * Fast, small preview of the primary image (orientation applied): uses the thumbnail embedded in the file when
-   * there is one, otherwise decodes and downscales the image. Intended for icons/thumbnails, not for viewing:
-   * the result may be smaller than {@code maxPixelSize} when the embedded thumbnail is smaller.
-   *
-   * @param maxPixelSize maximum length of the longer side of the result, {@code > 0}
-   */
-  public static BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    if (maxPixelSize <= 0) throw new IllegalArgumentException("maxPixelSize must be > 0: " + maxPixelSize);
-    return decode(data, maxPixelSize, true, PixelPipeline.STRIP_PIXELS);
+    return decode(data, maxPixelSize, PixelPipeline.STRIP_PIXELS);
   }
 
   /** @param stripPixels pixels rendered per strip (tests use other values to compare strip layouts) */
-  static BufferedImage decode(byte[] data, int maxPixelSize, boolean allowEmbeddedThumbnail, int stripPixels) throws IOException {
-    return decode(bound(), data, maxPixelSize, allowEmbeddedThumbnail, stripPixels);
+  static BufferedImage decode(byte[] data, int maxPixelSize, int stripPixels) throws IOException {
+    return decode(bound(), data, maxPixelSize, stripPixels);
   }
 
   /** @param bound the binding (tests wrap the real one to count native calls) */
-  static BufferedImage decode(Bound bound, byte[] data, int maxPixelSize, boolean allowEmbeddedThumbnail, int stripPixels)
-    throws IOException {
+  static BufferedImage decode(Bound bound, byte[] data, int maxPixelSize, int stripPixels) throws IOException {
     HeifInput.check(data);
     try (Session session = new Session(bound)) {
       session.enterGate();
       session.open(data);
       HeifImageInfo info = session.info();
       if (isAlphaWeighted(info, maxPixelSize)) {
-        long image = session.createThumbnail(thumbnailSide(info, 0), false); // full size, like the image viewer's decode
+        long image = session.createThumbnail(thumbnailSide(info, 0)); // full size
         return session.renderAlphaWeighted(image, maxPixelSize, stripPixels);
       }
-      long image = session.createThumbnail(thumbnailSide(info, maxPixelSize), allowEmbeddedThumbnail);
+      long image = session.createThumbnail(thumbnailSide(info, maxPixelSize));
       return session.render(image, info.hasAlpha(), stripPixels);
     }
     catch (RuntimeException | LinkageError e) {
@@ -248,7 +235,6 @@ public final class HeicDecoder {
     final long kCGImageSourceShouldCache;
     final long kCGImageSourceShouldCacheImmediately;
     final long kCGImageSourceCreateThumbnailFromImageAlways;
-    final long kCGImageSourceCreateThumbnailFromImageIfAbsent;
     final long kCGImageSourceCreateThumbnailWithTransform;
     final long kCGImageSourceThumbnailMaxPixelSize;
     final long kCGImagePropertyPixelWidth;
@@ -270,7 +256,6 @@ public final class HeicDecoder {
       kCGImageSourceShouldCache = imageIO("kCGImageSourceShouldCache");
       kCGImageSourceShouldCacheImmediately = imageIO("kCGImageSourceShouldCacheImmediately");
       kCGImageSourceCreateThumbnailFromImageAlways = imageIO("kCGImageSourceCreateThumbnailFromImageAlways");
-      kCGImageSourceCreateThumbnailFromImageIfAbsent = imageIO("kCGImageSourceCreateThumbnailFromImageIfAbsent");
       kCGImageSourceCreateThumbnailWithTransform = imageIO("kCGImageSourceCreateThumbnailWithTransform");
       kCGImageSourceThumbnailMaxPixelSize = imageIO("kCGImageSourceThumbnailMaxPixelSize");
       kCGImagePropertyPixelWidth = imageIO("kCGImagePropertyPixelWidth");
@@ -409,10 +394,9 @@ public final class HeicDecoder {
       }
     }
 
-    long createThumbnail(int maxPixelSize, boolean allowEmbeddedThumbnail) throws IOException {
+    long createThumbnail(int maxPixelSize) throws IOException {
       long options = dictionary(
-          allowEmbeddedThumbnail ? k.kCGImageSourceCreateThumbnailFromImageIfAbsent
-                                 : k.kCGImageSourceCreateThumbnailFromImageAlways, Boolean.TRUE,
+          k.kCGImageSourceCreateThumbnailFromImageAlways, Boolean.TRUE,
           k.kCGImageSourceCreateThumbnailWithTransform, Boolean.TRUE,
           k.kCGImageSourceThumbnailMaxPixelSize, (long) maxPixelSize,
           k.kCGImageSourceShouldCacheImmediately, Boolean.TRUE);

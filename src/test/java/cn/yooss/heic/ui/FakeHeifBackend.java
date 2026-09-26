@@ -99,9 +99,4 @@ final class FakeHeifBackend implements HeifBackend {
   public @NotNull BufferedImage decode(byte[] data, int maxPixelSize) throws IOException {
     throw new IOException("fake backend: " + status());
   }
-
-  @Override
-  public @NotNull BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    throw new IOException("fake backend: " + status());
-  }
 }

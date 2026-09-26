@@ -13,12 +13,12 @@ import java.io.IOException;
  * {@link cn.yooss.heic.backend.jna.JnaLibraries} for the rules that keep the plugin unloadable).
  * <p>
  * {@link HeifBackends#current()} picks the implementation for the running OS. Everything outside the backend packages
- * (the {@code javax.imageio} reader, the thumbnails, the registration and the install prompt) only uses this interface.
+ * (the {@code javax.imageio} reader, the registration and the install prompt) only uses this interface.
  * <p>
  * <b>Contract</b> (checked by {@code HeifBackendContractTest} on every OS where the backend is available; extend
  * {@link AbstractHeifBackend}, which implements the OS-independent parts):
  * <ul>
- *   <li>Implementations are thread-safe; decodes may run concurrently (image editor, diff, two thumbnail threads).</li>
+ *   <li>Implementations are thread-safe; decodes may run concurrently (image editor, diff).</li>
  *   <li>Constructing a backend and calling {@link #id()} / {@link #displayName()} never loads native code.
  *   {@link #status()} probes once and caches the result (see {@link AbstractHeifBackend}); the probe may load native
  *   libraries but must be fast (a few milliseconds, at most ~50 ms): it runs while the IDE starts.</li>
@@ -87,15 +87,6 @@ public interface HeifBackend {
   default long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
     return HeapCost.simple(info, maxPixelSize);
   }
-
-  /**
-   * Fast, small preview of the primary image for icons (orientation applied): may use the thumbnail embedded in the
-   * file, so the result may be smaller than requested, but its longer side is never larger than {@code maxPixelSize}
-   * (rounding by one pixel is tolerated).
-   *
-   * @param maxPixelSize maximum length of the longer side of the result, {@code > 0}
-   */
-  @NotNull BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException;
 
   /**
    * Releases native resources before the plugin is unloaded (called once, from {@code beforePluginUnload}). Decoding

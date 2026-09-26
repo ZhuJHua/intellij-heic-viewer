@@ -241,7 +241,7 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
 
   @Override
   protected @NotNull BufferedImage doDecode(byte[] data, int maxPixelSize) throws IOException {
-    return decoder().decode(data, maxPixelSize, false);
+    return decoder().decode(data, maxPixelSize);
   }
 
   /**
@@ -251,12 +251,6 @@ public final class LibheifHeifBackend extends AbstractHeifBackend {
   @Override
   public long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
     return HeapCost.simple(info, maxPixelSize) + HeapCost.planeReduction(info.width(), info.height(), maxPixelSize);
-  }
-
-  /** May decode a thumbnail stored in the file when it is large enough (see {@link LibheifDecoder}). */
-  @Override
-  protected @NotNull BufferedImage doDecodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    return decoder().decode(data, maxPixelSize, true);
   }
 
   private LibheifDecoder decoder() throws IOException {

@@ -27,8 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   the editor banners are updated (they were collected while the status was unknown and showed nothing).</li>
  *   <li>{@link #recheck}: "Check Again", and the automatic re-check when the IDE window is activated after the user
  *   clicked a remedy action (Microsoft Store, copied command, ...): forgets the cached status and probes again. If the
- *   decoder is now available, banners disappear, open HEIC editors reload and thumbnails are decoded again
- *   ({@link HeicViews#decoderBecameAvailable()}), so no restart is needed.</li>
+ *   decoder is now available, banners disappear and open HEIC editors reload ({@link HeicViews#decoderBecameAvailable()}),
+ *   so no restart is needed.</li>
  * </ul>
  * A normal start where the decoder is available (e.g. every macOS start) posts nothing to the EDT: on Java 17
  * (IntelliJ 2024.1) an EDT event created by plugin code while the IDE starts can keep the plugin class loader alive
@@ -119,7 +119,7 @@ public final class DecoderStatus {
    * After the reader has been registered: probes on a pooled thread (the result is logged, and the banners of HEIC
    * files that are already open are updated). {@code prompt} (the plugin was just installed or updated): a balloon also
    * tells right away when the decoder is missing. Otherwise the user is told where a HEIC image fails to load: the
-   * banner of the image editor, or one balloon per session for the diff viewer and the thumbnails.
+   * banner of the image editor, or one balloon per session for the diff viewer.
    */
   public static void checkInBackground(boolean prompt) {
     Application application = ApplicationManager.getApplication();

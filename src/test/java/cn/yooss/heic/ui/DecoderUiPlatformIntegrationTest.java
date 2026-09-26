@@ -65,7 +65,7 @@ import java.util.function.Function;
 /**
  * The decoder UI inside a light IDE (IntelliJ test framework, the {@code test} task only), with a {@link FakeHeifBackend}
  * standing in for the system decoder: the banner of HEIC image editors, the probe that never runs on the EDT, "Check
- * Again", the once-per-session balloon, the re-check on activation, and the diff and thumbnail hooks.
+ * Again", the once-per-session balloon, the re-check on activation, and the diff hook.
  */
 public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   private static final HeifBackendStatus HEIF_MISSING =
@@ -363,19 +363,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertEquals("dismissed", 0, notifications.size());
     DecoderPrompt.decodeUnavailable(HeifBackendStatus.unavailable(Reason.WINDOWS_HEVC_EXTENSION_MISSING, "test"), getProject());
     assertEquals("dismissed per reason", 1, notifications.size());
-  }
-
-  /**
-   * A thumbnail that fails because the decoder is missing shows the balloon (a file open in an editor is left to its
-   * banner: checked in a real IDE, the light test framework cannot open image editors).
-   */
-  public void testThumbnailBalloon() throws Exception {
-    use(FakeHeifBackend.probed(HEIF_MISSING));
-    VirtualFile shown = heicFile("project-view.heic");
-    DecoderPrompt.thumbnailUnavailable(HEIF_MISSING, shown);
-    assertEquals(1, notifications.size());
-    DecoderPrompt.thumbnailUnavailable(HEIF_MISSING, heicFile("another.heic"));
-    assertEquals("once per session", 1, notifications.size());
   }
 
   /** The platform collects banners by itself only for text editors: opening a HEIC file asks for its banner. */

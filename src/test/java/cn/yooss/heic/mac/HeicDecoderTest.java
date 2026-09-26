@@ -173,17 +173,6 @@ class HeicDecoderTest {
     assertEquals("200x300 TL=blue TR=red BL=white BR=green marker=TR", Fixtures.layout(image));
   }
 
-  @Test
-  void thumbnail() throws IOException {
-    BufferedImage portrait = HeicDecoder.decodeThumbnail(Fixtures.bytes("exif6_apple.heic"), 64);
-    assertTrue(portrait.getHeight() <= 64 && portrait.getHeight() > portrait.getWidth(),
-               "oriented portrait thumbnail, was " + portrait.getWidth() + "x" + portrait.getHeight());
-    BufferedImage alpha = HeicDecoder.decodeThumbnail(Fixtures.bytes("alpha_sips.heic"), 32);
-    assertEquals(BufferedImage.TYPE_INT_ARGB, alpha.getType());
-    assertTrue(Math.max(alpha.getWidth(), alpha.getHeight()) <= 32);
-    assertThrows(IllegalArgumentException.class, () -> HeicDecoder.decodeThumbnail(Fixtures.bytes("rgb_sips.heic"), 0));
-  }
-
   private static final int[] BAND_COLORS = {0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0x00FFFF, 0xFF00FF};
 
   /** 2000x1200 = 2.4 MP: drawn once, copied into the Java image in 3 chunks of 524 rows (2^20 pixels each). */
@@ -212,9 +201,9 @@ class HeicDecoderTest {
   @ValueSource(strings = {"bands_2000x1200.heic", "bands_exif6.heic", "alpha_sips.heic", "exif5_apple.heic"})
   void stripHeightDoesNotChangePixels(String name) throws IOException {
     byte[] data = Fixtures.bytes(name);
-    int[] single = pixels(HeicDecoder.decode(data, 0, false, Integer.MAX_VALUE));
+    int[] single = pixels(HeicDecoder.decode(data, 0, Integer.MAX_VALUE));
     for (int stripPixels : new int[]{1, 7 * 2000, 100_000, 1 << 20}) {
-      assertArrayEquals(single, pixels(HeicDecoder.decode(data, 0, false, stripPixels)), "strip pixels " + stripPixels);
+      assertArrayEquals(single, pixels(HeicDecoder.decode(data, 0, stripPixels)), "strip pixels " + stripPixels);
     }
   }
 
@@ -226,15 +215,15 @@ class HeicDecoderTest {
   @Test
   void aDecodeDrawsOnce() throws Throwable {
     byte[] data = Fixtures.bytes("bands_2000x1200.heic");
-    int[] expected = pixels(HeicDecoder.decode(data, 0, false, Integer.MAX_VALUE));
+    int[] expected = pixels(HeicDecoder.decode(data, 0, Integer.MAX_VALUE));
     for (int stripPixels : new int[]{1, 1000, 1 << 20}) {
       Counting counting = new Counting(0);
-      BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 0, false, stripPixels);
+      BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 0, stripPixels);
       assertEquals(1, counting.draws, "strip pixels " + stripPixels);
       assertArrayEquals(expected, pixels(image));
     }
     Counting scaled = new Counting(0);
-    assertEquals(500, HeicDecoder.decode(new HeicDecoder.Bound(scaled.api), data, 500, false, 1).getWidth());
+    assertEquals(500, HeicDecoder.decode(new HeicDecoder.Bound(scaled.api), data, 500, 1).getWidth());
     assertEquals(1, scaled.draws);
   }
 
@@ -263,9 +252,9 @@ class HeicDecoderTest {
     // pixel: 8 draws of 150 rows, copied row by row, pixels unchanged.
     byte[] data = Fixtures.bytes("bands_2000x1200.heic");
     Counting counting = new Counting(4L * 2000 * 1200);
-    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 0, false, 1);
+    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 0, 1);
     assertEquals(HeicDecoder.MAX_DRAWS, counting.draws);
-    assertArrayEquals(pixels(HeicDecoder.decode(data, 0, false, Integer.MAX_VALUE)), pixels(image));
+    assertArrayEquals(pixels(HeicDecoder.decode(data, 0, Integer.MAX_VALUE)), pixels(image));
   }
 
   /**
@@ -280,7 +269,7 @@ class HeicDecoderTest {
     assertEquals("12301x50362", info.width() + "x" + info.height(), "orientation 5 swaps the declared size");
     Counting counting = new Counting(0);
     long start = System.nanoTime();
-    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), crafted, 4096, false,
+    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), crafted, 4096,
                                              cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS);
     long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start);
     assertEquals(4096, image.getHeight());
@@ -298,7 +287,7 @@ class HeicDecoderTest {
   void undrawnPixelsAreNeverStaleMemory(int stripPixels) throws Throwable {
     byte[] crafted = Fixtures.withIspe(Fixtures.bytes("exif5_apple.heic"), 600, 400, 50362, 12301);
     Counting counting = new Counting(0, (byte) 0x5A);
-    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), crafted, 4096, false,
+    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), crafted, 4096,
                                              stripPixels == 0 ? cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS : 1 << 16);
     int stale = 0;
     for (int y = 0; y < image.getHeight(); y++) {
@@ -349,20 +338,17 @@ class HeicDecoderTest {
   @ValueSource(strings = {"alpha_libheif.heic", "alpha_sips.heic"})
   void downscaledAlphaIsAlphaWeighted(String name) throws Throwable {
     byte[] data = Fixtures.bytes(name);
-    for (BufferedImage image : new BufferedImage[]{HeicDecoder.decode(data, 90), HeicDecoder.decodeThumbnail(data, 90)}) {
-      assertEquals("90x68", image.getWidth() + "x" + image.getHeight());
-      assertEquals(BufferedImage.TYPE_INT_ARGB, image.getType());
-      int edge = image.getRGB(22, 34); // source columns 97.8 to 102.2: half transparent, half red at alpha 128
-      String message = name + ": " + Integer.toHexString(edge);
-      assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
-      // about 255 (0x40ef0404 on the GitHub runners, whose decoder gives the red a little green and blue); the old path
-      // gave 0x40800404 there and 0x44bf0000 on an M-series Mac
-      assertTrue(((edge >> 16) & 0xFF) >= 220 && ((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
-      assertEquals(0, image.getRGB(0, 0) >>> 24, "transparent corner");
-    }
+    BufferedImage image = HeicDecoder.decode(data, 90);
+    assertEquals("90x68", image.getWidth() + "x" + image.getHeight());
+    assertEquals(BufferedImage.TYPE_INT_ARGB, image.getType());
+    int edge = image.getRGB(22, 34); // source columns 97.8 to 102.2: half transparent, half red at alpha 128
+    String message = name + ": " + Integer.toHexString(edge);
+    assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
+    assertTrue(((edge >> 16) & 0xFF) >= 220 && ((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
+    assertEquals(0, image.getRGB(0, 0) >>> 24, "transparent corner");
 
     Counting counting = new Counting(0);
-    BufferedImage stripped = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 90, false, 1);
+    BufferedImage stripped = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), data, 90, 1);
     assertEquals(HeicDecoder.MAX_DRAWS, counting.draws);
     assertArrayEquals(pixels(HeicDecoder.decode(data, 90)), pixels(stripped));
   }
@@ -414,7 +400,6 @@ class HeicDecoderTest {
     byte[] data = Fixtures.bytes(name);
     assertThrows(IOException.class, () -> HeicDecoder.readInfo(data));
     assertThrows(IOException.class, () -> HeicDecoder.decode(data, 0));
-    assertThrows(IOException.class, () -> HeicDecoder.decodeThumbnail(data, 64));
   }
 
   /**
@@ -427,8 +412,7 @@ class HeicDecoderTest {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     assertTrue(ImageIO.write(Fixtures.png("rgb.png"), format, out), format);
     byte[] data = out.toByteArray();
-    for (Executable decode : List.<Executable>of(() -> HeicDecoder.readInfo(data), () -> HeicDecoder.decode(data, 0),
-                                                 () -> HeicDecoder.decodeThumbnail(data, 64))) {
+    for (Executable decode : List.<Executable>of(() -> HeicDecoder.readInfo(data), () -> HeicDecoder.decode(data, 0))) {
       IOException e = assertThrows(IOException.class, decode, format);
       assertEquals("Not a HEIC/HEIF file", e.getMessage(), format);
     }
@@ -597,17 +581,15 @@ class HeicDecoderTest {
     HeicDecoder.Bound bound = new HeicDecoder.Bound(api, serialized);
     byte[] bands = Fixtures.bytes("bands_2000x1200.heic");
     byte[] alpha = Fixtures.bytes("alpha_sips.heic");
-    byte[] thumb = Fixtures.bytes("thumb_irot.heic");
     int strip = cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS;
     ExecutorService pool = Executors.newFixedThreadPool(8);
     try {
       List<Future<BufferedImage>> futures = new ArrayList<>();
       for (int i = 0; i < 48; i++) {
-        int kind = i % 4;
-        futures.add(pool.submit(() -> kind == 0 ? HeicDecoder.decode(bound, bands, 0, false, strip)
-                                    : kind == 1 ? HeicDecoder.decode(bound, bands, 500, false, strip)
-                                    : kind == 2 ? HeicDecoder.decode(bound, alpha, 90, true, 1) // strips: cropped draws
-                                    : HeicDecoder.decode(bound, thumb, 64, true, strip)));
+        int kind = i % 3;
+        futures.add(pool.submit(() -> kind == 0 ? HeicDecoder.decode(bound, bands, 0, strip)
+                                    : kind == 1 ? HeicDecoder.decode(bound, bands, 500, strip)
+                                    : HeicDecoder.decode(bound, alpha, 90, 1))); // strips: cropped draws
       }
       for (Future<BufferedImage> future : futures) future.get(120, TimeUnit.SECONDS);
     }
@@ -666,13 +648,13 @@ class HeicDecoderTest {
     HeicDecoder.Bound serialized = new HeicDecoder.Bound(new cn.yooss.heic.mac.jna.JnaMacApi(), true);
     ExecutorService pool = Executors.newFixedThreadPool(2);
     try {
-      Future<BufferedImage> first = pool.submit(() -> HeicDecoder.decode(new HeicDecoder.Bound(blocking, true), data, 0, false, strip));
+      Future<BufferedImage> first = pool.submit(() -> HeicDecoder.decode(new HeicDecoder.Bound(blocking, true), data, 0, strip));
       assertTrue(entered.await(60, TimeUnit.SECONDS), "the first decode reached ImageIO");
 
       AtomicReference<Thread> waiter = new AtomicReference<>();
       Future<Boolean> second = pool.submit(() -> {
         waiter.set(Thread.currentThread());
-        IOException e = assertThrows(IOException.class, () -> HeicDecoder.decode(serialized, data, 0, false, strip));
+        IOException e = assertThrows(IOException.class, () -> HeicDecoder.decode(serialized, data, 0, strip));
         assertTrue(e instanceof InterruptedIOException, e.toString());
         return Thread.currentThread().isInterrupted();
       });
@@ -690,9 +672,9 @@ class HeicDecoderTest {
 
       // ImageIO returns no image: the decode fails inside the gate and leaves it.
       MacApi failing = hooked((method, args) -> method.equals("cgImageSourceCreateThumbnailAtIndex") ? (Object) 0L : PROCEED);
-      assertThrows(IOException.class, () -> HeicDecoder.decode(new HeicDecoder.Bound(failing, true), data, 0, false, strip));
+      assertThrows(IOException.class, () -> HeicDecoder.decode(new HeicDecoder.Bound(failing, true), data, 0, strip));
       assertFalse(HeicDecoder.isInNativeDecode(), "a failed decode leaves the gate");
-      assertEquals(600, pool.submit(() -> HeicDecoder.decode(serialized, data, 0, false, strip)).get(60, TimeUnit.SECONDS).getWidth());
+      assertEquals(600, pool.submit(() -> HeicDecoder.decode(serialized, data, 0, strip)).get(60, TimeUnit.SECONDS).getWidth());
     }
     finally {
       proceed.countDown();

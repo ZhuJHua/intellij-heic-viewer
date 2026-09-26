@@ -98,7 +98,6 @@ class HeifBackendsTest {
     IOException unavailable = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb_sips.heic"), 0));
     assertTrue(unavailable.getMessage().contains("UNSUPPORTED_OS"), unavailable.getMessage());
     assertThrows(IOException.class, () -> backend.readInfo(Fixtures.bytes("rgb_sips.heic")));
-    assertThrows(IOException.class, () -> backend.decodeThumbnail(Fixtures.bytes("rgb_sips.heic"), 64));
   }
 
   @Test

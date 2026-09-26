@@ -81,7 +81,7 @@ class PluginDescriptorTest {
       assertEquals("messages.HeicBundle", setting.getAttribute("bundle"));
       assertEquals("group.advanced.settings.heic", setting.getAttribute("groupKey"));
     }
-    assertEquals(new TreeSet<>(Set.of(HeicSettings.PROJECT_VIEW_THUMBNAILS, HeicSettings.LIBHEIF_PATH)), ids);
+    assertEquals(new TreeSet<>(Set.of(HeicSettings.LIBHEIF_PATH)), ids);
 
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
@@ -207,13 +207,13 @@ class PluginDescriptorTest {
       classes.add(name);
       Class.forName(name, false, getClass().getClassLoader());
     }
-    assertEquals(11, classes.size(), classes::toString);
+    assertEquals(8, classes.size(), classes::toString);
   }
 
   @Test
   void referencedClassesArePluginClasses() throws Exception {
     List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
-    assertEquals(11, classes.size(), classes::toString);
+    assertEquals(8, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
       assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);

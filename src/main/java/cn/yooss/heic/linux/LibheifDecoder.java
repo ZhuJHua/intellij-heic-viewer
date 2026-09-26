@@ -10,7 +10,6 @@ import org.jetbrains.annotations.Nullable;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
 import java.util.Locale;
 
 /**
@@ -30,21 +29,14 @@ import java.util.Locale;
  *   management ({@link PixelPipeline#convertToSrgb}); libheif itself only converts YCbCr to RGB (with the
  *   {@code nclx} matrix coefficients) and leaves the colors in the file's color space.</li>
  * </ol>
- * Thumbnails use a thumbnail embedded in the file ({@code thmb} reference) when one has the same orientation and aspect
- * ratio as the primary image and is at least as large as requested. A primary image above {@link #MAX_DECODE_SIDE}
- * squared pixels is not decoded (libheif would need gigabytes of native memory for it). Every native object is released in
- * {@code finally} blocks (images, handles, context, then the data). Thread-safe: every call has its own context.
+ * An image above {@link #MAX_DECODE_SIDE} squared pixels is not decoded. Every native object is released in
+ * {@code finally} blocks (image, handle, context, then the data). Thread-safe: every call has its own context.
  */
 final class LibheifDecoder {
-  /** An embedded thumbnail is used only if its aspect ratio differs by less than this from the primary image's. */
-  private static final double THUMBNAIL_ASPECT_TOLERANCE = 0.02;
   /**
-   * The largest primary image decoded: {@code MAX_DECODE_SIDE^2} pixels, about 268 MP. libheif decodes at full
-   * resolution in native memory (about 4.6 bytes per pixel with libheif 1.23, up to 6.2 with 1.17 grids, so up to about
-   * 1.2 to 1.7 GB), whatever size is shown, and neither the pixel budget nor the Java heap limit that; the thumbnails of
-   * a folder are decoded two at a time. Separate from the pixel budget ({@code DecodeLimits}), which only sizes the
-   * result. Checked in Java on the image's declared size and by libheif itself when it builds the image
-   * ({@link Libheif#limitDecodeSize}), so that a file whose declared size is small cannot get around it.
+   * The largest image decoded: {@code MAX_DECODE_SIDE^2} pixels (libheif decodes at full resolution in native memory).
+   * Checked on the declared size and by libheif itself when it builds the image ({@link Libheif#limitDecodeSize}),
+   * which also covers a file that declares a smaller size.
    */
   static final int MAX_DECODE_SIDE = 16385;
 
@@ -68,41 +60,21 @@ final class LibheifDecoder {
     }
   }
 
-  /**
-   * @param maxPixelSize        0 for full size, else the maximum length of the longer side
-   * @param useEmbeddedThumbnail whether a thumbnail stored in the file may be decoded instead of the primary image
-   */
-  @NotNull BufferedImage decode(byte[] data, int maxPixelSize, boolean useEmbeddedThumbnail) throws IOException {
+  /** @param maxPixelSize 0 for full size, else the maximum length of the longer side */
+  @NotNull BufferedImage decode(byte[] data, int maxPixelSize) throws IOException {
     try (Session session = new Session()) {
       session.open(data);
       int width = lib.width(session.primary);
       int height = lib.height(session.primary);
       checkSize(width, height);
-      boolean alpha = lib.hasAlpha(session.primary);
-      long source = session.primary;
-      if (useEmbeddedThumbnail && maxPixelSize > 0) {
-        long thumbnail = session.thumbnail(width, height, maxPixelSize);
-        if (thumbnail != 0) source = thumbnail;
+      long limit = (long) maxDecodeSide * maxDecodeSide;
+      if ((long) width * height > limit) {
+        throw new IOException(String.format(Locale.ROOT, "The image is too large to decode with libheif: %dx%d (%.0f "
+                                                         + "megapixels, at most %.0f)",
+                                            width, height, width * (double) height / 1e6, limit / 1e6));
       }
-      if (source == session.primary) {
-        long limit = (long) maxDecodeSide * maxDecodeSide;
-        if ((long) width * height > limit) {
-          throw new IOException(String.format(Locale.ROOT, "The image is too large to decode with libheif: %dx%d (%.0f "
-                                                           + "megapixels, at most %.0f; libheif decodes at full size)",
-                                              width, height, width * (double) height / 1e6, limit / 1e6));
-        }
-        lib.limitDecodeSize(session.context, maxDecodeSide); // the size libheif really builds (e.g. a grid's canvas)
-      }
-      return session.render(source, alpha, maxPixelSize);
-    }
-  }
-
-  /** Name of the decoded source for tests: {@code "thumbnail WxH"} or {@code "primary"}. */
-  @NotNull String thumbnailChoice(byte[] data, int maxPixelSize) throws IOException {
-    try (Session session = new Session()) {
-      session.open(data);
-      long thumbnail = session.thumbnail(lib.width(session.primary), lib.height(session.primary), maxPixelSize);
-      return thumbnail == 0 ? "primary" : "thumbnail " + lib.width(thumbnail) + "x" + lib.height(thumbnail);
+      lib.limitDecodeSize(session.context, maxDecodeSide); // the size libheif builds (e.g. a grid's canvas)
+      return session.render(lib.hasAlpha(session.primary), maxPixelSize);
     }
   }
 
@@ -116,12 +88,11 @@ final class LibheifDecoder {
     return new String(data, 8, 4, StandardCharsets.ISO_8859_1).trim();
   }
 
-  /** One decode: the native copy of the data, a context, handles and a decoded image, released in reverse order. */
+  /** One decode: the native copy of the data, a context, the primary image handle and a decoded image. */
   private final class Session implements AutoCloseable {
     private long memory;
     private long context;
     long primary;
-    private final ArrayDeque<Long> handles = new ArrayDeque<>();
     private long image;
 
     void open(byte[] data) throws IOException {
@@ -129,12 +100,7 @@ final class LibheifDecoder {
       context = lib.contextAlloc();
       if (context == 0) throw new IOException("heif_context_alloc failed");
       lib.readFromMemoryWithoutCopy(context, memory, data.length);
-      primary = own(lib.primaryImageHandle(context));
-    }
-
-    private long own(long handle) {
-      handles.push(handle);
-      return handle;
+      primary = lib.primaryImageHandle(context);
     }
 
     HeifImageInfo info(byte[] data) throws IOException {
@@ -148,42 +114,9 @@ final class LibheifDecoder {
                                lib.hasAlpha(primary));
     }
 
-    /**
-     * The smallest embedded thumbnail whose longer side is at least {@code min(maxPixelSize, longer side of the
-     * image)} and whose orientation and aspect ratio match the primary image ({@code width x height}, transformed),
-     * or 0.
-     */
-    long thumbnail(int width, int height, int maxPixelSize) throws IOException {
-      int[] ids = lib.thumbnailIds(primary);
-      if (ids.length == 0) return 0;
-      int needed = Math.min(maxPixelSize, Math.max(width, height));
-      double aspect = (double) width / height;
-      long best = 0;
-      int bestSide = Integer.MAX_VALUE;
-      for (int id : ids) {
-        long thumbnail;
-        try {
-          thumbnail = own(lib.thumbnail(primary, id));
-        }
-        catch (LibheifException e) {
-          continue; // a broken thumbnail reference: use another one or the primary image
-        }
-        int w = lib.width(thumbnail), h = lib.height(thumbnail);
-        if (w <= 0 || h <= 0) continue;
-        int side = Math.max(w, h);
-        boolean sameShape = Math.abs((double) w / h - aspect) <= THUMBNAIL_ASPECT_TOLERANCE * aspect;
-        if (sameShape && side >= needed && side < bestSide) {
-          best = thumbnail;
-          bestSide = side;
-        }
-      }
-      return best;
-    }
-
-    /** Decodes {@code handle} and converts it (see {@link PlaneConverter}); {@code alpha} is the result type's. */
-    BufferedImage render(long handle, boolean alpha, int maxPixelSize) throws IOException {
-      boolean decodeAlpha = handle == primary ? alpha : alpha && lib.hasAlpha(handle);
-      image = lib.decode(handle, decodeAlpha);
+    /** Decodes the primary image and converts it (see {@link PlaneConverter}). */
+    BufferedImage render(boolean alpha, int maxPixelSize) throws IOException {
+      image = lib.decode(primary, alpha);
       int width = lib.planeWidth(image);
       int height = lib.planeHeight(image);
       long[] stride = new long[1];
@@ -192,16 +125,15 @@ final class LibheifDecoder {
       if (width <= 0 || height <= 0) throw new IOException("Invalid decoded image size " + width + "x" + height);
       if (stride[0] <= 0 || stride[0] > Integer.MAX_VALUE / 2) throw new IOException("Invalid stride " + stride[0]);
       int rowBytes = (int) stride[0];
-      ByteLayout layout = decodeAlpha ? ByteLayout.RGBA : ByteLayout.RGB;
-      boolean premultiplied = decodeAlpha && lib.isPremultipliedAlpha(handle);
+      ByteLayout layout = alpha ? ByteLayout.RGBA : ByteLayout.RGB;
+      boolean premultiplied = alpha && lib.isPremultipliedAlpha(primary);
       BufferedImage result = PlaneConverter.convert(
         width, height, rowBytes, layout, premultiplied, alpha, maxPixelSize,
         (y0, rows, target) -> Libheif.read(plane + (long) y0 * rowBytes, target, rows * rowBytes));
       lib.releaseImage(image);
       image = 0;
 
-      byte[] icc = lib.iccProfile(handle);
-      if (icc == null && handle != primary) icc = lib.iccProfile(primary);
+      byte[] icc = lib.iccProfile(primary);
       if (icc != null) {
         try {
           PixelPipeline.convertToSrgb(result, icc);
@@ -217,11 +149,11 @@ final class LibheifDecoder {
     public void close() {
       try {
         lib.releaseImage(image);
-        while (!handles.isEmpty()) lib.release(handles.pop());
+        lib.release(primary);
         lib.contextFree(context);
       }
       finally {
-        Libheif.free(memory); // only after the context and every handle that may still read from it
+        Libheif.free(memory); // after the context and the handle, which read from it
       }
     }
   }

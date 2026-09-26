@@ -12,11 +12,10 @@ import java.io.IOException;
  * <ul>
  *   <li>{@link #status()} runs {@link #probe()} once and caches the result ({@link #recheckStatus()} probes again); an
  *   exception thrown by the probe becomes an {@link HeifBackendStatus.Reason#ERROR ERROR} status.</li>
- *   <li>{@link #readInfo}, {@link #decode} and {@link #decodeThumbnail} validate the arguments, pass the data through
- *   {@link HeifInput#check} (no other format and no truncated file reaches the system decoder), fail with an
- *   {@link IOException} while the backend is unavailable, then call {@link #doReadInfo} / {@link #doDecode} /
- *   {@link #doDecodeThumbnail}, and turn a {@link RuntimeException} or {@link LinkageError} of the native layer into
- *   an {@link IOException}.</li>
+ *   <li>{@link #readInfo} and {@link #decode} validate the arguments, pass the data through {@link HeifInput#check} (no
+ *   other format and no truncated file reaches the system decoder), fail with an {@link IOException} while the backend
+ *   is unavailable, then call {@link #doReadInfo} / {@link #doDecode}, and turn a {@link RuntimeException} or
+ *   {@link LinkageError} of the native layer into an {@link IOException}.</li>
  * </ul>
  */
 public abstract class AbstractHeifBackend implements HeifBackend {
@@ -39,14 +38,6 @@ public abstract class AbstractHeifBackend implements HeifBackend {
    * {@code maxPixelSize >= 0}.
    */
   protected abstract @NotNull BufferedImage doDecode(byte[] data, int maxPixelSize) throws IOException;
-
-  /**
-   * {@link #decodeThumbnail} after the checks ({@code maxPixelSize > 0}). The default decodes the primary image at the
-   * requested size; override it when the decoder can use the thumbnail embedded in the file.
-   */
-  protected @NotNull BufferedImage doDecodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    return doDecode(data, maxPixelSize);
-  }
 
   @Override
   public final @NotNull HeifBackendStatus status() {
@@ -100,22 +91,6 @@ public abstract class AbstractHeifBackend implements HeifBackend {
       throw nativeFailure(e);
     }
     if (image == null) throw new IOException(displayName() + " returned no image");
-    return image;
-  }
-
-  @Override
-  public final @NotNull BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    if (maxPixelSize <= 0) throw new IllegalArgumentException("maxPixelSize must be > 0: " + maxPixelSize);
-    HeifInput.check(data);
-    requireAvailable();
-    BufferedImage image;
-    try {
-      image = doDecodeThumbnail(data, maxPixelSize);
-    }
-    catch (RuntimeException | LinkageError e) {
-      throw nativeFailure(e);
-    }
-    if (image == null) throw new IOException(displayName() + " returned no thumbnail");
     return image;
   }
 

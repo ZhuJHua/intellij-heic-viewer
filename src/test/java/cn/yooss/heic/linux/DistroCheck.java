@@ -17,8 +17,8 @@ import java.util.Locale;
  *   none);</li>
  *   <li>{@code status [expected]}: prints the status of the plugin's backend ({@link HeifBackends#current()}, exactly as
  *   in the IDE) and fails unless it is {@code expected} ({@code available} or a reason name);</li>
- *   <li>{@code decode}: decodes fixtures (orientation, alpha, 10-bit, grid, ICC profile, embedded thumbnail) and
- *   fails on a wrong size or layout.</li>
+ *   <li>{@code decode}: decodes fixtures (orientation, alpha, 10-bit, grid, ICC profile) and fails on a wrong size or
+ *   layout.</li>
  * </ul>
  */
 public final class DistroCheck {
@@ -74,10 +74,6 @@ public final class DistroCheck {
     failures += layout(backend, "grid_libheif.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
     failures += layout(backend, "multi.heic", 0, "600x400 TL=red TR=green BL=blue BR=white marker=TL");
     failures += layout(backend, "seq.heics", 300, "300x200 TL=red TR=green BL=blue BR=white marker=TL");
-    failures += check("thumb_irot.heic (embedded thumbnail)", () -> {
-      String layout = Fixtures.layout(backend.decodeThumbnail(Fixtures.bytes("thumb_irot.heic"), 64));
-      return layout.startsWith("43x64 TL=blue TR=red BL=white BR=green") ? null : layout;
-    });
     for (String name : new String[]{"alpha_sips.heic", "alpha_libheif.heic"}) {
       failures += check(name + " (alpha)", () -> {
         BufferedImage alpha = backend.decode(Fixtures.bytes(name), 0);
@@ -111,10 +107,10 @@ public final class DistroCheck {
     Libheif lib = ((LibheifHeifBackend) backend).library();
     if (lib == null) return "libheif is not loaded";
     byte[] grid = Fixtures.bytes("grid_libheif.heic"); // 600x400
-    String fits = Fixtures.layout(new LibheifDecoder(lib, 1024).decode(grid, 0, false));
+    String fits = Fixtures.layout(new LibheifDecoder(lib, 1024).decode(grid, 0));
     if (!fits.startsWith("600x400")) return "within the limit: " + fits;
     try {
-      new LibheifDecoder(lib, 256).decode(grid, 0, false);
+      new LibheifDecoder(lib, 256).decode(grid, 0);
       return "600x400 decoded despite a limit of 256x256";
     }
     catch (IOException e) {
@@ -126,7 +122,7 @@ public final class DistroCheck {
     }
     byte[] claimsSmall = TestLibheif.withIspe(grid, 600, 400, 64, 64);
     try {
-      new LibheifDecoder(lib, 256).decode(claimsSmall, 0, false);
+      new LibheifDecoder(lib, 256).decode(claimsSmall, 0);
       return "libheif " + lib.version() + " decoded a 600x400 grid that declares 64x64 despite a limit of 256x256";
     }
     catch (LibheifException e) {

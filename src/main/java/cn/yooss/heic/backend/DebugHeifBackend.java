@@ -72,11 +72,6 @@ final class DebugHeifBackend implements HeifBackend {
     return real().decode(data, maxPixelSize);
   }
 
-  @Override
-  public @NotNull BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    return real().decodeThumbnail(data, maxPixelSize);
-  }
-
   private HeifBackend real() throws IOException {
     HeifBackend real = recovered;
     if (real == null) throw new IOException(displayName() + " cannot decode HEIF images: " + forced);

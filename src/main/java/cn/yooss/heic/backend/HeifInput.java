@@ -5,10 +5,9 @@ import cn.yooss.heic.HeifSniffer;
 import java.io.IOException;
 
 /**
- * Pure-Java gate in front of every system decoder. System codecs pick the codec by content (macOS ImageIO.framework,
- * WIC) or "successfully" decode truncated files as black images, so every {@link HeifBackend} decode method calls
- * {@link #check} before any native call, whoever the caller is (the image reader, however it was looked up, or the
- * thumbnail icons).
+ * Pure-Java gate in front of every system decoder: every {@link HeifBackend} decode method calls {@link #check} before
+ * any native call. System decoders pick the codec by content (macOS ImageIO.framework, WIC) and decode a truncated file
+ * as a black image.
  */
 public final class HeifInput {
   /** Message of the {@link IOException} for data that is not HEIC/HEIF (asserted by tests). */
@@ -28,10 +27,5 @@ public final class HeifInput {
     if (!HeifSniffer.isHeif(data, data.length)) throw new IOException(NOT_HEIF);
     String truncation = IsoBoxes.findTruncation(data);
     if (truncation != null) throw new IOException("Truncated or corrupt HEIF file: " + truncation);
-  }
-
-  /** Description of the problem if {@code data} is an ISO-BMFF file that is cut short, else {@code null}. */
-  public static String findTruncation(byte[] data) {
-    return IsoBoxes.findTruncation(data);
   }
 }

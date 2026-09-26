@@ -219,7 +219,7 @@ class PluginClassLoaderLeakTest {
         Object info = backendType.getMethod("readInfo", byte[].class).invoke(backend, heic);
         out("info", info.toString() + " hash " + info.hashCode() + " equals " + info.equals(info));
         backendType.getMethod("decode", byte[].class, int.class).invoke(backend, heic, 0);
-        backendType.getMethod("decodeThumbnail", byte[].class, int.class).invoke(backend, heic, 64);
+        backendType.getMethod("decode", byte[].class, int.class).invoke(backend, heic, 64);
       }
       // Value classes (hand-written equals/hashCode/toString, not records) and the heap safety valve: a decision with the
       // JVM's heap numbers (MXBeans), a reservation, a downscale record and its listener.

@@ -98,7 +98,7 @@ class WicNativeTest {
     assertFalse(decoder.readInfo(Fixtures.bytes("rgb.png"), false).hasAlpha());
   }
 
-  /** IWICBitmapScaler (Fant) for the pixel budget and thumbnails. */
+  /** IWICBitmapScaler (Fant) for a smaller decode. */
   @Test
   void downscaled() throws IOException {
     byte[] data = Fixtures.bytes("bands.png");
@@ -108,8 +108,8 @@ class WicNativeTest {
     assertEquals(expected[0] + "x" + expected[1], image.getWidth() + "x" + image.getHeight());
     double mean = Fixtures.meanDifference(image, PixelPipeline.downscale(source, 500));
     assertTrue(mean < 6.0, "mean difference to Java's downscaling " + mean);
-    BufferedImage thumbnail = decoder.decode(Fixtures.bytes("rgb.png"), 64, false, PixelPipeline.STRIP_PIXELS);
-    assertEquals("64x43", thumbnail.getWidth() + "x" + thumbnail.getHeight());
+    BufferedImage small = decoder.decode(Fixtures.bytes("rgb.png"), 64, false, PixelPipeline.STRIP_PIXELS);
+    assertEquals("64x43", small.getWidth() + "x" + small.getHeight());
   }
 
   /** {@code System.Photo.Orientation} (here from the EXIF of a JPEG) is read and applied. */

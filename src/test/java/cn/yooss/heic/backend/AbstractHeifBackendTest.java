@@ -93,14 +93,12 @@ class AbstractHeifBackendTest {
                                     Arrays.copyOf(HEIC, HEIC.length - 100)}) {
       assertThrows(IOException.class, () -> backend.readInfo(data));
       assertThrows(IOException.class, () -> backend.decode(data, 0));
-      assertThrows(IOException.class, () -> backend.decodeThumbnail(data, 16));
     }
     IOException png = assertThrows(IOException.class, () -> backend.decode(Fixtures.bytes("rgb.png"), 0));
     assertEquals(HeifInput.NOT_HEIF, png.getMessage());
     assertEquals(0, backend.decodes.get(), "nothing but HEIF data reaches the decoder");
 
     assertThrows(IllegalArgumentException.class, () -> backend.decode(HEIC, -1));
-    assertThrows(IllegalArgumentException.class, () -> backend.decodeThumbnail(HEIC, 0));
   }
 
   @Test
@@ -111,7 +109,6 @@ class AbstractHeifBackendTest {
     assertTrue(e.getMessage().startsWith("Fake decoder cannot decode HEIF images: UNAVAILABLE(WINDOWS_HEVC_EXTENSION_MISSING)"),
                e.getMessage());
     assertThrows(IOException.class, () -> backend.readInfo(HEIC));
-    assertThrows(IOException.class, () -> backend.decodeThumbnail(HEIC, 16));
     assertEquals(0, backend.decodes.get());
 
     backend.probe = () -> HeifBackendStatus.available("installed now");
@@ -142,9 +139,9 @@ class AbstractHeifBackendTest {
   }
 
   @Test
-  void thumbnailDefaultsToADecodeAtTheRequestedSize() throws IOException {
+  void validDataReachesTheDecoderOnce() throws IOException {
     FakeBackend backend = new FakeBackend();
-    assertEquals(6, backend.decodeThumbnail(HEIC, 16).getWidth());
+    assertEquals(6, backend.decode(HEIC, 16).getWidth());
     assertEquals(1, backend.decodes.get());
     assertEquals("Fake decoder", backend.toString());
   }

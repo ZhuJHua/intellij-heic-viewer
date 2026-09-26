@@ -379,7 +379,7 @@ class HeicImageReaderSpiTest {
     return out.toByteArray();
   }
 
-  /** A backend without native code; decodeThumbnail delegates to decode. */
+  /** A backend without native code. */
   abstract static class TestBackend implements HeifBackend {
     @Override
     public String id() {
@@ -399,11 +399,6 @@ class HeicImageReaderSpiTest {
     @Override
     public HeifBackendStatus recheckStatus() {
       return status();
-    }
-
-    @Override
-    public BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-      return decode(data, maxPixelSize);
     }
   }
 

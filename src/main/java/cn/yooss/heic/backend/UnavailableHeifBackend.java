@@ -63,11 +63,6 @@ public final class UnavailableHeifBackend implements HeifBackend {
     throw unavailable();
   }
 
-  @Override
-  public @NotNull BufferedImage decodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    throw unavailable();
-  }
-
   private IOException unavailable() {
     return new IOException(displayName + " cannot decode HEIF images: " + status);
   }

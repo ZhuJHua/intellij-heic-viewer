@@ -299,7 +299,7 @@ jobs:
       matrix:
         include:
           # libheif 1.6.1: images with alpha fail (heif_error 7/129) and it does not read the 10-bit brand heix (3/0);
-          # 8-bit images, grids, transformations, thumbnails and ICC profiles work.
+          # 8-bit images, grids, transformations and ICC profiles work.
           - image: ubuntu:20.04
             prepare: apt-get update
             known: alpha_sips.heic,alpha_libheif.heic,rgb16_sips.heic,ten_bit.heic

@@ -3,7 +3,6 @@ package cn.yooss.heic.ui;
 import cn.yooss.heic.Downscales;
 import cn.yooss.heic.HeicImageReaderSpi;
 import cn.yooss.heic.backend.HeifBackendStatus;
-import cn.yooss.heic.thumbnail.HeicThumbnails;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -32,8 +31,7 @@ import java.util.Set;
 
 /**
  * Everything that shows HEIC images or the decoder's status, refreshed when the status changes: the editor banners
- * ({@link HeicDecoderNotificationProvider}, {@link HeicDownscaleNotificationProvider}), open HEIC image editors and the
- * thumbnail icons.
+ * ({@link HeicDecoderNotificationProvider}, {@link HeicDownscaleNotificationProvider}) and open HEIC image editors.
  */
 final class HeicViews {
   private static final Logger LOG = Logger.getInstance(HeicViews.class);
@@ -103,13 +101,11 @@ final class HeicViews {
   }
 
   /**
-   * The decoder was missing and is available now (any thread): banners disappear, open HEIC editors load their image,
-   * thumbnails are decoded again. Nothing needs a restart.
+   * The decoder was missing and is available now (any thread): banners disappear and open HEIC editors load their image.
    */
   static void decoderBecameAvailable() {
     if (shutDown) return;
     updateBanners();
-    HeicThumbnails.refreshAll(); // drops the thumbnail failures cached while the decoder was missing
     Application application = ApplicationManager.getApplication();
     if (application == null || application.isDisposed()) return;
     application.invokeLater(() -> {

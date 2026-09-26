@@ -11,11 +11,8 @@ import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -29,8 +26,8 @@ import java.util.List;
  * The balloons (notification group {@value #NOTIFICATION_GROUP}, declared in plugin.xml):
  * <ul>
  *   <li><b>Decoder missing</b>, at most once per session and never for a reason the user dismissed ("Don't Show
- *   Again"): when a HEIC image fails to load where no banner explains why (the diff viewer, a thumbnail icon of a file
- *   that is not open in an editor), and right after the plugin was installed. It offers the remedy's actions.</li>
+ *   Again"): when a HEIC image fails to load where no banner explains why (the diff viewer), and right after the plugin
+ *   was installed. It offers the remedy's actions.</li>
  *   <li><b>Result of "Check Again"</b>: available now, or still missing (with the actions again).</li>
  * </ul>
  * The notifications' actions are plugin classes, so {@link #shutDown()} expires them before the plugin is unloaded.
@@ -61,25 +58,6 @@ public final class DecoderPrompt {
    */
   public static void decodeUnavailable(@NotNull HeifBackendStatus status, @Nullable Project project) {
     showMissing(status, project);
-  }
-
-  /**
-   * The thumbnail icon of {@code file} could not be decoded because the system decoder is unavailable (the thumbnail
-   * thread): like {@link #decodeUnavailable}, unless the file is open in an editor, whose banner explains it.
-   */
-  public static void thumbnailUnavailable(@NotNull HeifBackendStatus status, @NotNull VirtualFile file) {
-    synchronized (LOCK) {
-      if (missingShown || shutDown) return; // cheap: this runs for every thumbnail while the decoder is missing
-    }
-    try {
-      for (Project project : ProjectManager.getInstance().getOpenProjects()) {
-        if (!project.isDisposed() && FileEditorManager.getInstance(project).isFileOpen(file)) return;
-      }
-    }
-    catch (RuntimeException e) {
-      LOG.debug(e);
-    }
-    showMissing(status, null);
   }
 
   /** The "decoder missing" balloon, once per session and not for a dismissed reason. Any thread. */

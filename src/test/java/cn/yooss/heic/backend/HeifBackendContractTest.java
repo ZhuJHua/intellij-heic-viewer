@@ -81,7 +81,6 @@ class HeifBackendContractTest {
     IOException e = assertThrows(IOException.class, () -> BACKEND.decode(heic, 0));
     assertTrue(e.getMessage().contains(String.valueOf(BACKEND.status().reason())), e.getMessage());
     assertThrows(IOException.class, () -> BACKEND.readInfo(heic));
-    assertThrows(IOException.class, () -> BACKEND.decodeThumbnail(heic, 64));
   }
 
   /**
@@ -267,20 +266,6 @@ class HeifBackendContractTest {
                  Fixtures.layout(BACKEND.decode(Fixtures.bytes("exif6_apple.heic"), 300)));
   }
 
-  @Test
-  void thumbnails() throws IOException {
-    assumeTrue(available(), "no system decoder");
-    BufferedImage portrait = BACKEND.decodeThumbnail(Fixtures.bytes("exif6_apple.heic"), 64);
-    assertTrue(portrait.getHeight() <= 65 && portrait.getHeight() > portrait.getWidth(),
-               "oriented portrait thumbnail, was " + portrait.getWidth() + "x" + portrait.getHeight());
-    BufferedImage alpha = BACKEND.decodeThumbnail(Fixtures.bytes("alpha_sips.heic"), 32);
-    assertEquals(BufferedImage.TYPE_INT_ARGB, alpha.getType());
-    assertTrue(Math.max(alpha.getWidth(), alpha.getHeight()) <= 33);
-    BufferedImage large = BACKEND.decodeThumbnail(Fixtures.bytes("bands_2000x1200.heic"), 128);
-    assertTrue(Math.max(large.getWidth(), large.getHeight()) <= 129, large.getWidth() + "x" + large.getHeight());
-    assertThrows(IllegalArgumentException.class, () -> BACKEND.decodeThumbnail(Fixtures.bytes("rgb_sips.heic"), 0));
-  }
-
   /** System decoders pick the codec by content: nothing but HEIF may reach them, whatever the file is called. */
   @ParameterizedTest
   @ValueSource(strings = {"png", "tiff", "bmp", "gif", "jpeg"})
@@ -290,7 +275,6 @@ class HeifBackendContractTest {
     byte[] data = out.toByteArray();
     assertEquals(HeifInput.NOT_HEIF, assertThrows(IOException.class, () -> BACKEND.readInfo(data)).getMessage());
     assertEquals(HeifInput.NOT_HEIF, assertThrows(IOException.class, () -> BACKEND.decode(data, 0)).getMessage());
-    assertEquals(HeifInput.NOT_HEIF, assertThrows(IOException.class, () -> BACKEND.decodeThumbnail(data, 64)).getMessage());
   }
 
   @ParameterizedTest

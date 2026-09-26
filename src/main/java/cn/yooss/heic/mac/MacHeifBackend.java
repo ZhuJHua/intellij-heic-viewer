@@ -70,10 +70,4 @@ public final class MacHeifBackend extends AbstractHeifBackend {
     if (HeicDecoder.isAlphaWeighted(info, maxPixelSize)) bytes += HeapCost.planeReduction(info.rawWidth(), info.rawHeight(), maxPixelSize);
     return bytes;
   }
-
-  /** May use the thumbnail embedded in the file ({@code kCGImageSourceCreateThumbnailFromImageIfAbsent}). */
-  @Override
-  protected @NotNull BufferedImage doDecodeThumbnail(byte[] data, int maxPixelSize) throws IOException {
-    return HeicDecoder.decodeThumbnail(data, maxPixelSize);
-  }
 }
