@@ -68,7 +68,7 @@ public final class PlaneConverter {
   }
 
   /** The side of the result for a {@code side x other} image whose longer side becomes {@code maxPixelSize}. */
-  static int targetSide(int side, int other, int maxPixelSize) {
+  private static int targetSide(int side, int other, int maxPixelSize) {
     if (side >= other) return Math.min(side, maxPixelSize);
     double scale = (double) maxPixelSize / other;
     return (int) Math.max(1, Math.min(maxPixelSize, Math.round(side * scale)));

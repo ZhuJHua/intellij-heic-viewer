@@ -186,10 +186,6 @@ final class Libheif {
     return (v >>> 24) * 10000 + ((v >>> 16) & 0xFF) * 100 + ((v >>> 8) & 0xFF);
   }
 
-  boolean hasInit() {
-    return init != null;
-  }
-
   /**
    * {@code heif_init(NULL)} (libheif 1.13+): registers the built-in codecs and, since 1.14, loads the codec plugins
    * (such as {@code libheif-libde265.so}) from the plugin directory. Reference counted; the backend calls it once and
