@@ -1,6 +1,5 @@
 package cn.yooss.heic.ui;
 
-import cn.yooss.heic.Downscales;
 import cn.yooss.heic.HeicImageReaderSpi;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import com.intellij.openapi.application.Application;
@@ -25,52 +24,20 @@ import org.jetbrains.annotations.TestOnly;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Everything that shows HEIC images or the decoder's status, refreshed when the status changes: the editor banners
- * ({@link HeicDecoderNotificationProvider}, {@link HeicDownscaleNotificationProvider}) and open HEIC image editors.
+ * Everything that shows HEIC images or the decoder's status, refreshed when the status changes: the editor banner
+ * ({@link HeicDecoderNotificationProvider}) and open HEIC image editors.
  */
 final class HeicViews {
   private static final Logger LOG = Logger.getInstance(HeicViews.class);
   /** Reasons whose banner the user closed in this session (guarded by itself). */
   private static final Set<HeifBackendStatus.Reason> hiddenBanners = EnumSet.noneOf(HeifBackendStatus.Reason.class);
-  /** Files (paths) whose "shown smaller" banner the user closed in this session (guarded by itself). */
-  private static final Set<String> hiddenDownscaleBanners = new HashSet<>();
   private static volatile boolean shutDown;
 
   private HeicViews() {
-  }
-
-  /** After the reader was registered: the banners follow the images the heap safety valve decodes smaller. */
-  static void start() {
-    if (!shutDown) Downscales.setListener(HeicViews::downscalesChanged);
-  }
-
-  /**
-   * An image was decoded smaller than it is, or at full size again ({@link Downscales}; on the decoding thread): the
-   * banners are collected again (asynchronously).
-   */
-  static void downscalesChanged() {
-    updateBanners();
-  }
-
-  /** Whether the "shown smaller" banner of the file with this path was closed (or the plugin is being unloaded). */
-  static boolean isDownscaleBannerHidden(@NotNull String key) {
-    if (shutDown) return true;
-    synchronized (hiddenDownscaleBanners) {
-      return hiddenDownscaleBanners.contains(key);
-    }
-  }
-
-  /** The user closed the "shown smaller" banner of a file (its path): hidden until the IDE restarts. */
-  static void hideDownscaleBanner(@NotNull String key) {
-    synchronized (hiddenDownscaleBanners) {
-      hiddenDownscaleBanners.add(key);
-    }
-    updateBanners();
   }
 
   /** Asks every open project to collect the editor banners again (any thread; the platform does it asynchronously). */
@@ -170,22 +137,16 @@ final class HeicViews {
    */
   static void shutDown() {
     shutDown = true;
-    Downscales.setListener(null);
-    Downscales.clear();
     Application application = ApplicationManager.getApplication();
     if (application == null || !application.isDispatchThread()) return;
-    // Their classes identify the panels.
-    List<EditorNotificationProvider> providers =
-      List.of(new HeicDecoderNotificationProvider(), new HeicDownscaleNotificationProvider());
+    EditorNotificationProvider provider = new HeicDecoderNotificationProvider(); // its class identifies the panels
     for (Project project : ProjectManager.getInstance().getOpenProjects()) {
       if (project.isDisposed()) continue;
-      for (EditorNotificationProvider provider : providers) {
-        try {
-          removePanels(EditorNotifications.getInstance(project), provider);
-        }
-        catch (RuntimeException | LinkageError | ReflectiveOperationException e) {
-          LOG.warn("Cannot remove the HEIC editor banners before unloading", e);
-        }
+      try {
+        removePanels(EditorNotifications.getInstance(project), provider);
+      }
+      catch (RuntimeException | LinkageError | ReflectiveOperationException e) {
+        LOG.warn("Cannot remove the HEIC editor banners before unloading", e);
       }
       restartBannerUpdates(project);
     }
@@ -236,9 +197,6 @@ final class HeicViews {
   static void resetForTests() {
     synchronized (hiddenBanners) {
       hiddenBanners.clear();
-    }
-    synchronized (hiddenDownscaleBanners) {
-      hiddenDownscaleBanners.clear();
     }
     shutDown = false;
   }

@@ -1,6 +1,5 @@
 package cn.yooss.heic;
 
-import cn.yooss.heic.backend.HeapCost;
 import cn.yooss.heic.backend.HeifBackend;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifImageInfo;
@@ -184,117 +183,55 @@ class HeicImageReaderSpiTest {
     if (!failure.equals("io")) assertNotNull(error.getCause(), "native failures are wrapped: " + error);
   }
 
-  /**
-   * The reader asks for the full size, like the IDE's viewer decodes PNG; only the heap safety valve reduces it, when the
-   * estimate does not fit the heap. The reported size stays the image's, and the reduced decode is recorded once.
-   */
+  /** The reader asks the decoder for the full resolution, whatever the size of the image. */
   @Test
-  void readerDecodesAtFullSizeUnlessTheHeapIsShort() throws IOException {
-    List<Integer> requested = new ArrayList<>();
-    class Recording extends FakeBackend {
-      Recording(int width, int height) {
-        super(width, height, false);
-      }
-
-      @Override
-      public BufferedImage decode(byte[] data, int maxPixelSize) {
-        requested.add(maxPixelSize);
-        return super.decode(data, maxPixelSize);
-      }
-
-      @Override
-      public long decodeHeapBytes(HeifImageInfo info, int maxPixelSize) {
-        return HeapCost.result(info, maxPixelSize); // 4 bytes per pixel
-      }
-    }
-    byte[] input = Fixtures.bytes("rgb_sips.heic");
-    long mb = 1 << 20;
-    // The reader's estimate: the image and its first-paint copy (8 bytes per pixel), the fixed part, the input.
-    java.util.function.ToLongBiFunction<Integer, Integer> cost =
-      (w, h) -> 2 * HeapCost.image(w, h) + HeapCost.FIXED_BYTES + input.length;
-    try {
-      // 600x400 needs 26 MB: at most a quarter of a 128 MB heap, so full size even when that heap is completely in use.
-      BufferedImage fullSize = read(new HeicImageReaderSpi(new Recording(600, 400),
-                                                           new HeapValve(new HeapValveTest.FixedHeap(128 * mb, 128 * mb))), null);
-      assertEquals(List.of(0), requested);
-      assertNull(Downscales.fromImage(fullSize), "not tagged");
-      assertTrue(Downscales.isEmpty());
-
-      // 6000x4000 needs 207 MB: more than a quarter of 800 MB, and more than the allowance with 400 MB in use,
-      // min(0.4 * 800, 800 - 400 - 0.3 * 800) = 160 MB: decoded at the largest size that fits it.
-      requested.clear();
-      long allowance = 800 * mb - 400 * mb - (long) (800 * mb * 0.3);
-      HeicImageReaderSpi spi = new HeicImageReaderSpi(new Recording(6000, 4000),
-                                                      new HeapValve(new HeapValveTest.FixedHeap(800 * mb, 400 * mb)));
-      ImageReader reader = spi.createReaderInstance();
-      try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(input))) {
-        reader.setInput(stream, true, true);
-        BufferedImage image = reader.read(0, reader.getDefaultReadParam());
-        assertEquals(1, requested.size());
-        int side = requested.get(0);
-        assertTrue(side > 4000 && side < 6000, "reduced: " + side);
-        assertEquals(side, Math.max(image.getWidth(), image.getHeight()));
-        assertTrue(cost.applyAsLong(image.getWidth(), image.getHeight()) <= allowance,
-                   "fits: " + image.getWidth() + "x" + image.getHeight());
-        int[] larger = cn.yooss.heic.backend.PixelPipeline.targetSize(6000, 4000, side + 1);
-        assertTrue(cost.applyAsLong(larger[0], larger[1]) > allowance, "the largest that fits: " + side);
-        assertEquals(6000, reader.getWidth(0), "getWidth reports the image's size");
-        assertEquals(4000, reader.getHeight(0));
-        Downscales.Entry tag = Downscales.fromImage(image);
-        assertNotNull(tag, "the image carries its full size (the editor banner reads it)");
-        assertEquals("6000x4000", tag.width() + "x" + tag.height());
-        assertEquals(BufferedImage.TYPE_INT_RGB, image.getType());
-        assertTrue(Fixtures.layout(image).contains("TL=red TR=green BL=blue BR=white"), Fixtures.layout(image));
-        Downscales.Entry entry = Downscales.find(Downscales.key(input.length, Downscales.crc(input)));
-        assertNotNull(entry, "recorded for the editor banner");
-        assertEquals(image.getWidth() + "x" + image.getHeight() + " of 6000x4000",
-                     entry.shownWidth() + "x" + entry.shownHeight() + " of " + entry.width() + "x" + entry.height());
-        assertTrue(entry.isHeapLimited());
-      }
-      finally {
-        reader.dispose();
-      }
-
-      // A heap that is completely full: a sixteenth of it (44 MB of 700 MB), but never less than 1024 pixels.
-      requested.clear();
-      read(new HeicImageReaderSpi(new Recording(6000, 4000), new HeapValve(new HeapValveTest.FixedHeap(700 * mb, 700 * mb))), null);
-      int sixteenth = requested.get(0);
-      int[] size = cn.yooss.heic.backend.PixelPipeline.targetSize(6000, 4000, sixteenth);
-      int[] next = cn.yooss.heic.backend.PixelPipeline.targetSize(6000, 4000, sixteenth + 1);
-      long share = (long) (700 * mb / 16.0);
-      assertTrue(sixteenth > 1024 && cost.applyAsLong(size[0], size[1]) <= share && cost.applyAsLong(next[0], next[1]) > share,
-                 "side " + sixteenth);
-      requested.clear();
-      read(new HeicImageReaderSpi(new Recording(6000, 4000), new HeapValve(new HeapValveTest.FixedHeap(64 * mb, 64 * mb))), null);
-      assertEquals(List.of(1024), requested);
-
-      // Decoded at full size again (the heap allows it now): the record is forgotten, the banner goes away.
-      read(new HeicImageReaderSpi(new Recording(6000, 4000), new HeapValve(new HeapValveTest.FixedHeap(2048 * mb, 0))), null);
-      assertTrue(Downscales.isEmpty());
-    }
-    finally {
-      Downscales.clear();
+  void readerDecodesAtFullResolution() throws IOException {
+    for (int[] size : new int[][]{{600, 400}, {20000, 15000}, {46340, 46340}}) {
+      List<Integer> requested = new ArrayList<>();
+      HeicImageReaderSpi spi = new HeicImageReaderSpi(new FakeBackend(size[0], size[1], false) {
+        @Override
+        public BufferedImage decode(byte[] data, int maxPixelSize) {
+          requested.add(maxPixelSize);
+          return super.decode(data, 60); // a small stand-in for the decoded image
+        }
+      });
+      read(spi, null);
+      assertEquals(List.of(0), requested, size[0] + "x" + size[1]);
     }
   }
 
-  /** Without an estimate (a failing backend method), the reader decodes at full size, as before. */
+  /**
+   * An image whose pixels do not fit a Java {@code int[]} fails with an IOException before anything is decoded, while
+   * its size can still be read; a subsampled read that fits is decoded.
+   */
   @Test
-  void aFailingEstimateMeansFullSize() throws IOException {
+  void imageLargerThanAnIntArrayFailsWithIOException() throws IOException {
     List<Integer> requested = new ArrayList<>();
-    HeifBackend backend = new FakeBackend(600, 400, false) {
+    HeicImageReaderSpi spi = new HeicImageReaderSpi(new FakeBackend(46341, 46341, false) {
       @Override
       public BufferedImage decode(byte[] data, int maxPixelSize) {
         requested.add(maxPixelSize);
-        return super.decode(data, maxPixelSize);
+        return super.decode(data, 60);
       }
+    });
+    IOException e = assertThrows(IOException.class, () -> read(spi, null));
+    assertTrue(e.getMessage().contains("46341x46341"), e.getMessage());
+    assertEquals(List.of(), requested, "nothing decoded");
 
-      @Override
-      public long decodeHeapBytes(HeifImageInfo info, int maxPixelSize) {
-        throw new IllegalStateException("no estimate");
-      }
-    };
-    read(new HeicImageReaderSpi(backend, new HeapValve(new HeapValveTest.FixedHeap(1 << 20, 1 << 20))), null);
-    assertEquals(List.of(0), requested);
+    ImageReader reader = spi.createReaderInstance();
+    try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")))) {
+      reader.setInput(stream, true, true);
+      assertEquals(46341, reader.getWidth(0));
+      assertEquals(46341, reader.getHeight(0));
+    }
+    finally {
+      reader.dispose();
+    }
+
+    ImageReadParam half = new ImageReadParam();
+    half.setSourceSubsampling(2, 2, 0, 0);
+    read(spi, half);
+    assertEquals(List.of(23171), requested);
   }
 
   @Test

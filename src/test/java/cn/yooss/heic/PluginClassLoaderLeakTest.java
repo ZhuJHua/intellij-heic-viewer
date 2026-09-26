@@ -1,8 +1,11 @@
 package cn.yooss.heic;
 
+import com.intellij.openapi.diagnostic.DefaultLogger;
+import com.intellij.openapi.diagnostic.Logger;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
+import javax.imageio.stream.ImageInputStreamImpl;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -45,9 +48,9 @@ class PluginClassLoaderLeakTest {
   }
 
   /**
-   * Control: a pool thread started while plugin code is on the stack (here from the heap safety valve's listener, like the
-   * IDE's application pool thread that the decoder check starts during startup) keeps the loader alive on JDK 17-23 if
-   * the inherited access control contexts are not released. The failure this reproduces was seen on IntelliJ IDEA 2024.1.
+   * Control: a pool thread started while plugin code is on the stack (here from a logger that plugin code calls, like
+   * the IDE's application pool thread that the decoder check starts) keeps the loader alive on JDK 17-23 if the inherited
+   * access control contexts are not released.
    */
   @Test
   void threadStartedByPluginCodeKeepsTheLoaderUnlessReleased() throws Exception {
@@ -161,8 +164,8 @@ class PluginClassLoaderLeakTest {
     private static ThreadFactory poolThreads;
 
     /**
-     * Called by plugin code (the heap safety valve's listener, {@code Downscales.changed()}): submits a task to a new pool,
-     * which starts its thread right here, with the plugin's classes on the stack.
+     * Called by plugin code (a warning logged by {@code HeicImageReaderSpi.canDecodeInput}): submits a task to a new
+     * pool, which starts its thread right here, with the plugin's classes on the stack.
      */
     private static void startPoolThread() {
       ExecutorService executor = Executors.newSingleThreadExecutor(poolThreads);
@@ -221,24 +224,25 @@ class PluginClassLoaderLeakTest {
         backendType.getMethod("decode", byte[].class, int.class).invoke(backend, heic, 0);
         backendType.getMethod("decode", byte[].class, int.class).invoke(backend, heic, 64);
       }
-      // Value classes (hand-written equals/hashCode/toString, not records) and the heap safety valve: a decision with the
-      // JVM's heap numbers (MXBeans), a reservation, a downscale record and its listener.
-      Class<?> valveClass = loader.loadClass("cn.yooss.heic.HeapValve");
-      Object valve = valveClass.getField("RUNTIME").get(null);
-      Object decision = valveClass.getMethod("decide", int.class, int.class, int.class, java.util.function.IntToLongFunction.class)
-        .invoke(valve, 50_000, 50_000, 0, (java.util.function.IntToLongFunction) side -> 4L * 50_000 * 50_000);
-      out("valve", decision + " " + decision.hashCode());
-      Object reservation = valveClass.getMethod("reserve", long.class).invoke(valve, 1L << 20);
-      reservation.getClass().getMethod("close").invoke(reservation);
-      Class<?> downscales = loader.loadClass("cn.yooss.heic.Downscales");
-      // The listener starts a pool thread (see startPoolThread) whenever recordReduced reports news.
-      downscales.getMethod("setListener", Runnable.class).invoke(null, (Runnable) Child::startPoolThread);
-      downscales.getMethod("recordReduced", byte[].class, int.class, int.class, int.class, int.class, boolean.class)
-        .invoke(null, heic, 50_000, 50_000, 1000, 1000, true);
-      Object entry = downscales.getMethod("find", String.class).invoke(null, downscales.getMethod("key", long.class, long.class)
-        .invoke(null, (long) heic.length, downscales.getMethod("crc", byte[].class).invoke(null, (Object) heic)));
-      out("downscale", entry + " " + entry.equals(entry) + " " + entry.hashCode());
-      downscales.getMethod("setListener", Runnable.class).invoke(null, (Object) null);
+      // A value class (hand-written equals/hashCode/toString, not a record).
+      out("status", status.equals(status) + " " + status.hashCode());
+
+      // Plugin code that calls out with its classes on the stack: canDecodeInput logs a failing stream, and the logger
+      // starts a pool thread (see startPoolThread).
+      Logger.Factory previous = Logger.getFactory();
+      Logger.setFactory(category -> new DefaultLogger(category) {
+        @Override
+        public void warn(String message, Throwable t) {
+          startPoolThread();
+        }
+      });
+      try {
+        Object spi = loader.loadClass("cn.yooss.heic.HeicImageReaderSpi").getConstructor().newInstance();
+        spi.getClass().getMethod("canDecodeInput", Object.class).invoke(spi, new FailingStream());
+      }
+      finally {
+        Logger.setFactory(previous);
+      }
 
       // The reader, registered like the plugin does; ImageIO decodes through it.
       loader.loadClass("cn.yooss.heic.HeicSupport").getMethod("register").invoke(null);
@@ -275,6 +279,19 @@ class PluginClassLoaderLeakTest {
         }
       }
       return suspects;
+    }
+
+    /** A stream whose reads fail. */
+    private static final class FailingStream extends ImageInputStreamImpl {
+      @Override
+      public int read() {
+        throw new IllegalStateException("read failed");
+      }
+
+      @Override
+      public int read(byte[] b, int off, int len) {
+        throw new IllegalStateException("read failed");
+      }
     }
 
     private static boolean collect(WeakReference<ClassLoader> ref) throws InterruptedException {

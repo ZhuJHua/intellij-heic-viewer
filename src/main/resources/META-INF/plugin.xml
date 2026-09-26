@@ -37,10 +37,6 @@
          (also right after installing the plugin); "Check Again" and the results are balloons too. Never probes the
          decoder on the EDT. -->
     <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
-    <!-- Images are decoded at full size like PNG and JPEG; only when that would likely exhaust the IDE's Java heap is an
-         image decoded smaller (cn.yooss.heic.HeapValve), and this banner above it says so and how to see it at full
-         size. Nothing is collected unless an image was decoded smaller in this session. -->
-    <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDownscaleNotificationProvider"/>
     <diff.DiffExtension implementation="cn.yooss.heic.ui.HeicDiffExtension"/>
     <notificationGroup id="HEIC Viewer" displayType="BALLOON" bundle="messages.HeicBundle"
                        key="notification.group.heic"/>

@@ -1,6 +1,5 @@
 package cn.yooss.heic.ui;
 
-import cn.yooss.heic.Downscales;
 import cn.yooss.heic.HeicImageReaderSpi;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -11,10 +10,9 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Makes the banner of {@link HeicDecoderNotificationProvider} appear when a HEIC file is opened. The platform collects
- * editor notifications by itself only for text editors (they schedule it when they are created); for other editors,
- * such as the image editor, only when something asks for an update (IntelliJ 2024.1 to 2026.2). Does nothing while the
- * decoder is available and no image was decoded smaller ({@link HeicDownscaleNotificationProvider}): two volatile reads
- * and an extension compare per opened file. Registered in plugin.xml ({@code projectListeners}).
+ * editor notifications by itself only for text editors; for other editors, such as the image editor, only when
+ * something asks for an update. Does nothing while the decoder is available: a volatile read and an extension compare
+ * per opened file. Registered in plugin.xml ({@code projectListeners}).
  */
 public final class HeicFileOpenedListener implements FileEditorManagerListener {
   @Override
@@ -24,8 +22,7 @@ public final class HeicFileOpenedListener implements FileEditorManagerListener {
     if (status == null) {
       DecoderStatus.status(); // probes on a pooled thread; a missing decoder updates the banners
     }
-    else if (!status.isAvailable() && !HeicViews.isBannerHidden(status.reason())
-             || !Downscales.isEmpty()) { // an image may be shown smaller (HeicDownscaleNotificationProvider)
+    else if (!status.isAvailable() && !HeicViews.isBannerHidden(status.reason())) {
       EditorNotifications.getInstance(source.getProject()).updateNotifications(file);
     }
   }

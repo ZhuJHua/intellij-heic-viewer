@@ -8,12 +8,8 @@ public final class DecoderUi {
   private DecoderUi() {
   }
 
-  /**
-   * After the reader was registered: the decoder check ({@link DecoderStatus#checkInBackground(boolean)}) and the banner
-   * of images the heap safety valve decodes smaller ({@link HeicViews#start()}).
-   */
+  /** After the reader was registered: the decoder check ({@link DecoderStatus#checkInBackground(boolean)}). */
   public static void start(boolean prompt) {
-    HeicViews.start();
     DecoderStatus.checkInBackground(prompt);
   }
 

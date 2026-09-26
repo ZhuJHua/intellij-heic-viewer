@@ -92,10 +92,4 @@ public final class WicHeifBackend extends AbstractHeifBackend {
   protected @NotNull BufferedImage doDecode(byte[] data, int maxPixelSize) throws IOException {
     return decoder().decode(data, maxPixelSize, true, PixelPipeline.STRIP_PIXELS);
   }
-
-  /** See {@link WicDecoder#decodeHeapBytes}. */
-  @Override
-  public long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
-    return WicDecoder.decodeHeapBytes(info, maxPixelSize);
-  }
 }

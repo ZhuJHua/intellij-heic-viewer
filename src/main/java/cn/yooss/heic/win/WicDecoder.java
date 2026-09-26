@@ -1,6 +1,5 @@
 package cn.yooss.heic.win;
 
-import cn.yooss.heic.backend.HeapCost;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.PixelPipeline;
 import cn.yooss.heic.backend.PixelPipeline.ByteLayout;
@@ -63,8 +62,7 @@ public final class WicDecoder {
   static final int WICColorContextExifColorSpace = 2;
   /**
    * Largest image with an alpha plane that is downscaled with the alpha-weighted filter rather than with WIC's scaler
-   * (64 MP): that needs the full-size frame and alpha plane in native memory (5 bytes per pixel), so larger images
-   * (downscaled only by the image reader's heap safety valve) keep WIC's scaler and its darker edges.
+   * (64 MP): the filter needs the full-size frame and alpha plane in native memory (5 bytes per pixel).
    */
   static final long ALPHA_WEIGHTED_MAX_PIXELS = 64_000_000L;
   /** {@code System.Photo.Orientation} photo metadata policy: the EXIF-style orientation still to be applied. */
@@ -202,26 +200,6 @@ public final class WicDecoder {
    */
   static int[] targetSize(int width, int height, int maxPixelSize) {
     return PixelPipeline.targetSize(width, height, maxPixelSize);
-  }
-
-  /**
-   * The Java heap {@link #decode} needs (see {@code HeifBackend.decodeHeapBytes}): the result; for an image with alpha
-   * the alpha plane (one byte per pixel of the result) and, when it is downscaled alpha-weighted, the intermediate image
-   * of {@link PlaneConverter}; and for an orientation other than 1 a second image of the result's size (the source stays
-   * alive until the rotated copy is complete). The frame, WIC's bitmap, the full-size alpha plane and the strip buffer
-   * are native memory; the copy of the data for the color workarounds is as large as the input (counted by the caller).
-   */
-  static long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
-    long result = HeapCost.result(info, maxPixelSize);
-    long bytes = result + HeapCost.FIXED_BYTES;
-    if (info.hasAlpha()) {
-      bytes += result / 4;
-      if (HeapCost.isScaled(info, maxPixelSize) && (long) info.rawWidth() * info.rawHeight() <= ALPHA_WEIGHTED_MAX_PIXELS) {
-        bytes += HeapCost.planeReduction(info.rawWidth(), info.rawHeight(), maxPixelSize);
-      }
-    }
-    if (info.orientation() >= 2 && info.orientation() <= 8) bytes += result;
-    return bytes;
   }
 
   /** A short format name for {@link HeifImageInfo#typeIdentifier()}: the HEIF major brand, e.g. {@code heic}. */

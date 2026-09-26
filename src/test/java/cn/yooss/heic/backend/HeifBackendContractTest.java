@@ -83,48 +83,6 @@ class HeifBackendContractTest {
     assertThrows(IOException.class, () -> BACKEND.readInfo(heic));
   }
 
-  /**
-   * {@link HeifBackend#decodeHeapBytes} covers what a decode allocates on the Java heap (the allocated bytes include
-   * garbage, so they bound the peak from above): the heap safety valve relies on it. With a 12.6-megapixel image the
-   * result (48 MB) outweighs the fixed part, so an extra full-size copy in a decode path would exceed the estimate.
-   */
-  @ParameterizedTest
-  @CsvSource({
-      "quadrants_4096x3072.heic, 0",
-      "quadrants_4096x3072.heic, 1000",
-      "bands_2000x1200.heic,     0",
-      "bands_exif6.heic,         0",
-      "alpha_sips.heic,          0",
-      "alpha_libheif.heic,       90",
-      "icc_wide.heic,            0",
-      "exif6_apple.heic,         300",
-  })
-  void heapEstimateCoversTheDecode(String name, int maxPixelSize) throws IOException {
-    assumeTrue(available(), "no system decoder");
-    java.lang.management.ThreadMXBean threads = java.lang.management.ManagementFactory.getThreadMXBean();
-    assumeTrue(threads instanceof com.sun.management.ThreadMXBean
-               && ((com.sun.management.ThreadMXBean) threads).isThreadAllocatedMemorySupported(), "no allocation counter");
-    com.sun.management.ThreadMXBean counter = (com.sun.management.ThreadMXBean) threads;
-    if (!counter.isThreadAllocatedMemoryEnabled()) counter.setThreadAllocatedMemoryEnabled(true);
-    byte[] data = Fixtures.bytes(name);
-    HeifImageInfo info = BACKEND.readInfo(data);
-    long estimate = BACKEND.decodeHeapBytes(info, maxPixelSize);
-    BACKEND.decode(data, maxPixelSize); // class loading, the native layer's first use
-
-    long before = counter.getCurrentThreadAllocatedBytes();
-    BufferedImage image = BACKEND.decode(data, maxPixelSize);
-    long allocated = counter.getCurrentThreadAllocatedBytes() - before;
-    String what = String.format(Locale.ROOT, "%s at %d: %dx%d, allocated %.1f MB, estimate %.1f MB (+ input %.1f MB)", name,
-                                maxPixelSize, image.getWidth(), image.getHeight(), allocated / 1048576.0, estimate / 1048576.0,
-                                data.length / 1048576.0);
-    System.out.println("heap: " + what);
-    assertTrue(allocated <= estimate + data.length, what);
-    assertTrue(estimate >= HeapCost.image(image.getWidth(), image.getHeight()), what);
-    if (name.startsWith("quadrants") && maxPixelSize == 0) {
-      assertEquals("4096x3072 TL=red TR=green BL=blue BR=white marker=TL", Fixtures.layout(image));
-    }
-  }
-
   /** Name, display size, alpha of every decodable fixture. */
   @ParameterizedTest
   @CsvSource({

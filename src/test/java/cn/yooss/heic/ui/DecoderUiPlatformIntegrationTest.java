@@ -1,6 +1,5 @@
 package cn.yooss.heic.ui;
 
-import cn.yooss.heic.Downscales;
 import cn.yooss.heic.Fixtures;
 import cn.yooss.heic.HeicBundle;
 import cn.yooss.heic.backend.HeifBackend;
@@ -41,14 +40,11 @@ import com.intellij.ui.EditorNotificationProvider;
 import com.intellij.ui.EditorNotifications;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.UiInterceptors;
-import org.intellij.images.editor.ImageDocument;
-import org.intellij.images.editor.ImageEditor;
 import org.intellij.images.editor.ImageFileEditor;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.JComponent;
 import java.awt.datatransfer.DataFlavor;
-import java.awt.image.BufferedImage;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -110,8 +106,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     DecoderPrompt.resetForTests();
     HeicViews.resetForTests();
     RemedyActions.resetForTests();
-    Downscales.setListener(null);
-    Downscales.clear();
   }
 
   private FakeHeifBackend use(FakeHeifBackend backend) {
@@ -442,107 +436,6 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
     assertEquals(2, backend.rechecks.get());
     assertEquals(HeicBundle.message("remedy.check.available.title"), notifications.get(0).getTitle());
     assertFalse(DecoderStatus.isActivationCheckArmed());
-  }
-
-  /**
-   * An image the heap safety valve decoded smaller: its banner says at which size instead of which and why, with a link
-   * to the IDE's memory settings (the platform action exists in every supported IDE). It describes the image the editor
-   * shows (tagged by the reader), not a later decode of the same content elsewhere; while the editor has no image yet,
-   * the record of the content stands in. Closing it hides it for the file; none after the shutdown.
-   */
-  public void testBannerOfAnImageShownSmaller() throws Exception {
-    VirtualFile file = heicFile("huge.heic");
-    HeicDownscaleNotificationProvider provider = new HeicDownscaleNotificationProvider();
-    BufferedImage fullSize = new BufferedImage(40, 30, BufferedImage.TYPE_INT_RGB);
-    BufferedImage reduced = Downscales.tag(new BufferedImage(40, 30, BufferedImage.TYPE_INT_RGB), 16384, 12288, true);
-    assertEquals(BufferedImage.TYPE_INT_RGB, reduced.getType());
-
-    Function<? super FileEditor, ? extends JComponent> data = provider.collectNotificationData(getProject(), file);
-    assertNotNull(data);
-    assertNull("an image at full size", data.apply(imageEditorShowing(fullSize)));
-    assertNull("no image yet, nothing recorded", data.apply(imageEditorShowing(null)));
-    assertNull("not an image editor", data.apply(proxy(FileEditor.class, "getName", "text")));
-
-    EditorNotificationPanel panel = panel(data, imageEditorShowing(reduced));
-    assertEquals("Shown at 40x30 instead of 16384x12288 to protect IDE memory. Increase the IDE heap "
-                 + "(Help | Change Memory Settings) to see it at full size.", panel.getText());
-    assertEquals(panel.getText(), panel.getToolTipText());
-    assertNotNull(com.intellij.openapi.actionSystem.ActionManager.getInstance()
-                    .getAction(HeicDownscaleNotificationProvider.MEMORY_SETTINGS_ACTION_ID));
-    assertNotNull(panel.findLabelByName(HeicBundle.message("downscale.action.memory.settings")));
-
-    // A later decode of the same content elsewhere (e.g. a diff) is recorded, but the editor's image is what counts.
-    byte[] content = file.contentsToByteArray();
-    assertTrue(Downscales.recordReduced(content, 16384, 12288, 3000, 2250, true));
-    data = provider.collectNotificationData(getProject(), file);
-    assertNotNull(data);
-    assertEquals(HeicBundle.message("downscale.banner", "40x30", "16384x12288"), panel(data, imageEditorShowing(reduced)).getText());
-    assertEquals("the image of the editor is not set yet: the record stands in",
-                 HeicBundle.message("downscale.banner", "3000x2250", "16384x12288"), panel(data, imageEditorShowing(null)).getText());
-    assertNull(data.apply(imageEditorShowing(fullSize)));
-
-    // Too many pixels for a Java image: no memory settings help.
-    EditorNotificationPanel array = panel(data, imageEditorShowing(Downscales.tag(fullSize, 50000, 37500, false)));
-    assertEquals(HeicBundle.message("downscale.banner.array", "40x30", "50000x37500"), array.getText());
-    assertNull(array.findLabelByName(HeicBundle.message("downscale.action.memory.settings")));
-
-    VirtualFile other = myFixture.getTempDirFixture().createFile("other.heic");
-    byte[] otherContent = Fixtures.bytes("rgb_sips.heic");
-    WriteAction.runAndWait(() -> other.setBinaryContent(otherContent));
-    Function<? super FileEditor, ? extends JComponent> otherData = provider.collectNotificationData(getProject(), other);
-    assertNotNull(otherData);
-    assertNull("another content: no record", otherData.apply(imageEditorShowing(null)));
-    assertNull("not a HEIC file", provider.collectNotificationData(getProject(), myFixture.getTempDirFixture().createFile("x.png")));
-
-    // Closing hides the banner of the file until the IDE restarts, also for a function collected before.
-    HeicViews.hideDownscaleBanner(file.getPath());
-    assertNull(data.apply(imageEditorShowing(reduced)));
-    assertNull(provider.collectNotificationData(getProject(), file));
-    assertNotNull(provider.collectNotificationData(getProject(), other));
-    HeicViews.resetForTests();
-
-    // The listener is set when the reader is registered; the shutdown forgets the records and shows no banner.
-    HeicViews.start();
-    Function<? super FileEditor, ? extends JComponent> late = provider.collectNotificationData(getProject(), file);
-    assertNotNull(late);
-    DecoderUi.shutDown();
-    assertTrue("forgotten before unloading", Downscales.isEmpty());
-    assertNull("no panel after the shutdown", late.apply(imageEditorShowing(reduced)));
-    assertNull(provider.collectNotificationData(getProject(), file));
-  }
-
-  private EditorNotificationPanel panel(Function<? super FileEditor, ? extends JComponent> data, FileEditor editor) {
-    JComponent component = data.apply(editor);
-    assertNotNull(component);
-    Disposer.register(getTestRootDisposable(), () -> component.removeAll());
-    return (EditorNotificationPanel) component;
-  }
-
-  /** An image editor (interfaces only) whose document holds {@code image}. */
-  private static ImageFileEditor imageEditorShowing(BufferedImage image) {
-    ImageDocument document = proxy(ImageDocument.class, "getValue", image);
-    ImageEditor imageEditor = proxy(ImageEditor.class, "getDocument", document);
-    return proxy(ImageFileEditor.class, "getImageEditor", imageEditor);
-  }
-
-  /** An implementation of {@code type} whose method {@code name} returns {@code value}; the others do nothing. */
-  private static <T> T proxy(Class<T> type, String name, Object value) {
-    return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (self, method, args) -> {
-      switch (method.getName()) {
-        case "hashCode":
-          return System.identityHashCode(self);
-        case "equals":
-          return self == args[0];
-        case "toString":
-          return type.getSimpleName() + " proxy";
-        default:
-          if (method.getName().equals(name)) return value;
-          Class<?> result = method.getReturnType();
-          if (result == boolean.class) return false;
-          if (result.isPrimitive() && result != void.class) return result == long.class ? 0L : result == double.class ? 0.0 : 0;
-          return null;
-      }
-    }));
   }
 
   /** The removal of this plugin's banners before unloading reaches the platform under either of its names. */

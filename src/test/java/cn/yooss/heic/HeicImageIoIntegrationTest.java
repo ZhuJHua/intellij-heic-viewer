@@ -236,57 +236,22 @@ class HeicImageIoIntegrationTest {
     assertEquals("white", Fixtures.colorName(white.getRGB(75, 50)));
   }
 
-  /**
-   * Like the IDE's viewer decodes PNG: every image at full size, even when the heap is full, as long as the decode needs
-   * at most a quarter of the maximum heap (here 2 GB, completely in use), with the estimate of the system decoder and the
-   * first-paint copy.
-   */
+  /** Every image is decoded at full size, like the IDE's viewer decodes PNG and JPEG. */
   @ParameterizedTest
   @ValueSource(strings = {"rgb_sips.heic", "alpha_sips.heic", "rgb16_sips.heic", "exif6_apple.heic", "grid_libheif.heic",
-                          "bands_2000x1200.heic", "bands_exif6.heic", "icc_wide.heic"})
-  void ordinaryImagesDecodeAtFullSize(String name) throws IOException {
-    HeicImageReaderSpi full = new HeicImageReaderSpi(null, new HeapValve(new HeapValveTest.FixedHeap(2L << 30, 2L << 30)));
-    ImageReader reader = full.createReaderInstance();
+                          "bands_2000x1200.heic", "bands_exif6.heic", "icc_wide.heic", "quadrants_4096x3072.heic"})
+  void imagesDecodeAtFullSize(String name) throws IOException {
+    ImageReader reader = spi.createReaderInstance();
     try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes(name)))) {
       reader.setInput(iis, true, true);
       BufferedImage image = reader.read(0, reader.getDefaultReadParam());
       assertEquals(reader.getWidth(0) + "x" + reader.getHeight(0), image.getWidth() + "x" + image.getHeight());
+      if (name.startsWith("quadrants")) {
+        assertEquals("4096x3072 TL=red TR=green BL=blue BR=white marker=TL", Fixtures.layout(image));
+      }
     }
     finally {
       reader.dispose();
-    }
-    assertTrue(Downscales.isEmpty());
-  }
-
-  /**
-   * The heap safety valve with the system decoder: a heap too full for the full-size estimate gets a smaller image, of
-   * the same aspect ratio and colors, while getWidth/getHeight keep reporting the real size.
-   */
-  @Test
-  void heapValveDownscalesWhenTheHeapIsShort() throws IOException {
-    // 128 MB, 80 MB in use: the estimate of the 2000x1200 image (the image and its first-paint copy plus the fixed
-    // part, about 43 MB) is more than a quarter of the heap, and the allowance min(51, 128 - 80 - 38) = 10 MB is less
-    // than the fixed part alone: reduced to the smallest size, 1024 pixels.
-    HeicImageReaderSpi small = new HeicImageReaderSpi(null, new HeapValve(new HeapValveTest.FixedHeap(128L << 20, 80L << 20)));
-    ImageReader reader = small.createReaderInstance();
-    byte[] data = Fixtures.bytes("bands_2000x1200.heic");
-    try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
-      reader.setInput(iis, true, true);
-      assertEquals(2000, reader.getWidth(0), "getWidth reports the real size");
-      BufferedImage image = reader.read(0, reader.getDefaultReadParam());
-      assertEquals(1024, image.getWidth());
-      assertTrue(Math.abs(image.getHeight() - 614) <= 1, "aspect ratio kept: " + image.getHeight());
-      assertEquals(2000, reader.getWidth(0));
-      assertEquals(1200, reader.getHeight(0));
-      assertEquals("red", Fixtures.colorName(image.getRGB(512, 25)), "the first band");
-      Downscales.Entry entry = Downscales.find(Downscales.key(data.length, Downscales.crc(data)));
-      assertNotNull(entry);
-      assertEquals("2000x1200 -> " + image.getWidth() + "x" + image.getHeight(),
-                   entry.width() + "x" + entry.height() + " -> " + entry.shownWidth() + "x" + entry.shownHeight());
-    }
-    finally {
-      reader.dispose();
-      Downscales.clear();
     }
   }
 

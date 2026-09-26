@@ -1,7 +1,6 @@
 package cn.yooss.heic.mac;
 
 import cn.yooss.heic.backend.AbstractHeifBackend;
-import cn.yooss.heic.backend.HeapCost;
 import cn.yooss.heic.backend.HeifBackendStatus;
 import cn.yooss.heic.backend.HeifImageInfo;
 import cn.yooss.heic.backend.jna.JnaLibraries;
@@ -58,16 +57,5 @@ public final class MacHeifBackend extends AbstractHeifBackend {
   @Override
   protected @NotNull BufferedImage doDecode(byte[] data, int maxPixelSize) throws IOException {
     return HeicDecoder.decode(data, maxPixelSize);
-  }
-
-  /**
-   * The result, a chunk of copied rows and, for an image with alpha that is downscaled alpha-weighted, the intermediate
-   * image of {@link cn.yooss.heic.backend.PlaneConverter}; the decoded image and the bitmap it is drawn into are native.
-   */
-  @Override
-  public long decodeHeapBytes(@NotNull HeifImageInfo info, int maxPixelSize) {
-    long bytes = HeapCost.simple(info, maxPixelSize);
-    if (HeicDecoder.isAlphaWeighted(info, maxPixelSize)) bytes += HeapCost.planeReduction(info.rawWidth(), info.rawHeight(), maxPixelSize);
-    return bytes;
   }
 }

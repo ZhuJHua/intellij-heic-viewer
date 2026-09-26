@@ -111,11 +111,9 @@ public final class HeicDecoder {
 
   /**
    * Whether an image is downscaled by {@link PlaneConverter} (alpha-weighted) rather than by ImageIO.framework: an image
-   * with alpha, requested smaller than it is, of at most {@link #ALPHA_WEIGHTED_MAX_PIXELS}. ImageIO's thumbnail scaler
-   * does not weight the colors by alpha on every Mac: the color under transparent pixels (black in HEIC files) then
-   * darkens every edge (red at a quarter alpha came out as 128 instead of 255 on the GitHub macOS 26 arm64 and macOS 15
-   * Intel runners, as 191 on an M-series Mac). Larger images (downscaled only by the image reader's heap safety valve)
-   * keep ImageIO's scaler, whose decode does not need the full-size image in memory a second time.
+   * with alpha, requested smaller than it is, of at most {@link #ALPHA_WEIGHTED_MAX_PIXELS}. ImageIO's scaler does not
+   * weight the colors by alpha on every Mac, so the color under transparent pixels (black in HEIC files) would darken
+   * the edges. Larger images keep ImageIO's scaler, which does not need the full-size image a second time.
    */
   static boolean isAlphaWeighted(HeifImageInfo info, int maxPixelSize) {
     if (!info.hasAlpha() || maxPixelSize <= 0) return false;
