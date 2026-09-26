@@ -281,6 +281,11 @@ public final class JnaMacApi implements MacApi {
   }
 
   @Override
+  public void zero(long address, long size) {
+    new Pointer(address).setMemory(0, size, (byte)0);
+  }
+
+  @Override
   public void readInts(long address, int[] target, int count) {
     new Pointer(address).read(0, target, 0, count);
   }

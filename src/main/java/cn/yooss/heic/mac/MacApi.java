@@ -94,6 +94,9 @@ public interface MacApi {
   /** {@code free(address)}; a no-op for {@code 0}. */
   void free(long address);
 
+  /** {@code memset(address, 0, size)}. */
+  void zero(long address, long size);
+
   /** Copies {@code count} native-endian ints starting at {@code address} into {@code target[0..count)}. */
   void readInts(long address, int[] target, int count);
 }

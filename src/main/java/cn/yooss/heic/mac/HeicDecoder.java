@@ -359,6 +359,8 @@ public final class HeicDecoder {
       long context = own(api.cgBitmapContextCreate(buffer, width, height, 8, bytesPerRow, colorSpace, bitmapInfo));
       if (context == 0) throw new IOException("Cannot create a " + width + "x" + height + " bitmap context");
       api.cgContextSetBlendMode(context, kCGBlendModeCopy); // overwrite, never blend with stale pixels
+      // malloc'd memory may still hold an earlier decode, and ImageIO leaves parts of a malformed image undrawn
+      api.zero(buffer, bytesPerRow * height);
       api.cgContextDrawImage(context, 0, 0, width, height, image);
       releaseNow(image);
       releaseNow(source);
@@ -419,6 +421,9 @@ public final class HeicDecoder {
      */
     private void drawStrip(long context, long image, int width, int height, int y0, int rows, int stripRows)
       throws IOException {
+      // The strip buffer holds the previous strip (or an earlier decode); ImageIO may leave parts of a malformed image
+      // undrawn, and those must come out black rather than as stale pixels.
+      api.zero(buffer, 4L * width * Math.min(stripRows, height));
       if (stripRows < height) {
         // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped view into
         // the top `rows` rows of the context instead. The view shares the decoded pixels only if ImageIO cached them;

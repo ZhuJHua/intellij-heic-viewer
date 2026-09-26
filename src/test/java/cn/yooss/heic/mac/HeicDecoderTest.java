@@ -282,17 +282,47 @@ class HeicDecoderTest {
     assertTrue(seconds < 60, seconds + " s");
   }
 
+  /**
+   * ImageIO leaves parts of a malformed image undrawn; those parts must come out black, never as whatever the native
+   * buffer held before (pixels of an image decoded earlier). The buffers are filled with a marker before the draw.
+   */
+  @ParameterizedTest
+  @ValueSource(ints = {0, 1})
+  void undrawnPixelsAreNeverStaleMemory(int stripPixels) throws Throwable {
+    byte[] crafted = Fixtures.withIspe(Fixtures.bytes("exif5_apple.heic"), 600, 400, 50362, 12301);
+    Counting counting = new Counting(0, (byte) 0x5A);
+    BufferedImage image = HeicDecoder.decode(new HeicDecoder.Bound(counting.api), crafted, 4096, false,
+                                             stripPixels == 0 ? cn.yooss.heic.backend.PixelPipeline.STRIP_PIXELS : 1 << 16);
+    int stale = 0;
+    for (int y = 0; y < image.getHeight(); y++) {
+      for (int x = 0; x < image.getWidth(); x++) {
+        if ((image.getRGB(x, y) & 0xFFFFFF) == 0x5A5A5A) stale++;
+      }
+    }
+    assertEquals(0, stale, "pixels showing the marker left in the native buffer");
+  }
+
   /** The real binding, counting the draws; {@code malloc} of {@code failingSize} bytes fails (0: none fails). */
   private static final class Counting {
     final MacApi api;
     int draws;
 
     Counting(long failingSize) {
+      this(failingSize, (byte) 0);
+    }
+
+    /** {@code poison != 0}: every buffer from {@code malloc} is filled with it, like reused memory would be. */
+    Counting(long failingSize, byte poison) {
       MacApi real = new cn.yooss.heic.mac.jna.JnaMacApi();
       api = (MacApi) java.lang.reflect.Proxy.newProxyInstance(
         MacApi.class.getClassLoader(), new Class<?>[]{MacApi.class}, (proxy, method, args) -> {
           if (method.getName().equals("cgContextDrawImage")) draws++;
           if (method.getName().equals("malloc") && failingSize != 0 && (Long) args[0] == failingSize) return 0L;
+          if (method.getName().equals("malloc") && poison != 0) {
+            long address = real.malloc((Long) args[0]);
+            if (address != 0) new com.sun.jna.Pointer(address).setMemory(0, (Long) args[0], poison);
+            return address;
+          }
           try {
             return method.invoke(real, args);
           }
