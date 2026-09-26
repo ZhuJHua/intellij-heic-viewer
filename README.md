@@ -391,9 +391,17 @@ and [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/
    `equals`/`hashCode`/`toString` bootstraps are cached by the JDK; value classes such as `HeifBackendStatus` and
    `HeapValve.Decision` are hand-written instead), and EDT events posted by plugin code during a normal start (`HeicFileTypeMappingRepair` only
    checks the file type mappings synchronously and posts to the EDT when a repair is actually needed).
+   A third one cannot be avoided: on Java 17-23 every thread stores the access control context of the code that
+   created it, with the protection domain (and so the class loader) of every class on the creating stack, for its whole
+   life. Plugin code starts threads without meaning to: submitting a task to the IDE's application pool starts a pool
+   thread when none is idle (the decoder check that `appFrameCreated` submits early during startup sometimes does, and
+   that thread then lives until it has been idle for a minute). An unload in that time failed on IntelliJ IDEA 2024.1.7
+   with "class loader cannot be unloaded". As the last step of `beforePluginUnload`,
+   `InheritedContexts` therefore removes this plugin's domains from the inherited contexts of all live threads
+   (nothing checks them without a security manager; Java 24+ has no such contexts).
    `BytecodeLevelTest` checks the packaged jar (class version, no records, no `java.lang.foreign`, the JNA rules) and
    `PluginClassLoaderLeakTest` checks on JDK 17, 21 and 25 that the class loader is collected after the plugin decoded
-   images and was shut down.
+   images, started a pool thread and was shut down.
 
 ### Memory: full resolution and the heap safety valve
 
@@ -532,6 +540,7 @@ src/main/java/cn/yooss/heic/
   HeicSettings, HeicBundle    Advanced Settings access, resource bundle
   HeicFileTypeMappingRepair   IJPL-39443 workaround
   HeicAppLifecycleListener, HeicDynamicPluginListener   Registration on start / dynamic load and unload
+  InheritedContexts           Before unloading: threads started by plugin code release its class loader (Java 17-23)
   HeicReaderRegistrar         Registration in the command-line diff and merge (an editor provider that never accepts)
   backend/                    HeifBackend, HeifBackendStatus, HeifBackends (selection by OS), AbstractHeifBackend,
                               HeifImageInfo, HeifInput + IsoBoxes (input checks), PixelPipeline,

@@ -7,7 +7,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -16,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,7 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * registration and ImageIO, on the main thread and on a pool thread created before the plugin, with the plugin loader
  * as context class loader, then drops every reference and checks that the loader is garbage collected. The same test
  * runs on JDK 17, 21 and 25 (the IDE runtimes), where different things can pin a class loader (JDK 17: record
- * bootstraps; JDK 17-23: access control contexts inherited by threads the plugin starts, such as JNA's Cleaner).
+ * bootstraps; JDK 17-23: access control contexts inherited by threads the plugin starts, such as JNA's Cleaner, or a pool
+ * thread that plugin code happens to start by submitting a task, like the decoder check does in the IDE's application
+ * pool at startup; {@link InheritedContexts} releases those before the plugin is unloaded).
  */
 class PluginClassLoaderLeakTest {
   @Test
@@ -40,6 +42,21 @@ class PluginClassLoaderLeakTest {
     String output = results.get("output");
     assertEquals("true", results.get("exercised"), output);
     assertEquals("true", results.get("collected"), "the plugin class loader must be collectable:\n" + output);
+  }
+
+  /**
+   * Control: a pool thread started while plugin code is on the stack (here from the heap safety valve's listener, like the
+   * IDE's application pool thread that the decoder check starts during startup) keeps the loader alive on JDK 17-23 if
+   * the inherited access control contexts are not released. The failure this reproduces was seen on IntelliJ IDEA 2024.1.
+   */
+  @Test
+  void threadStartedByPluginCodeKeepsTheLoaderUnlessReleased() throws Exception {
+    Map<String, String> results = runChild("skip-release");
+    assertEquals("true", results.get("exercised"), results.get("output"));
+    assertTrue(Integer.parseInt(results.get("pluginStartedThreads")) >= 1, results.get("output"));
+    boolean inherits = Boolean.parseBoolean(results.get("threadsInheritContexts"));
+    assertEquals(String.valueOf(!inherits), results.get("collected"),
+                 (inherits ? "JDK 17-23: the pool thread must pin the loader:\n" : "JDK 24+: nothing is inherited:\n") + results.get("output"));
   }
 
   /** Control: without the unload steps (the reader stays registered in ImageIO) the loader must stay reachable. */
@@ -95,6 +112,7 @@ class PluginClassLoaderLeakTest {
   }
 
   /** Runs in a fresh JVM: {@code args[0]} is the root of the plugin classes; {@code skip-shutdown} omits the unload steps. */
+  @SuppressWarnings("removal") // Executors.privilegedThreadFactory, AccessControlContext (JDK 17-23 behavior under test)
   public static final class Child {
     public static void main(String[] args) {
       int exitCode = 1;
@@ -120,19 +138,46 @@ class PluginClassLoaderLeakTest {
       // A pool thread that exists before the plugin, like the IDE's application pool.
       ExecutorService pool = Executors.newSingleThreadExecutor();
       pool.submit(() -> { }).get();
+      // The factory of the pools that plugin code may make start a thread, created before the plugin like the IDE's
+      // application pool (whose threads run their tasks with the factory's access control context and class loader).
+      poolThreads = Executors.privilegedThreadFactory();
+      out("threadsInheritContexts", InheritedContextsTest.threadsInheritContexts());
 
-      boolean skipShutdown = List.of(args).contains("skip-shutdown");
+      List<String> options = List.of(args);
+      boolean skipShutdown = options.contains("skip-shutdown");
+      boolean skipRelease = options.contains("skip-release");
       List<String> suspects = new ArrayList<>();
-      WeakReference<ClassLoader> ref = runPlugin(root, heic, pool, suspects, skipShutdown);
+      WeakReference<ClassLoader> ref = runPlugin(root, heic, pool, suspects, skipShutdown, skipRelease);
       boolean collected = collect(ref);
       out("collected", collected);
+      out("pluginStartedThreads", PLUGIN_STARTED_POOLS.size());
       if (!collected) for (String suspect : suspects) System.out.println("SUSPECT " + suspect);
       pool.shutdownNow();
+      for (ExecutorService started : PLUGIN_STARTED_POOLS) started.shutdownNow();
+    }
+
+    /** Pools whose thread plugin code started (see {@link #startPoolThread}); shut down after the check. */
+    private static final List<ExecutorService> PLUGIN_STARTED_POOLS = new ArrayList<>();
+    private static ThreadFactory poolThreads;
+
+    /**
+     * Called by plugin code (the heap safety valve's listener, {@code Downscales.changed()}): submits a task to a new pool,
+     * which starts its thread right here, with the plugin's classes on the stack.
+     */
+    private static void startPoolThread() {
+      ExecutorService executor = Executors.newSingleThreadExecutor(poolThreads);
+      try {
+        executor.submit(() -> { }).get(60, TimeUnit.SECONDS);
+      }
+      catch (Exception e) {
+        throw new IllegalStateException(e);
+      }
+      PLUGIN_STARTED_POOLS.add(executor);
     }
 
     /** Everything that references the plugin loader stays inside this frame. */
     private static WeakReference<ClassLoader> runPlugin(URL root, byte[] heic, ExecutorService pool, List<String> suspects,
-                                                        boolean skipShutdown) throws Exception {
+                                                        boolean skipShutdown, boolean skipRelease) throws Exception {
       PluginLoader loader = new PluginLoader(root, Child.class.getClassLoader());
       WeakReference<ClassLoader> ref = new WeakReference<>(loader);
       Runnable work = () -> {
@@ -155,6 +200,7 @@ class PluginClassLoaderLeakTest {
         // Before the plugin is unloaded (HeicDynamicPluginListener.beforePluginUnload).
         loader.loadClass("cn.yooss.heic.HeicSupport").getMethod("shutDown").invoke(null);
         loader.loadClass("cn.yooss.heic.backend.HeifBackends").getMethod("shutDown").invoke(null);
+        if (!skipRelease) out("released", loader.loadClass("cn.yooss.heic.InheritedContexts").getMethod("release").invoke(null));
       }
       out("exercised", true);
       suspects.addAll(threadSuspects(loader));
@@ -185,7 +231,8 @@ class PluginClassLoaderLeakTest {
       Object reservation = valveClass.getMethod("reserve", long.class).invoke(valve, 1L << 20);
       reservation.getClass().getMethod("close").invoke(reservation);
       Class<?> downscales = loader.loadClass("cn.yooss.heic.Downscales");
-      downscales.getMethod("setListener", Runnable.class).invoke(null, (Runnable) () -> { });
+      // The listener starts a pool thread (see startPoolThread) whenever recordReduced reports news.
+      downscales.getMethod("setListener", Runnable.class).invoke(null, (Runnable) Child::startPoolThread);
       downscales.getMethod("recordReduced", byte[].class, int.class, int.class, int.class, int.class, boolean.class)
         .invoke(null, heic, 50_000, 50_000, 1000, 1000, true);
       Object entry = downscales.getMethod("find", String.class).invoke(null, downscales.getMethod("key", long.class, long.class)
@@ -214,13 +261,10 @@ class PluginClassLoaderLeakTest {
           inherited.setAccessible(true);
           Object context = inherited.get(thread);
           if (context == null) continue;
-          Field domains = context.getClass().getDeclaredField("context");
-          domains.setAccessible(true);
-          Object[] array = (Object[]) domains.get(context);
-          if (array == null) continue;
-          for (Object domain : array) {
-            Method classLoader = domain.getClass().getMethod("getClassLoader");
-            if (classLoader.invoke(domain) == loader) suspects.add("thread '" + thread.getName() + "': inherited access control context");
+          java.security.ProtectionDomain[] domains = InheritedContexts.domainsOf((java.security.AccessControlContext) context);
+          if (domains == null) continue;
+          for (java.security.ProtectionDomain domain : domains) {
+            if (domain.getClassLoader() == loader) suspects.add("thread '" + thread.getName() + "': inherited access control context");
           }
         }
         catch (NoSuchFieldException e) {

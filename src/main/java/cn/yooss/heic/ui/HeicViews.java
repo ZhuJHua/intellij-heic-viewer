@@ -191,6 +191,30 @@ final class HeicViews {
           LOG.warn("Cannot remove the HEIC editor banners before unloading", e);
         }
       }
+      restartBannerUpdates(project);
+    }
+  }
+
+  /**
+   * Before the plugin is unloaded (EDT): replaces the banner updates in flight for the open files of {@code project}
+   * with new ones. An update the platform started earlier holds the list of all banner providers it began with, this
+   * plugin's classes included, and needs the EDT between two providers. The IDE checks on the EDT whether the plugin
+   * class loader can be collected, so such an update cannot finish in time and the unload fails ("class loader cannot be
+   * unloaded"; reproduced on IntelliJ IDEA 2024.1.7 right after a diff was opened: the memory snapshot shows
+   * {@code EditorNotificationsImpl}'s update job -> {@code ExtensionComponentAdapter[]} -> a provider class of this
+   * plugin). {@code updateNotifications(file)} cancels the file's current update, and the platform drains the EDT queue
+   * right after {@code beforePluginUnload}, so the cancelled updates end there. The new ones wait 100 ms before they list
+   * the providers, normally until this plugin's have been removed.
+   */
+  private static void restartBannerUpdates(@NotNull Project project) {
+    try {
+      EditorNotifications notifications = EditorNotifications.getInstance(project);
+      for (VirtualFile file : FileEditorManager.getInstance(project).getOpenFiles()) {
+        notifications.updateNotifications(file);
+      }
+    }
+    catch (RuntimeException | LinkageError e) {
+      LOG.info("Cannot restart the editor banner updates before unloading", e);
     }
   }
 

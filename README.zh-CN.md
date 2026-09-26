@@ -343,8 +343,13 @@ Alpine 3.24 及更新版本上为 `sudo apk add libheif-libde265`，其它发行
      项目视图即切换为缩略图/默认图标，无需重新打开项目。HEIC 文件在磁盘上被修改时（`BulkFileListener`，只比较字符串）同样刷新。
 8. **Java 17 与免重启卸载**：插件以 `--release 17` 编译。在 JBR 17（IntelliJ 2024.1）上，有两件事会让插件卸载后类加载器仍被持有，所以都不使用：
    record（JDK 会缓存它的 `equals`/`hashCode`/`toString` 引导方法；`HeifBackendStatus`、`HeapValve.Decision` 等值类改为手写），以及正常启动时由插件代码向 EDT
-   投递事件（见第 5 条）。`BytecodeLevelTest` 检查打包后的 jar（class 版本、没有 record、没有 `java.lang.foreign`、JNA 规则），
-   `PluginClassLoaderLeakTest` 在 JDK 17、21、25 上验证：插件解码图片并关闭后，类加载器可以被回收。
+   投递事件（见第 5 条）。第三件事无法避免：在 Java 17 – 23 上，每个线程都会在整个生命周期里保存创建它的代码的访问控制上下文，
+   其中包含创建时调用栈上每个类的保护域（因而也引用其类加载器）。插件代码会在不经意间创建线程：向 IDE 的应用线程池提交任务时，
+   如果没有空闲线程，线程池就会新建一个（`appFrameCreated` 在启动早期提交的解码器检查有时就会如此，该线程要空闲一分钟才会结束），
+   在此期间卸载在 IntelliJ IDEA 2024.1.7 上会失败（“class loader cannot be unloaded”）。因此 `beforePluginUnload` 的最后一步由
+   `InheritedContexts` 从所有存活线程继承的上下文中移除本插件的保护域（没有安全管理器时无人检查这些上下文；Java 24 起已不存在）。
+   `BytecodeLevelTest` 检查打包后的 jar（class 版本、没有 record、没有 `java.lang.foreign`、JNA 规则），
+   `PluginClassLoaderLeakTest` 在 JDK 17、21、25 上验证：插件解码图片、启动一个线程池线程并关闭后，类加载器可以被回收。
 
 ### 内存：原始分辨率与堆内存安全阀
 
@@ -473,6 +478,7 @@ src/main/java/cn/yooss/heic/
   HeicFileTypeMappingRepair.java   IJPL-39443 修复
   HeicAppLifecycleListener.java    启动时注册 + 修复 + 检测解码器
   HeicDynamicPluginListener.java   免重启加载/卸载
+  InheritedContexts.java           卸载前让插件代码创建的线程释放插件类加载器（Java 17 – 23）
   HeicReaderRegistrar.java         命令行 Diff/合并窗口（IDE 未运行时的 studio diff/merge）中注册读取器（从不接受文件的编辑器提供者）
   backend/                         HeifBackend、HeifBackendStatus、HeifBackends（按操作系统选择）、AbstractHeifBackend、HeifImageInfo、
                                    HeifInput + IsoBoxes（输入检查）、PixelPipeline、UnavailableHeifBackend、HeifRemedy + HeifRemedies

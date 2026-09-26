@@ -8,10 +8,13 @@ import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.List;
+
 /**
  * Install, enable, update and uninstall without restart: register the reader after this plugin has been loaded and
  * deregister it before it is unloaded, so that nothing in the global ImageIO registry pins the plugin class loader.
- * Before unloading, the thumbnail icon machinery is shut down as well (executor, caches, queued runnables).
+ * Before unloading, the thumbnail icon machinery is shut down as well (executor, caches, queued runnables), and last,
+ * threads that plugin code happened to start release the plugin class loader ({@link InheritedContexts}, JDK 17-23).
  */
 public final class HeicDynamicPluginListener implements DynamicPluginListener {
   private static final Logger LOG = Logger.getInstance(HeicDynamicPluginListener.class);
@@ -46,9 +49,27 @@ public final class HeicDynamicPluginListener implements DynamicPluginListener {
           HeicSupport.shutDown();
         }
         finally {
-          HeifBackends.shutDown(); // lets the backend release native resources
+          try {
+            HeifBackends.shutDown(); // lets the backend release native resources
+          }
+          finally {
+            releaseInheritedContexts(); // last: threads started by plugin code (JDK 17-23), e.g. an application pool thread
+          }
         }
       }
+    }
+  }
+
+  private static void releaseInheritedContexts() {
+    try {
+      List<String> threads = InheritedContexts.release();
+      if (!threads.isEmpty()) {
+        LOG.info("Released the plugin class loader from the access control context inherited by " + threads.size()
+                 + " thread(s): " + threads);
+      }
+    }
+    catch (RuntimeException | LinkageError e) { // e.g. a future Java without java.security.AccessControlContext
+      LOG.info("Cannot release the plugin class loader from inherited access control contexts", e);
     }
   }
 
