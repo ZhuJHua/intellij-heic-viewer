@@ -29,8 +29,8 @@ class HeicReaderRegistrarTest {
   }
 
   /**
-   * `studio diff a.heic b.heic` while the IDE is not running: appFrameCreated never fires, but the providers of the
-   * file's type are asked before the diff creates its image viewers.
+   * {@code accept} registers the reader and never accepts the file. The platform asks it before a command-line diff
+   * creates its image viewers.
    */
   @Test
   void acceptRegistersTheReaderButNeverProvidesAnEditor() {

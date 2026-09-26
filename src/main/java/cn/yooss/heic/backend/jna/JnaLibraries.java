@@ -12,38 +12,28 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 
 /**
- * Opens native libraries through the JNA that every IntelliJ-based IDE bundles (5.14 in 2024.1/2024.2, 5.17 in
- * 2025.2+), in a way that never pins the plugin class loader, so the plugin stays installable, updatable and removable
- * without a restart.
+ * Opens native libraries through the IDE's bundled JNA without pinning the plugin class loader, so the plugin can be
+ * installed, updated and removed without a restart.
  * <p>
- * <b>Rules for every backend</b> (a violation makes the plugin unloadable; {@code PluginClassLoaderLeakTest} checks
- * it):
+ * <b>Rules for every backend</b> (checked by {@code PluginClassLoaderLeakTest}):
  * <ul>
  *   <li>Only JNA's untyped layer: {@link NativeLibrary} from {@link #open}, {@code NativeLibrary.getFunction(name)},
  *   {@code Function.invokeLong/invokeInt/invokeDouble/invokeVoid/invokePointer(Object[])} with arguments of JDK types
  *   ({@code Long}, {@code Integer}, {@code Double}, {@code byte[]}, {@code char[]}, {@code int[]}, {@code long[]}) and
  *   {@link com.sun.jna.Pointer}, plus {@link Native#malloc}/{@link Native#free}. Strings are passed as NUL-terminated
- *   arrays ({@link #utf8z}, {@link #utf16z}): JNA copies {@code String}/{@code WString} arguments into a
- *   {@code Memory}, which registers with JNA's Cleaner and may start its thread from plugin code (see below).</li>
- *   <li>No {@code Library} interface of the plugin ({@code Native.load}), no {@code Structure}, {@code Union},
- *   {@code ByReference}, {@code Callback} or {@code NativeMapped} subclass in the plugin, no {@code Memory}: JNA keeps
- *   static caches keyed by those classes whose values point back at them, and the entries never clear. Structures are
- *   read and written as bytes at known offsets; by-value structs are passed as their scalar members where the ABI
- *   allows it (see {@code cn.yooss.heic.mac.jna.JnaMacApi.RectPassing}).</li>
- *   <li>JNA's own classes and the IDE's {@code com.sun.jna.platform} classes may be used (they belong to the IDE's
- *   class loader), but none of the plugin's classes may be handed to them.</li>
+ *   arrays ({@link #utf8z}, {@link #utf16z}), because JNA copies {@code String} arguments into a {@code Memory}.</li>
+ *   <li>No {@code Library} interface ({@code Native.load}), no {@code Structure}, {@code Union}, {@code ByReference},
+ *   {@code Callback} or {@code NativeMapped} subclass and no {@code Memory}: JNA's static caches keyed by those classes
+ *   never clear. Structures are read and written as bytes at known offsets; by-value structs are passed as their scalar
+ *   members where the ABI allows it (see {@code cn.yooss.heic.mac.jna.JnaMacApi.RectPassing}).</li>
+ *   <li>JNA's own classes and the IDE's {@code com.sun.jna.platform} classes may be used, but none of the plugin's
+ *   classes may be handed to them.</li>
  *   <li>Libraries are opened with {@link #open}, never with {@code NativeLibrary.getInstance(name, options)} options
  *   that contain a class loader.</li>
  * </ul>
- * <b>Why {@link #open} is needed.</b> Every new {@code NativeLibrary} registers with {@code com.sun.jna.internal.Cleaner}.
- * If the Cleaner's thread ("JNA Cleaner") is not running at that moment, JNA starts it from the calling thread: JNA
- * 5.12/5.13 once per process, JNA 5.14+ on demand (it stops after 30 s without registered objects). A thread started
- * from plugin code inherits the calling thread's context class loader and, on Java 17-23, an
- * {@code AccessControlContext} with the {@code ProtectionDomain} of every class on the calling stack, which references
- * the plugin class loader. Either pins the loader for the thread's lifetime. {@link #open} switches the context class
- * loader to JNA's own loader for the call and clears the inherited context of a Cleaner thread that appeared during the
- * call (needs {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which every IDE launcher passes; without it the
- * repair is skipped). Java 24+ has no inherited access control contexts.
+ * {@link #open} runs with JNA's class loader as the context class loader and clears the inherited access control
+ * context of a "JNA Cleaner" thread started during the call: JNA may start that thread from the calling thread, which
+ * would make it keep the plugin class loader.
  */
 public final class JnaLibraries {
   private static final String CLEANER_THREAD = "JNA Cleaner";
@@ -136,8 +126,7 @@ public final class JnaLibraries {
     try {
       Field field = Thread.class.getDeclaredField("inheritedAccessControlContext");
       field.setAccessible(true);
-      // null is what Thread.exit() leaves behind and what AccessControlContext.optimize() treats as "nothing
-      // inherited"; setting it avoids referencing the deprecated-for-removal AccessControlContext class at all.
+      // null means "nothing inherited", as after Thread.exit()
       field.set(thread, null);
     }
     catch (NoSuchFieldException e) {

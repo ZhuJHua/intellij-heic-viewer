@@ -89,7 +89,7 @@ class WicProbeTest {
     assertNull(status.installUrl());
   }
 
-  /** What Windows Server 2025 and Windows 11 without the HEIF Image Extension report. */
+  /** What Windows reports without the HEIF Image Extension. */
   @Test
   void heifExtensionMissing() {
     FakeWinApi api = sampleLike();
@@ -123,7 +123,7 @@ class WicProbeTest {
     }
   }
 
-  /** What Windows 11 with the HEIF Image Extension but without the HEVC Video Extension reports. */
+  /** What Windows reports with the HEIF Image Extension but without the HEVC Video Extension. */
   @Test
   void hevcExtensionMissing() {
     FakeWinApi api = sampleLike();

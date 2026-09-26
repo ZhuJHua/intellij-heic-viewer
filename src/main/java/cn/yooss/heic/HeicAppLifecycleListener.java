@@ -7,9 +7,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * Normal IDE start: {@code appFrameCreated} runs before any project (and therefore any HEIC editor tab) is reopened.
- */
+/** Registers the reader at IDE start: {@code appFrameCreated} runs before any project is reopened. */
 public final class HeicAppLifecycleListener implements AppLifecycleListener {
   private static final Logger LOG = Logger.getInstance(HeicAppLifecycleListener.class);
 

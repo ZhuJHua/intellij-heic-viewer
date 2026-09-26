@@ -7,7 +7,7 @@ import java.util.Locale;
 /**
  * GUIDs of the COM classes, interfaces and formats the Windows backend uses, as canonical lower-case strings, and their
  * 16-byte in-memory layout. Values from the Windows SDK headers ({@code wincodec.idl}, {@code wincodecsdk.idl},
- * {@code mfapi.h}, {@code mftransform.idl}), cross-checked against the mingw-w64 headers.
+ * {@code mfapi.h}, {@code mftransform.idl}).
  */
 public final class Guids {
   private Guids() {

@@ -10,18 +10,11 @@ import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Registers the reader in the command-line diff and merge starters ({@code studio diff a.heic b.heic},
- * {@code studio merge ...}, git difftool/mergetool configured to use the IDE) when the IDE is not running yet. Those
- * starters never create an IDE frame, so {@link HeicAppLifecycleListener#appFrameCreated} does not run there. But
- * before the image viewer of a diff or merge window (or any editor) is created for a file, the platform asks every
- * {@code fileEditorProvider} registered for its file type whether it accepts the file: this provider registers the
- * reader and never accepts.
- * <p>
- * It is registered for the Image file type only ({@code fileType="Image"} in the plugin descriptor); in a normal IDE
- * session the reader is already registered and {@link #accept} is a synchronized null test. The platform closes only
- * the editors created by a provider that is removed, and this one never creates any, so installing, updating or
- * removing the plugin does not disturb open editors or diff windows. After {@code beforePluginUnload},
- * {@link HeicSupport#register()} registers nothing.
+ * Registers the reader in the command-line diff and merge starters ({@code studio diff a.heic b.heic}), which never
+ * create an IDE frame, so {@link HeicAppLifecycleListener#appFrameCreated} does not run there. The platform asks this
+ * provider (registered for the Image file type) before it creates an image viewer for a file: it registers the reader
+ * and never accepts, so it creates no editors. After {@code beforePluginUnload}, {@link HeicSupport#register()}
+ * registers nothing.
  */
 public final class HeicReaderRegistrar implements FileEditorProvider, DumbAware {
   private static final Logger LOG = Logger.getInstance(HeicReaderRegistrar.class);

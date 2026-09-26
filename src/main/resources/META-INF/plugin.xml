@@ -9,27 +9,21 @@
 
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.platform.images</depends>
-  <!-- No OS dependency: everything below is loaded on macOS, Windows and Linux. The decoder is the operating system's
-       own (macOS ImageIO.framework, Windows WIC with the HEIF/HEVC extensions, Linux libheif), chosen and probed at
-       runtime by cn.yooss.heic.backend.HeifBackends; without one, HEIC files show "Image not loaded" and the user is
-       told what to install. IntelliJ 2024.1-2025.1 refuse a plugin with an OS dependency on the other systems. -->
+  <!-- No OS dependency: the plugin loads on macOS, Windows and Linux; cn.yooss.heic.backend.HeifBackends picks the
+       operating system's own decoder at runtime. -->
 
   <resource-bundle>messages.HeicBundle</resource-bundle>
 
   <extensions defaultExtensionNs="com.intellij">
-    <!-- Adds the extensions to the built-in "Image" file type (no implementationClass: merged into the existing
-         type, like the bundled WebP support). -->
+    <!-- Adds the extensions to the built-in "Image" file type. -->
     <fileType name="Image" extensions="heic;heif;hif;heics"/>
 
-    <!-- Registers the javax.imageio reader in the command-line diff and merge starters (`studio diff a.heic b.heic`
-         while the IDE is not running), which never fire appFrameCreated: asked before an image viewer is created for
-         an Image file. accept() always returns false, so it never provides an editor. -->
+    <!-- Registers the javax.imageio reader in the command-line diff and merge starters, which never fire
+         appFrameCreated. accept() always returns false: it never provides an editor. -->
     <fileEditorProvider implementation="cn.yooss.heic.HeicReaderRegistrar" fileType="Image"/>
 
-    <!-- When the system decoder is unavailable (e.g. the Windows HEIF/HEVC extensions or the Linux libheif packages
-         are missing), the user is told where a HEIC image fails to load, with the remedy (package cn.yooss.heic.ui):
-         a banner above the HEIC image editor, and for the diff viewer one balloon per session (also right after
-         installing the plugin); "Check Again" and the results are balloons too. Never probes the decoder on the EDT. -->
+    <!-- While the system decoder is missing: a banner above HEIC image editors and, for the diff viewer, one balloon
+         per session, with the remedy. -->
     <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
     <diff.DiffExtension implementation="cn.yooss.heic.ui.HeicDiffExtension"/>
     <notificationGroup id="HEIC Viewer" displayType="BALLOON" bundle="messages.HeicBundle"
@@ -40,15 +34,14 @@
     <!-- Registration of the javax.imageio reader at IDE start and on dynamic load; deregistration before unload. -->
     <listener class="cn.yooss.heic.HeicAppLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
     <listener class="cn.yooss.heic.HeicDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
-    <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action (a Store page, a
-         copied install command); a volatile read otherwise. -->
+    <!-- Checks the decoder again when the IDE is activated after the user clicked a remedy action. -->
     <listener class="cn.yooss.heic.ui.HeicActivationListener"
               topic="com.intellij.openapi.application.ApplicationActivationListener"/>
   </applicationListeners>
 
   <projectListeners>
-    <!-- The platform collects editor banners by itself for text editors only: asks for the banner of an opened HEIC
-         image editor while the decoder is missing (nothing otherwise). -->
+    <!-- Asks for the banner of an opened HEIC image editor while the decoder is missing (the platform collects banners
+         by itself for text editors only). -->
     <listener class="cn.yooss.heic.ui.HeicFileOpenedListener"
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
   </projectListeners>

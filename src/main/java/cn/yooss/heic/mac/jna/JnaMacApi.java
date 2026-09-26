@@ -11,39 +11,25 @@ import com.sun.jna.Pointer;
 import java.nio.charset.StandardCharsets;
 
 /**
- * {@link MacApi} on top of the JNA that every IntelliJ-based IDE bundles (5.14 in 2024.1/2024.2 ... 5.17 in 2026.x).
+ * {@link MacApi} on top of the IDE's bundled JNA, under the rules of {@link JnaLibraries}: only {@link NativeLibrary}s
+ * opened through {@link JnaLibraries#openAll}, {@link NativeLibrary#getFunction(String)} and
+ * {@link Function#invokeLong(Object[])} etc. with arguments of JDK types, and {@link Native#malloc}/{@link Native#free};
+ * no {@code Library} interface, {@code Structure}, {@code ByReference}, callback or {@code Memory}.
  * <p>
- * <b>Unloadable by design</b> (see {@link JnaLibraries} for the rules): JNA keeps static caches keyed by the
- * {@code Class} objects handed to it ({@code Native.typeOptions}/{@code Native.libraries} for {@code Library}
- * interfaces, {@code Structure.layoutInfo}/{@code fieldOrder}/{@code fieldList} and {@code FFIType.typeInfoMap} for
- * {@code Structure}s, {@code CallbackReference} maps for callbacks). Their values point back at the key class, so an
- * entry never clears and pins the plugin class loader. This class therefore only uses JNA's untyped layer, which never
- * sees a plugin class:
+ * {@code CGRect} arguments (a homogeneous aggregate of four doubles) are passed without a {@code Structure}:
  * <ul>
- *   <li>{@link NativeLibrary}s opened through {@link JnaLibraries#openAll} (no options, JNA's Cleaner thread guarded)
- *   and {@link NativeLibrary#getFunction(String)} / {@link Function#invokeLong(Object[])} etc. with arguments of JDK
- *   types only ({@code Long}, {@code Integer}, {@code Double}, {@code byte[]}, {@code long[]});</li>
- *   <li>no {@code Library} interface, no {@code Structure}, no {@code ByReference}, no callback;</li>
- *   <li>no {@code Memory}: native buffers come from {@link Native#malloc}/{@link Native#free} (a {@code Memory} would
- *   register with JNA's Cleaner, whose thread JNA 5.14+ may start lazily from the calling thread).</li>
+ *   <li>arm64: in four consecutive FP registers, exactly like four {@code double} arguments;</li>
+ *   <li>x86_64: a struct larger than 16 bytes is passed on the stack; eight dummy doubles fill
+ *   {@code xmm0}-{@code xmm7}, so the four components that follow land on the stack in order. Integer arguments (the
+ *   references) go to general-purpose registers independently of the doubles.</li>
  * </ul>
- * {@code CGRect} arguments (32-byte homogeneous aggregate of four doubles) are passed without a {@code Structure}:
- * <ul>
- *   <li>arm64 (AAPCS64/Apple): an HFA of four doubles is passed in four consecutive FP registers, exactly like four
- *   separate {@code double} arguments, so the four components are passed as doubles.</li>
- *   <li>x86_64 (System V): a struct larger than 16 bytes is class MEMORY and is copied to the stack argument area.
- *   Eight dummy doubles fill {@code xmm0}-{@code xmm7}; the four components that follow are then passed on the stack,
- *   in order, which is the same memory image as the by-value struct. Integer-class arguments (the references) are
- *   assigned to general-purpose registers independently of the doubles, so their positions do not matter.</li>
- * </ul>
- * Handles are passed as {@code Long} and returned with {@code invokeLong}: pointers and 64-bit integers use the same
- * registers on both ABIs. {@code Boolean} (unsigned char) results are read as int and masked to 8 bits.
+ * Handles are passed as {@code Long} and returned with {@code invokeLong}. {@code Boolean} (unsigned char) results are
+ * read as int and masked to 8 bits.
  */
 public final class JnaMacApi implements MacApi {
   private static final String FRAMEWORKS = "/System/Library/Frameworks/";
 
-  // Opened without options (Native.load would add the interface's class loader to the options, and the NativeLibrary
-  // keeps them) and through JnaLibraries (JNA's Cleaner thread must not be started with plugin state attached).
+  // Opened through JnaLibraries, without options (see JnaLibraries).
   private final NativeLibrary[] libraries = JnaLibraries.openAll(
       FRAMEWORKS + "CoreFoundation.framework/CoreFoundation", FRAMEWORKS + "ImageIO.framework/ImageIO",
       FRAMEWORKS + "CoreGraphics.framework/CoreGraphics", "/usr/lib/libobjc.A.dylib");
@@ -290,10 +276,7 @@ public final class JnaMacApi implements MacApi {
     new Pointer(address).read(0, target, 0, count);
   }
 
-  /**
-   * How a by-value {@code CGRect} is spread over plain {@code double} arguments. Package-private for tests: the
-   * x86_64 layout can be exercised on Apple silicon under Rosetta 2 with an x86_64 JVM.
-   */
+  /** How a by-value {@code CGRect} is spread over plain {@code double} arguments. Package-private for tests. */
   enum RectPassing {
     /** arm64: the HFA goes to d0-d3, like four double arguments. */
     FOUR_DOUBLES(0),

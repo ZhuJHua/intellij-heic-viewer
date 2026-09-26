@@ -12,8 +12,8 @@ import java.util.Set;
  * <p>
  * Accepted: an HEVC brand ({@code heic heix hevc hevx heim heis hevm hevs}) anywhere in the {@code ftyp}
  * box, or a generic HEIF brand ({@code mif1 msf1 mif2 miaf}) when no AVIF brand ({@code avif avis avio}) is
- * present. AVIF is deliberately rejected (handled by other plugins), as are MP4/MOV ({@code isom},
- * {@code mp42}, {@code qt  } ...) and everything that does not start with an {@code ftyp} box.
+ * present. AVIF, MP4/MOV ({@code isom}, {@code mp42}, {@code qt  } ...) and everything that does not start with an
+ * {@code ftyp} box are rejected.
  */
 public final class HeifSniffer {
   /** Maximum number of header bytes inspected; {@code ftyp} boxes are far smaller in practice. */

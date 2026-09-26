@@ -13,12 +13,11 @@ plugins {
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
-// Optional machine-specific settings (see README.md, "Development"): a Gradle property (-P..., ~/.gradle/gradle.properties)
-// wins over the git-ignored local.properties in the project root; a blank value disables the setting.
-//   platformLocalPath   installed IDE to compile against, run (runIde) and verify with, instead of downloading
-//                       platformType/platformVersion; e.g. /Applications/Android Studio.app
-//   platformCanaryPath  optional second installed IDE, used by runIdeCanary and (with platformLocalPath) verifyPlugin
-//   jetbrainsSignDir    directory with chain.crt + private_encrypted.pem for local signing (default ~/.jetbrains-sign)
+// Optional machine-specific settings (see README.md, "Development"): a Gradle property wins over the git-ignored
+// local.properties; a blank value disables the setting.
+//   platformLocalPath   installed IDE to compile against, run and verify with, instead of platformType/platformVersion
+//   platformCanaryPath  optional second installed IDE for runIdeCanary and (with platformLocalPath) verifyPlugin
+//   jetbrainsSignDir    directory with chain.crt + private_encrypted.pem for signing (default ~/.jetbrains-sign)
 val localProperties = Properties().apply {
     providers.fileContents(layout.projectDirectory.file("local.properties")).asText.orNull?.let { load(it.reader()) }
 }
@@ -41,17 +40,14 @@ val platformCanaryPath: File? = localSetting("platformCanaryPath")?.let { path -
 
 // Set the JVM language level used to build the project.
 java {
-    // A JDK 25 toolchain compiles everything with --release 17 (below): the oldest supported IDEs (2024.1, since-build
-    // 241.14494) run on JBR 17. Gradle finds JDK 25 among the installed JDKs (including the JDK Gradle itself runs on)
-    // or downloads it (foojay).
+    // JDK 25 toolchain; the classes are compiled with --release 17 (below).
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    // Main and test classes: Java 17 bytecode and API (the same test classes run on JDK 17, 21 and 25, see below).
-    // BytecodeLevelTest checks the plugin jar (class versions, no java.lang.foreign, no record ObjectMethods).
+    // Java 17 bytecode and API for main and test classes: IDEs 2024.1.x run on JBR 17.
     options.release = 17
     options.encoding = "UTF-8"
     options.compilerArgs.addAll(listOf("-Xlint:all,-options,-processing,-serial"))
@@ -72,17 +68,17 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
-    // *PlatformIntegrationTest: a light IDE (BasePlatformTestCase, JUnit 4 style) in the `test` task only.
+    // JUnit 4 for the light-IDE tests (*PlatformIntegrationTest).
     testImplementation(libs.junit4)
     testRuntimeOnly(libs.junit.vintage.engine)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         if (platformLocalPath != null) {
-            // Local development: the installed IDE, no download.
+            // The installed IDE at platformLocalPath.
             local(platformLocalPath.path)
         } else {
-            // CI and fresh clones: downloaded (and cached) by Gradle.
+            // platformType/platformVersion, downloaded by Gradle.
             create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         }
 
@@ -99,9 +95,8 @@ dependencies {
     }
 }
 
-// Signing: the CERTIFICATE_CHAIN / PRIVATE_KEY / PRIVATE_KEY_PASSWORD environment variables (CI, see release.yml).
-// Local signing: when those two are not set, chain.crt + private_encrypted.pem from jetbrainsSignDir are used, with the
-// password from PRIVATE_KEY_PASSWORD. Without either, signPlugin is skipped and nothing else is affected.
+// Signing uses the CERTIFICATE_CHAIN / PRIVATE_KEY / PRIVATE_KEY_PASSWORD environment variables or, when the first two
+// are not set, chain.crt + private_encrypted.pem from jetbrainsSignDir. Without either, signPlugin is skipped.
 val certificateChainEnv = providers.environmentVariable("CERTIFICATE_CHAIN").filter { it.isNotBlank() }
 val privateKeyEnv = providers.environmentVariable("PRIVATE_KEY").filter { it.isNotBlank() }
 val localSigningFiles: Pair<File, File>? =
@@ -174,8 +169,7 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Verify the plugin independently of the OS/architecture of the IDE build that is checked (the plugin supports
-        // macOS, Windows and Linux; the verifier would otherwise skip IDE modules of other systems).
+        // Checks the IDE modules of every OS and architecture: the plugin runs on macOS, Windows and Linux.
         freeArgs = listOf("-ignore-os-arch")
 
         ides {
@@ -183,7 +177,7 @@ intellijPlatform {
                 local(platformLocalPath)
                 platformCanaryPath?.let { local(it) }
             } else {
-                // `pluginVerificationIdes` in gradle.properties (explained there).
+                // pluginVerificationIdes from gradle.properties.
                 create(providers.gradleProperty("pluginVerificationIdes").map { ides ->
                     ides.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                 })
@@ -202,7 +196,7 @@ changelog {
 intellijPlatformTesting {
     runIde {
         if (platformCanaryPath != null) {
-            // ./gradlew runIdeCanary : a second installed IDE, e.g. an Android Studio canary (build 262)
+            // ./gradlew runIdeCanary: the plugin in the IDE at platformCanaryPath.
             register("runIdeCanary") {
                 localPath = platformCanaryPath
             }
@@ -229,34 +223,28 @@ tasks {
         }
     }
 
-    // verifyPluginSignature reads signPlugin's output (build/distributions/*-signed.zip) but the IntelliJ Platform Gradle
-    // Plugin does not declare the dependency, so Gradle 9 rejects `./gradlew signPlugin verifyPluginSignature`.
+    // verifyPluginSignature reads signPlugin's output (build/distributions/*-signed.zip).
     verifyPluginSignature {
         dependsOn(signPlugin)
     }
 
     test {
-        // JDK 25: the runtime of IDEs 2026.1.3+ (Android Studio Quail 3+).
+        // JDK 25: IDEs 2026.1.3+, Android Studio Quail 3+.
         javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
         systemProperty("heic.test.javaVersion", 25)
         jvmArgs("--enable-native-access=ALL-UNNAMED") // JNA loads its JNI library (Java 22+ warns otherwise)
     }
 }
 
-// The IDE's JNA (com.sun.jna in lib/util-8.jar) is on the test class path, but its native part ships separately in
-// <IDE>/lib/jna/<arch>; point JNA there exactly like the IDE launcher does (product-info.json: -Djna.boot.library.path,
-// -Djna.nosys=true, -Djna.noclasspath=true). Directory names as in the IDE distributions: aarch64 or amd64, on macOS,
-// Windows and Linux alike. Evaluated only when a test task runs (resolving platformPath needs the IDE).
-// -PjnaNativeDir=<directory with jnidispatch> is used where the IDE has no directory for this architecture (e.g. the
-// x64 build of IntelliJ IDEA on Windows arm64, with win32-aarch64/jnidispatch.dll from the JNA release of the same
-// version).
+// Tests load JNA's native library from <IDE>/lib/jna/<aarch64|amd64> with the JNA options of the IDE launcher.
+// -PjnaNativeDir=<directory with jnidispatch> is used when the IDE has no directory for this architecture.
 val platformDir: Provider<File> = providers.provider { intellijPlatform.platformPath.toFile() }
 val jnaNativeDirFallback: Provider<String> = providers.gradleProperty("jnaNativeDir")
 val jnaNativeDir: Provider<String> = platformDir.map { platform ->
     val jna = platform.resolve("lib/jna")
     val arch = System.getProperty("os.arch").lowercase()
     val preferred = if (arch == "aarch64" || arch == "arm64") "aarch64" else "amd64"
-    // Not another architecture's directory: e.g. Android Studio for Linux and Windows ships x64 only.
+    // Only the directory of this architecture.
     jna.resolve(preferred).takeIf { it.isDirectory }?.absolutePath
         ?: jnaNativeDirFallback.orNull?.takeIf { File(it).isDirectory }?.let { File(it).absolutePath }
         ?: ""
@@ -279,8 +267,7 @@ val pluginJar: Provider<RegularFile> = tasks.named<AbstractArchiveTask>("compose
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     jvmArgumentProviders.add(PluginJarArg(pluginJar))
-    // What the IDE launcher passes as well: java.lang for JnaLibraries (clears the inherited access control context of
-    // a JNA Cleaner thread started by plugin code, see PluginClassLoaderLeakTest).
+    // As the IDE launcher does; JnaLibraries needs java.lang opened.
     jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
     jvmArgumentProviders.add(JnaNativeArgs(jnaNativeDir))
     // The status HeifBackendContractTest expects of the system decoder (e.g. "available" on macOS).
@@ -293,16 +280,13 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// The same tests on the runtimes of the supported IDEs; `check` runs test, testJdk21 and testJdk17. These are plain Test
-// tasks: unlike `test`, which the IntelliJ Platform Gradle Plugin prepares for IDE tests (and which therefore refuses to
-// run on a CPU architecture the IDE compiled against has no build for, e.g. Android Studio on Linux/Windows arm64), they
-// only reuse its class path. testJdk25 is `test` as such a plain task (CI runs testJdk25, testJdk21 and testJdk17).
+// The unit tests on the JDKs of the supported IDEs, as plain Test tasks with the class path of `test`; unlike `test`,
+// they also run on CPU architectures the IDE compiled against has no build for.
 fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(taskName) {
     group = "verification"
     description = "Runs the unit tests on JDK $javaVersion."
     testClassesDirs = sourceSets.test.get().output.classesDirs
-    // The class path of `test` (with the tasks that build it), but not tasks.test.map { it.classpath }: a value mapped from
-    // the task provider would make this task depend on `test` itself.
+    // Read from the task itself: a value mapped from the task provider would make this task depend on `test`.
     classpath = tasks.test.get().classpath
     dependsOn("prepareTestSandbox") // the class path contains the plugin as installed in the test sandbox
     javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
@@ -319,20 +303,19 @@ val testJdk21 = registerTestOn("testJdk21", 21)
 // JBR 17: IDEs 2024.1.x, Android Studio Koala.
 val testJdk17 = registerTestOn("testJdk17", 17)
 testJdk17.configure {
-    // The platform jars of the IDE compiled against (2026.1) are Java 21 bytecode and cannot be loaded on JDK 17, except
-    // util-8.jar (Java 8 bytecode: JNA, Logger, ...). The JDK 17 run gets a minimal class path: the plugin jar, JUnit
-    // and util-8.jar. Tests that need other platform classes are tagged "platform" and run on JDK 21 and 25.
+    // The plugin jar, JUnit and util-8.jar (JNA, Logger), the only platform jar that loads on JDK 17. Tests that need
+    // other platform classes are tagged "platform".
     classpath = sourceSets.test.get().output + files(pluginJar) +
         configurations.testRuntimeClasspath.get().filter { it.name.matches(Regex("(junit-|opentest4j|apiguardian).*")) } +
         files(platformDir.map { it.resolve("lib/util-8.jar") })
     useJUnitPlatform { excludeTags("platform") }
-    // Test classes whose bytecode cannot even be verified without those platform classes (JUnit would fail discovery).
+    // Test classes that cannot be loaded without the other platform classes.
     filter { excludeTestsMatching("cn.yooss.heic.HeicReaderRegistrarTest") }
 }
 tasks.check { dependsOn(testJdk21, testJdk17) }
 
-// On Intel Macs the test JVMs run one at a time: ImageIO's GPU conversion is not reliable there while several processes
-// decode (HeicDecoder serializes the decodes within one process).
+// On Intel Macs the test JVMs run one at a time: ImageIO's GPU conversion there is unreliable while processes decode
+// in parallel.
 abstract class IntelMacDecoderTests : BuildService<BuildServiceParameters.None>
 if (System.getProperty("os.name").lowercase().startsWith("mac") && System.getProperty("os.arch") in setOf("x86_64", "amd64")) {
     val oneTestJvm = gradle.sharedServices.registerIfAbsent("intelMacDecoderTests", IntelMacDecoderTests::class) {

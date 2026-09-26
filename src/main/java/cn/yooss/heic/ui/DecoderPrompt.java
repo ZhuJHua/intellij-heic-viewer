@@ -30,10 +30,9 @@ import java.util.List;
  *   was installed. It offers the remedy's actions.</li>
  *   <li><b>Result of "Check Again"</b>: available now, or still missing (with the actions again).</li>
  * </ul>
- * The notifications' actions are plugin classes, so {@link #shutDown()} expires them before the plugin is unloaded.
- * The notifications on screen are kept in a static list for that, so their actions take the project from the action
- * event and capture none: closing a project only hides its balloons, it does not expire them, and a captured project
- * would stay reachable from the list after it was closed.
+ * {@link #shutDown()} expires the notifications on screen before the plugin is unloaded (their actions are plugin
+ * classes). They are kept in a static list for that, so their actions take the project from the action event instead of
+ * capturing it: a closed project's balloons are hidden, not expired.
  */
 public final class DecoderPrompt {
   private static final Logger LOG = Logger.getInstance(DecoderPrompt.class);

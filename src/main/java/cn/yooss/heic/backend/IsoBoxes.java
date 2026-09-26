@@ -6,9 +6,8 @@ import java.util.Locale;
 /**
  * Pure-Java structural check of an ISO-BMFF (HEIF) file.
  * <p>
- * System decoders may happily "decode" a truncated HEIC (a partially downloaded or partially written file):
- * macOS ImageIO.framework returns an all-black image without reporting an error. Two cheap checks detect that case
- * before any backend sees the data (see {@link HeifInput}):
+ * System decoders may decode a truncated HEIC file as a black image without reporting an error. Two checks detect a
+ * truncated file before any backend sees the data (see {@link HeifInput}):
  * <ol>
  *   <li>the top-level boxes must fit into the file (a box that claims more bytes than there are means the file was
  *   cut inside that box);</li>
@@ -87,8 +86,7 @@ final class IsoBoxes {
       int dataReferenceIndex = r.u16();
       long baseOffset = r.uN(baseOffsetSize);
       int extentCount = r.u16();
-      // With index/offset/length sizes all 0 every extent reads no bytes and is identical (baseOffset..EOF), so
-      // checking one is enough; without this a crafted iloc loops up to 65535 times per 6-byte item.
+      // With index/offset/length sizes all 0 every extent is identical (baseOffset..EOF): checking one is enough.
       if (indexSize + offsetSize + lengthSize == 0) extentCount = Math.min(extentCount, 1);
       for (int extent = 0; extent < extentCount && r.ok(); extent++) {
         r.uN(indexSize);

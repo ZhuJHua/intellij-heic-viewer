@@ -209,7 +209,7 @@ class HeifBackendContractTest {
     int edge = image.getRGB(22, 34);
     String message = name + " (" + BACKEND.id() + "): " + Integer.toHexString(edge);
     assertTrue(Math.abs((edge >>> 24) - 64) <= 16, message);
-    // Alpha-weighted: red stays red (about 255); scaling colors and alpha separately gives about 128 to 150.
+    // Alpha-weighted: red stays red (about 255).
     assertTrue(((edge >> 16) & 0xFF) >= 220, message);
     assertTrue(((edge >> 8) & 0xFF) <= 40 && (edge & 0xFF) <= 40, message);
   }

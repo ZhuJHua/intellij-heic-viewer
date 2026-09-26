@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * command that installs libheif ({@link LibheifRemedy}). Pure Java; never throws (an unreadable file gives an unknown
  * distribution).
  * <p>
- * Immutable, hand-written (no record, see {@code HeifBackendStatus}).
+ * Immutable, with hand-written {@code equals}/{@code hashCode}/{@code toString} (see {@code HeifBackendStatus}).
  */
 public final class LinuxDistribution {
   private static final String[] OS_RELEASE_FILES = {"/etc/os-release", "/usr/lib/os-release"};

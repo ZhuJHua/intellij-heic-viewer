@@ -100,7 +100,7 @@ class LibheifHeifBackendTest {
     assertTrue(e.getMessage().contains(reason.name()), e.getMessage());
   }
 
-  /** A libheif without HEVC decoder (CI: Ubuntu 24.04 without libheif-plugin-libde265): the plugin directory is named. */
+  /** A libheif without HEVC decoder (e.g. without libheif-plugin-libde265): the status names the plugin directories. */
   @Test
   @EnabledIf("cn.yooss.heic.linux.TestLibheif#isLoadable")
   void hevcDecoderMissing() {

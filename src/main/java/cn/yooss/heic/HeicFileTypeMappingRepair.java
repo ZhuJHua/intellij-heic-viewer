@@ -15,18 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Keeps the HEIC extensions mapped to the Image file type.
- * <p>
- * When the IDE saves its file-type settings while this plugin is unloaded (after an uninstall, a disable, or an
- * update whose unload did not complete), {@code filetypes.xml} records {@code <removed_mapping ext="heic"
- * type="Image"/>}. On the next start that entry removes the mapping this plugin contributes, so {@code .heic} files
- * become "unknown" although the plugin is installed and its reader is registered.
- * <p>
- * This repair re-associates each of our extensions with the Image file type, but only if the extension currently
- * resolves to no file type at all ({@link UnknownFileType}); an extension the user mapped to another file type is left
- * alone. Only public API is used, so an explicit removal of the mapping (indistinguishable from the stale entry
- * through public API) is reverted as well; to stop HEIC files from opening as images, disable the plugin.
- * Side effect: the repaired mapping is stored explicitly in {@code filetypes.xml} and survives an uninstall.
+ * Keeps the HEIC extensions mapped to the Image file type. A {@code <removed_mapping ext="heic" type="Image"/>} entry,
+ * which the IDE writes to {@code filetypes.xml} when it saves its file-type settings while the plugin is unloaded,
+ * removes the plugin's mapping on the next start. Each extension that resolves to no file type
+ * ({@link UnknownFileType}) is associated with the Image file type again; an extension the user mapped to another file
+ * type is left alone.
  */
 final class HeicFileTypeMappingRepair {
   private static final Logger LOG = Logger.getInstance(HeicFileTypeMappingRepair.class);
@@ -35,12 +28,9 @@ final class HeicFileTypeMappingRepair {
   }
 
   /**
-   * Checks the mappings right away (read-only, any thread) and, only if an extension has lost its mapping, schedules
-   * the repair on the EDT (a write action is required to change file type associations). The repair runs when no
-   * modal dialog is open; until then it stays queued, e.g. while Settings | Plugins is open after an installation.
-   * <p>
-   * A normal start posts nothing to the EDT: on Java 17 an EDT event created by plugin code captures the plugin's
-   * protection domain, which threads started while handling it inherit (see {@link InheritedContexts}).
+   * Checks the mappings (read-only, any thread) and, only if an extension has lost its mapping, queues the repair on
+   * the EDT for when no modal dialog is open. Posts nothing to the EDT otherwise: on Java 17 an EDT event created by
+   * plugin code can keep the plugin class loader alive ({@link InheritedContexts}).
    */
   static void schedule() {
     Application application = ApplicationManager.getApplication();
@@ -64,10 +54,8 @@ final class HeicFileTypeMappingRepair {
   }
 
   /**
-   * True once the application is disposed or the reader has been deregistered. {@code beforePluginUnload}
-   * deregisters the reader before {@code DynamicPlugins} purges expired EDT runnables, so a repair still queued
-   * behind a modal dialog is dropped instead of pinning the plugin class loader (which would make an uninstall or
-   * update in the same Settings session require a restart).
+   * True once the application is disposed or the reader has been deregistered, so that a repair still queued when the
+   * plugin is unloaded is dropped instead of pinning the plugin class loader.
    */
   static Condition<Object> expired(Application application) {
     return ignored -> application.isDisposed() || !HeicSupport.isRegistered();

@@ -2,10 +2,7 @@ package cn.yooss.heic.mac;
 
 /**
  * The native primitives {@link HeicDecoder} needs from CoreFoundation, ImageIO.framework, CoreGraphics and the
- * Objective-C runtime. The decode algorithm exists once, in {@link HeicDecoder}; the binding technology sits behind
- * this interface: {@link cn.yooss.heic.mac.jna.JnaMacApi} (the IDE's bundled JNA, Java 17+). The interface keeps the
- * algorithm independent of the binding, so another one (e.g. {@code java.lang.foreign} once the plugin requires Java
- * 22) could be added without touching it.
+ * Objective-C runtime, implemented by {@link cn.yooss.heic.mac.jna.JnaMacApi} (the IDE's bundled JNA).
  * <p>
  * Every {@code CF}/{@code CG} reference is passed as its raw address ({@code 0} = {@code NULL}). A {@code CGRect}
  * parameter is passed as its four components. Implementations must be thread-safe and must not keep per-call state.

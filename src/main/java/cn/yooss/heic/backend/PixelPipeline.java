@@ -40,7 +40,7 @@ import java.util.Locale;
  * image = PixelPipeline.downscale(image, maxPixelSize);         // unless the decoder scaled already
  * }</pre>
  * All images are written with {@code WritableRaster.setDataElements}, which keeps them "managed" (hardware
- * accelerated when painted), unlike images built around an {@code int[]} of their own.
+ * accelerated when painted).
  */
 public final class PixelPipeline {
   /** Pixels per strip (bounds scratch buffers to 4 MB). */

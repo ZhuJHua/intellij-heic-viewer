@@ -1,16 +1,11 @@
 #!/bin/sh
-# Runs in a container of a Linux distribution, as root (the "Linux install commands" jobs of cross-platform.yml):
+# Runs the libheif install command the plugin suggests, as root in a container of a Linux distribution:
 #   /w    the plugin's and the tests' classes and resources, and jna.jar
 #   /jdk  a JDK built for glibc (mode "java")
-# Mode "java" (glibc distributions):
-#   1. the plugin's libheif backend must report LINUX_LIBHEIF_MISSING on the fresh system;
-#   2. the install command the plugin suggests for this distribution is run, adapted to a non-interactive root shell
-#      (no sudo; -y, -n, --noconfirm; the packages and repositories are unchanged);
-#   3. the backend must then be available and decode the fixtures correctly.
-# Mode "alpine" (musl: JNA's library in jna.jar is built for glibc): the suggested command is run and the libraries
-#   must be installed.
-# $PREPARE is run first (e.g. apt-get update). $KNOWN lists decode checks that fail with that distribution's libheif
-# (limitations of an old version, see the workflow).
+# Mode "java": the backend must report LINUX_LIBHEIF_MISSING, then the command is run (without sudo, non-interactive),
+#   then the backend must be available and decode the fixtures.
+# Mode "alpine": the command is run and the libraries must be installed (JNA's library in jna.jar needs glibc).
+# $PREPARE runs first (e.g. apt-get update). $KNOWN lists the decode checks this distribution's libheif fails.
 set -eu
 mode=${1:-java}
 export DEBIAN_FRONTEND=noninteractive

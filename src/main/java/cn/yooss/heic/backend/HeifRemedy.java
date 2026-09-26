@@ -17,7 +17,7 @@ import java.util.Objects;
  * package needs no IDE classes; URLs and commands are data (not translated). Every URL is {@code https:} or
  * {@code ms-windows-store:} ({@link HeifRemedies#isAllowedUrl}), every command a single non-empty line.
  * <p>
- * Immutable. Hand-written value classes, not records (see {@link HeifBackendStatus}).
+ * Immutable, with hand-written {@code equals}/{@code hashCode}/{@code toString} (see {@link HeifBackendStatus}).
  */
 public final class HeifRemedy {
   /** What an {@link Action} does. */

@@ -97,7 +97,7 @@ class LinuxDistributionTest {
     assertEquals("Arch Linux (ID=arch, ID_LIKE=, VERSION_ID=)", parse(OsReleaseSamples.ARCH).toString());
   }
 
-  /** The real file of the Linux machine the tests run on (CI: Ubuntu). */
+  /** The real file of the Linux machine the tests run on. */
   @Test
   @EnabledOnOs(OS.LINUX)
   void currentSystem() {

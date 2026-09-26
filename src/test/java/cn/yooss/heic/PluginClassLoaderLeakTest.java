@@ -25,18 +25,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Dynamic unload: after the plugin has decoded images, registered its reader and shut down again, nothing may keep
- * its class loader alive, or the IDE needs a restart to update or remove the plugin.
+ * Dynamic unload: after the plugin has decoded images, registered its reader and shut down again, nothing keeps its
+ * class loader alive.
  * <p>
- * Runs in a fresh JVM ({@link Child}) so that JNA is "cold" (its native part not loaded, its Cleaner thread not
- * started yet), the worst case: the plugin's classes are loaded again by a child-first class loader, like the IDE's
- * plugin class loader, while JNA and the JDK come from the parent. The child exercises the backend of this OS, the reader
+ * Runs in a fresh JVM ({@link Child}) in which JNA is not initialized yet (its native part not loaded, its Cleaner
+ * thread not started). The plugin's classes are loaded again by a child-first class loader, like the IDE's plugin class
+ * loader, while JNA and the JDK come from the parent. The child exercises the backend of this OS, the reader
  * registration and ImageIO, on the main thread and on a pool thread created before the plugin, with the plugin loader
- * as context class loader, then drops every reference and checks that the loader is garbage collected. The same test
- * runs on JDK 17, 21 and 25 (the IDE runtimes), where different things can pin a class loader (JDK 17: record
- * bootstraps; JDK 17-23: access control contexts inherited by threads the plugin starts, such as JNA's Cleaner, or a pool
- * thread that plugin code happens to start by submitting a task, like the decoder check does in the IDE's application
- * pool at startup; {@link InheritedContexts} releases those before the plugin is unloaded).
+ * as context class loader, then drops every reference and checks that the loader is garbage collected. On JDK 17-23,
+ * threads started while plugin code is on the stack inherit an access control context that references the loader;
+ * {@link InheritedContexts} releases it before the plugin is unloaded.
  */
 class PluginClassLoaderLeakTest {
   @Test
@@ -48,9 +46,8 @@ class PluginClassLoaderLeakTest {
   }
 
   /**
-   * Control: a pool thread started while plugin code is on the stack (here from a logger that plugin code calls, like
-   * the IDE's application pool thread that the decoder check starts) keeps the loader alive on JDK 17-23 if the inherited
-   * access control contexts are not released.
+   * Control: a pool thread started while plugin code is on the stack (here from a logger that plugin code calls) keeps
+   * the loader alive on JDK 17-23 unless the inherited access control contexts are released.
    */
   @Test
   void threadStartedByPluginCodeKeepsTheLoaderUnlessReleased() throws Exception {
@@ -134,9 +131,9 @@ class PluginClassLoaderLeakTest {
     private static void run(String[] args) throws Exception {
       URL root = URI.create(args[0]).toURL();
       byte[] heic = Fixtures.bytes("alpha_sips.heic");
-      // What the IDE has done long before a plugin loads: ImageIO's registry and Java2D are initialized (their global
-      // state, e.g. the AppContext, captures the context class loader of the thread that initializes them). JNA stays
-      // cold on purpose: the plugin's first native call initializes it.
+      // As in the IDE, ImageIO's registry and Java2D are initialized before the plugin loads (their global state, e.g.
+      // the AppContext, captures the context class loader of the thread that initializes them). JNA is initialized by
+      // the plugin's first native call.
       ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb.png"))).createGraphics().dispose();
       // A pool thread that exists before the plugin, like the IDE's application pool.
       ExecutorService pool = Executors.newSingleThreadExecutor();

@@ -20,29 +20,17 @@ import java.util.Locale;
  * under the rules of {@link JnaLibraries}: only {@link NativeLibrary} and {@code Function.invoke*} with JDK-typed
  * arguments, native memory from {@link Native#malloc}; no {@code Library} interface and no {@code Structure}.
  * <p>
- * Every function used exists in libheif 1.6 (Ubuntu 20.04) and later with an unchanged signature (the library has kept
- * its soname {@code libheif.so.1} and its ABI since 1.0); newer optional functions are looked up individually and used
- * only when present: {@code heif_init} (1.13), {@code heif_image_handle_is_premultiplied_alpha} (1.12),
- * {@code heif_load_plugins} (1.14), {@code heif_get_decoder_descriptors} (1.15), {@code heif_get_plugin_directories}
- * (1.17) and {@code heif_image_get_plane_readonly2} (1.20); {@code heif_context_set_maximum_image_size_limit} is looked
- * up the same way.
+ * The required functions exist in libheif 1.6 and later; newer ones are looked up individually and used only when
+ * present: {@code heif_init} (1.13), {@code heif_image_handle_is_premultiplied_alpha} (1.12), {@code heif_load_plugins}
+ * (1.14), {@code heif_get_decoder_descriptors} (1.15), {@code heif_get_plugin_directories} (1.17),
+ * {@code heif_image_get_plane_readonly2} (1.20) and {@code heif_context_set_maximum_image_size_limit}.
  * <p>
  * <b>{@code struct heif_error} returned by value.</b> Most functions return {@code struct heif_error {int code;
- * int subcode; const char* message;}}, 16 bytes, by value. Both supported ABIs return such a struct in two
- * general-purpose registers instead of through a hidden result pointer:
- * <ul>
- *   <li>x86-64 System V: a 16-byte aggregate whose two eightbytes are both of class INTEGER is returned in
- *   {@code RAX} (bytes 0-7: {@code code}, {@code subcode}) and {@code RDX} (bytes 8-15: {@code message});</li>
- *   <li>AArch64 (AAPCS64, also Apple arm64): a composite type of at most 16 bytes that is not a homogeneous
- *   floating-point aggregate is returned in {@code X0} (bytes 0-7) and {@code X1} (bytes 8-15).</li>
- * </ul>
- * The caller passes no hidden pointer in either case, so calling such a function as if it returned an {@code int64_t}
- * ({@link Function#invokeLong}) is ABI-compatible: the result is the first register, i.e. bytes 0-7 of the struct,
- * and the second (caller-saved) register is ignored. On these little-endian targets {@code code} is the low and
- * {@code subcode} the high 32 bits ({@link LibheifException#check}). The message pointer is lost; the codes are
- * turned into text by {@link LibheifException}. Other architectures (32-bit ARM, s390x, ...) return the struct in
- * memory, so the backend refuses them ({@link #isSupportedPlatform}). {@code LibheifAbiTest} checks the decoding
- * against real errors.
+ * int subcode; const char* message;}} (16 bytes) by value, which x86-64 System V and AArch64 return in two
+ * general-purpose registers ({@code RAX}/{@code RDX}, {@code X0}/{@code X1}) without a hidden result pointer. Called
+ * through {@link Function#invokeLong}, such a function therefore returns bytes 0-7 of the struct: {@code code} in the
+ * low and {@code subcode} in the high 32 bits ({@link LibheifException#check}); the message is lost. Other architectures
+ * return the struct in memory, so the backend refuses them ({@link #isSupportedPlatform}).
  * <p>
  * Thread-safe: libheif contexts are independent, the {@code Function} objects are immutable.
  */
@@ -258,15 +246,12 @@ final class Libheif {
   }
 
   /**
-   * Caps the size of the image libheif builds when an image is decoded in {@code context}: about {@code side * side}
-   * pixels. libheif checks it when {@code heif_decode_image} creates the image (for a grid, the canvas sized from the
-   * grid's own description, so a small {@code ispe} in the file cannot get around it). The meaning of the argument of
-   * {@code heif_context_set_maximum_image_size_limit} changed: up to 1.17 a limit per side (a side of at least the
-   * limit fails), so {@code side * sqrt(2)} is passed there (about the same area for images of other shapes, e.g.
-   * panoramas); 1.18.x and 1.19.1+ take the side of a square ({@code side * side} pixels); 1.19.0 alone took the pixel
-   * count. Up to 1.17 the limit is also checked against {@code ispe} when a file is read, so this must be called after
-   * {@code heif_context_read_*} (reading the image's properties is never limited). A no-op where the function is
-   * missing.
+   * Caps the size of the image libheif builds when an image is decoded in {@code context} at about {@code side * side}
+   * pixels; libheif checks it when {@code heif_decode_image} creates the image (for a grid, the canvas from the grid's
+   * own description). The argument of {@code heif_context_set_maximum_image_size_limit} is a limit per side up to
+   * libheif 1.17 ({@code side * sqrt(2)} is passed there), the pixel count in 1.19.0 and the side of a square otherwise.
+   * Up to 1.17 the limit is also checked against {@code ispe} when a file is read, so this is called after
+   * {@code heif_context_read_*}. A no-op where the function is missing.
    */
   void limitDecodeSize(long context, int side) {
     if (setMaximumImageSizeLimit == null || context == 0) return;

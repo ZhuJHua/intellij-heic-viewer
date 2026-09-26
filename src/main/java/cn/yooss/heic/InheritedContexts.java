@@ -19,21 +19,14 @@ import java.util.List;
  * Releases the plugin class loader from threads that inherited it, right before the plugin is unloaded
  * ({@link HeicDynamicPluginListener#beforePluginUnload}).
  * <p>
- * On Java 17-23 every new thread stores the {@code AccessControlContext} of the code that created it: the
- * {@code ProtectionDomain} of every class on the creating stack, and a plugin class's domain references the plugin class
- * loader. The thread keeps that context, and so the class loader, for as long as it lives. Plugin code creates threads
- * indirectly, e.g. a task submitted to the IDE's application pool starts a pool thread when none is idle.
- * {@code Executors.privilegedThreadFactory()}, which the application pool uses, runs the tasks with its own context,
- * but the thread still stores its creator's.
- * <p>
- * {@link #release()} goes through all live threads and replaces an inherited context that contains a domain of this
- * plugin's class loader with the same context without those domains (a domain combiner, e.g. that of a JAAS
- * {@code Subject}, is kept). Without a security manager, which IntelliJ-based IDEs never install, nothing checks these
- * contexts. The contexts are read through public API only (a {@link DomainCombiner} is handed the domains of a
- * context); writing the field needs {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which every IDE launcher passes
- * (without it nothing is changed). Java 24 and newer have no inherited access control contexts.
+ * On Java 17-23 every new thread keeps the {@code AccessControlContext} of the code that created it, whose protection
+ * domains reference the class loaders of the classes on the creating stack; plugin code creates threads indirectly, e.g.
+ * by submitting a task to the application pool. {@link #release()} replaces every inherited context that contains a
+ * domain of this plugin's class loader with the same context without those domains (a domain combiner is kept). Without
+ * a security manager nothing checks these contexts. Writing the field needs
+ * {@code --add-opens java.base/java.lang=ALL-UNNAMED}, which IDE launchers pass; without it nothing is changed.
  */
-@SuppressWarnings("removal") // AccessController & co.: deprecated for removal since Java 17, gone in effect from Java 24
+@SuppressWarnings("removal") // AccessController & co. are deprecated for removal
 public final class InheritedContexts {
   private static final Logger LOG = Logger.getInstance(InheritedContexts.class);
   private static final String FIELD = "inheritedAccessControlContext";

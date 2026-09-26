@@ -21,10 +21,9 @@ import java.io.IOException;
  *   <li>Implementations are thread-safe; decodes may run concurrently (image editor, diff).</li>
  *   <li>Constructing a backend and calling {@link #id()} / {@link #displayName()} never loads native code.
  *   {@link #status()} probes once and caches the result (see {@link AbstractHeifBackend}); the probe may load native
- *   libraries but must be fast (a few milliseconds, at most ~50 ms): it runs while the IDE starts.</li>
+ *   libraries but must be fast: it may run while the IDE starts.</li>
  *   <li>Every decode method first passes the data through {@link HeifInput#check} (pure Java: HEIF {@code ftyp}
- *   sniffing and a truncation check), so that no other format and no truncated file ever reaches a system codec, which
- *   would pick a codec by content or "successfully" decode a black image.</li>
+ *   sniffing and a truncation check), so that no other format and no truncated file reaches a system codec.</li>
  *   <li>Results are 8-bit sRGB {@link BufferedImage}s with the orientation applied (EXIF orientation and HEIF
  *   {@code irot}/{@code imir}): {@code TYPE_INT_RGB} for opaque images, non-premultiplied {@code TYPE_INT_ARGB} when
  *   {@link HeifImageInfo#hasAlpha()}. {@link PixelPipeline} converts native buffers, un-premultiplies, applies the

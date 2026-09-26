@@ -18,10 +18,9 @@ import java.util.Locale;
  *   <li>the data is copied into native memory that stays valid until the context is freed
  *   ({@code heif_context_read_from_memory_without_copy} keeps pointing into it);</li>
  *   <li>{@code heif_context_get_primary_image_handle}; the handle's size is the displayed size, because libheif applies
- *   the HEIF transformations ({@code irot}, {@code imir}, {@code clap}) while decoding (since libheif 1.0: the size
- *   is swapped for {@code irot} 90/270 and cropped for {@code clap} when the file is read). The EXIF orientation is
- *   not applied: a HEIF file expresses its orientation with {@code irot}/{@code imir}, and writers such as Apple's store
- *   the same orientation in both, so applying EXIF too would rotate twice (the fixtures cover both kinds);</li>
+ *   the HEIF transformations ({@code irot}, {@code imir}, {@code clap}) while decoding. The EXIF orientation is not
+ *   applied: a HEIF file expresses its orientation with {@code irot}/{@code imir}, and applying EXIF too would rotate
+ *   twice;</li>
  *   <li>{@code heif_decode_image} to interleaved 8-bit RGB (RGBA with alpha) with the default options (transformations
  *   applied, images with more than 8 bits reduced to 8);</li>
  *   <li>the plane is read in strips and downscaled while reading ({@link PlaneConverter});</li>

@@ -8,9 +8,8 @@ import java.util.List;
 
 /**
  * The libheif the {@code linux} package tests run against: {@code -Dheic.test.libheif=<path>} ({@code HEIC_TEST_LIBHEIF}
- * in Gradle), else the system's on Linux, else Homebrew's on macOS (so that the binding can be developed and checked
- * on a Mac: the {@code heif_error} return convention of Apple arm64 is the AArch64 one, Intel Macs use x86-64 System
- * V like Linux). Tests that need it are skipped when there is none.
+ * in Gradle), else the system's on Linux, else Homebrew's on macOS (the {@code heif_error} return convention of a Mac
+ * is the one of Linux on the same CPU). Tests that need it are skipped when there is none.
  */
 final class TestLibheif {
   private static final String[] HOMEBREW = {"/opt/homebrew/lib/libheif.1.dylib", "/usr/local/lib/libheif.1.dylib"};

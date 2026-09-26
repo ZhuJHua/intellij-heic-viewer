@@ -26,15 +26,9 @@ import java.lang.ref.WeakReference;
 /**
  * Performs a {@link HeifRemedy.Action} of the banner or of a notification (EDT).
  * <p>
- * The "copied" confirmation is a balloon anchored to the clicked link; the platform tracks the link's position through
- * a listener on the frame, which references the link and, through it, the banner with its plugin-class actions. The
- * banner's "More" popup is a window created by plugin code (its access control context and its item callback reference
- * the plugin). Both are therefore closed when the banners go away and before the plugin is unloaded
- * ({@link #closePopups()}), and closed <i>immediately</i>: {@code Balloon.hide()} animates and disposes the balloon (and
- * the listener on the frame) only when the animation ends, after the plugin would be unloaded.
- * <p>
- * Both are referenced weakly: a closed balloon still references its frame (and so the frame's project), which a static
- * field must not keep; while they are on screen, the platform holds them.
+ * The "copied" confirmation balloon and the banner's "More" popup reference plugin classes, so {@link #closePopups()}
+ * closes them immediately, without the fade-out, when the banners go away and before the plugin is unloaded. They are
+ * referenced weakly: a closed balloon still references its frame and so the frame's project.
  */
 final class RemedyActions {
   private static final Logger LOG = Logger.getInstance(RemedyActions.class);

@@ -1,11 +1,8 @@
 # GitHub Actions Workflow created for handling the release process based on the draft release prepared with the Build workflow.
 # Running the publishPlugin task requires all the following secrets to be provided: PUBLISH_TOKEN, PRIVATE_KEY, PRIVATE_KEY_PASSWORD, CERTIFICATE_CHAIN.
 # See https://plugins.jetbrains.com/docs/intellij/plugin-signing.html for more information.
-#
-# Adapted from the IntelliJ Platform Plugin Template (https://github.com/JetBrains/intellij-platform-plugin-template):
-# runs on macOS like the Build workflow's build and test jobs, with Java 25.
-# Note: a GitHub pre-release triggers this workflow too; it publishes to the channel derived from the pluginVersion
-# suffix (e.g. 0.2.0-beta.1 -> "beta"), or to the default (stable) channel for plain versions.
+# A pre-release publishes to the channel named by the pluginVersion suffix (e.g. 0.2.0-beta.1 -> "beta"), a release
+# to the default channel.
 
 name: Release
 on:
@@ -62,8 +59,7 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
         run: |
-          # 0.1.0 is uploaded to Marketplace by hand (the first upload must be manual; the same version cannot be
-          # uploaded twice). Only build and sign it here, so the zip is still attached and the changelog PR still opened.
+          # 0.1.0 is not published from here: it is only built and signed.
           if [ "${{ github.event.release.tag_name }}" = "0.1.0" ]; then
             ./gradlew signPlugin
           else
@@ -98,8 +94,7 @@ jobs:
             --force \
             || true
 
-          # Fails unless "Allow GitHub Actions to create and approve pull requests" is enabled in the repository settings
-          # (off by default for personal repositories); the branch with the patched changelog is pushed either way.
+          # Needs "Allow GitHub Actions to create and approve pull requests" in the repository settings.
           gh pr create \
             --title "Changelog update - \`$VERSION\`" \
             --body "Current pull request contains patched \`CHANGELOG.md\` file for the \`$VERSION\` version." \

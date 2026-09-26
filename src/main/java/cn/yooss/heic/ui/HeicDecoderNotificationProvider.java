@@ -28,20 +28,13 @@ import java.util.function.Function;
 /**
  * The banner above a HEIC/HEIF image editor while the system decoder is unavailable: what is missing
  * ({@code remedy.title.<REASON>}, with the install command where copying it is the remedy; the explanation
- * {@code backend.status.<REASON>} is the tooltip) and the remedy's actions (Microsoft Store, copy command, Check Again,
- * Learn More, ...), see {@link HeifRemedies}; beyond {@value #MAX_LINKS} links, the last ones are under "More".
+ * {@code backend.status.<REASON>} is the tooltip) and the remedy's actions ({@link HeifRemedies}); beyond
+ * {@value #MAX_LINKS} links, the last ones are under "More".
  * <p>
- * {@link #collectNotificationData} runs on a background thread under a read action (IntelliJ 2024.1 to 2026.2), and must
- * be cheap: it only compares the file extension and reads the decoder's cached status. If the decoder has not been
- * probed yet, it starts a probe on a pooled thread and shows nothing; a probe that finds the decoder missing updates
- * the banners ({@link DecoderStatus}). The panel itself is created on the EDT. When the decoder becomes available
- * ("Check Again"), the banners are updated away and the editors reload their image ({@link HeicViews}).
- * <p>
- * Dynamic unload: IntelliJ 2024.1 to 2025.x remove this provider's panels from open editors when the extension is
- * removed, 2026.1 and newer do not; {@link HeicViews#shutDown()} removes them in {@code beforePluginUnload}. The function
- * returned by {@link #collectNotificationData} is applied later, in a separate EDT step of the platform's update job,
- * which may run after {@code beforePluginUnload} (the platform flushes the event queue right after it): it checks
- * {@link HeicViews#isBannerHidden} again when applied, so no panel is created after the shutdown (both run on the EDT).
+ * {@link #collectNotificationData} runs on a background thread and only compares the file extension and reads the
+ * cached status; if the decoder has not been probed yet, it starts a probe on a pooled thread and shows nothing
+ * ({@link DecoderStatus}). The function it returns checks {@link HeicViews#isBannerHidden} again when the platform
+ * applies it on the EDT, so no panel is created after {@link HeicViews#shutDown()}.
  */
 public final class HeicDecoderNotificationProvider implements EditorNotificationProvider, DumbAware {
   @Override
@@ -105,12 +98,9 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
   }
 
   /**
-   * The banner text: the short title and, where copying it is the remedy (the first action, i.e. the package command on
-   * Linux), the command that installs the missing component, {@linkplain #abbreviate abbreviated} in the middle when it
-   * is long (Copy Command next to it copies all of it). Plain text, so that the label ends with "..." when the editor is
-   * narrow; the explanation and the whole command are its tooltip (and the content of the balloons). A Flatpak IDE's
-   * command is run in a terminal on the host ({@link HeifRemedy#isHostCommand()}). On Windows the Microsoft Store comes
-   * first, and the winget command is only in the tooltip, the balloons and "More".
+   * The banner text: the title and, when Copy Command is the first action, the install command,
+   * {@linkplain #abbreviate abbreviated} in the middle when it is long. Plain text, so that the label ends with "..." in
+   * a narrow editor; the explanation and the whole command are in the tooltip.
    */
   static @NotNull String text(@NotNull HeifRemedy remedy) {
     String title = HeicBundle.message(remedy.titleKey());
@@ -123,10 +113,7 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
     return HeicBundle.message(key, title, abbreviate(command, room));
   }
 
-  /**
-   * The banner text is kept to about this many characters (with the command abbreviated): about what a banner of an
-   * editor in a 1500-pixel window shows before its links.
-   */
+  /** The banner text is kept to about this many characters (with the command abbreviated). */
   static final int MAX_BANNER_TEXT = 108;
   /** A command is abbreviated to no fewer characters than this, however long the title. */
   static final int MIN_BANNER_COMMAND = 40;

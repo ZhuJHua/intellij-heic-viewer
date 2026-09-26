@@ -481,9 +481,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   }
 
   /**
-   * "Check Again" clicked while the re-check on activation is still probing (the user comes back to the IDE by clicking
-   * it, which activates the window first): answered by one more probe, not dropped; the balloon (with the Store again)
-   * is shown once.
+   * "Check Again" clicked while the re-check on activation is still probing is answered by one more probe; the balloon
+   * (with the Store again) is shown once.
    */
   public void testCheckAgainDuringTheActivationRecheckIsAnswered() throws Exception {
     FakeHeifBackend backend = use(FakeHeifBackend.probed(HEIF_MISSING));
@@ -514,10 +513,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   }
 
   /**
-   * The platform collects a banner in a read action and applies the function later, in a separate EDT step, which may
-   * run after the plugin's {@code beforePluginUnload} (2026.1+ would then leave the panel, with its plugin-class actions,
-   * in the editor): a function collected before the shutdown creates nothing afterwards. Nor after the user closed the
-   * banner meanwhile.
+   * A banner function collected before the shutdown (the platform applies it later, in a separate EDT step) creates
+   * nothing after it, nor after the user closed the banner meanwhile.
    */
   public void testBannerCollectedBeforeTheShutdownIsNotCreatedAfterIt() throws Exception {
     use(FakeHeifBackend.probed(HEIF_MISSING));
@@ -567,9 +564,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   }
 
   /**
-   * The "copied" confirmation is hidden without animation and disposed at once (an animated hide disposes it, and the
-   * listener on the frame that references the banner's link, only after the plugin was unloaded), and the plugin does
-   * not keep it once the platform lets it go (a closed balloon still references its frame and project).
+   * On shutdown the "copied" confirmation is hidden without animation and disposed at once; the plugin references it
+   * only weakly.
    */
   public void testCopiedConfirmationIsClosedAtOnceAndNotKept() throws Exception {
     List<String> calls = Collections.synchronizedList(new ArrayList<>());
@@ -593,9 +589,8 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
   }
 
   /**
-   * The balloons of a project that was closed do not keep it: closing a project may only hide its balloons (IntelliJ
-   * 2024.1), which then stay in the plugin's list of notifications to expire, so their actions must not capture the
-   * project.
+   * The balloons of a closed project, which may stay in the plugin's list of notifications to expire, do not reference
+   * the project.
    */
   public void testClosedProjectIsNotKeptByTheBalloons() throws Exception {
     Path directory = Files.createTempDirectory("heic-closed-project");

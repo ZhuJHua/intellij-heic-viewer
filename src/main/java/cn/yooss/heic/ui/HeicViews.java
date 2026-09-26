@@ -82,11 +82,9 @@ final class HeicViews {
   }
 
   /**
-   * EDT. Makes the open HEIC image editors load their image again. The image editor loads a file only when it is opened
-   * or changes ({@code IfsUtil} caches no failure, but nothing asks it again), so each editor is refreshed like after a
-   * change on disk ({@code ImageEditorImpl.refreshFile()}, public); for any other image editor implementation the files
-   * are re-parsed ({@code FileContentUtilCore.reparseFiles}, which the image editor also reacts to). Diff windows that
-   * are open keep showing "Image not loaded" until they are opened again.
+   * EDT. Makes the open HEIC image editors load their image again, like after a change on disk
+   * ({@code ImageEditorImpl.refreshFile()}); the files of other image editor implementations are re-parsed. Open diff
+   * windows keep showing "Image not loaded" until they are opened again.
    *
    * @return the number of editors (or files) reloaded
    */
@@ -128,12 +126,9 @@ final class HeicViews {
   }
 
   /**
-   * Before the plugin is unloaded (EDT): no more banners or refreshes, and the banners on screen are removed.
-   * IntelliJ 2026.1 and newer only re-collect the banners of the providers that are still registered, so the panel of
-   * this plugin (with its actions, plugin classes) would stay in the editor and keep the plugin class loader alive.
-   * {@link #removePanels} removes a provider's panels from the editors of all open files right away; after
-   * {@code shutDown} the provider collects nothing, and a function it returned earlier creates no panel when the platform
-   * applies it later on the EDT ({@link #isBannerHidden} is checked again then).
+   * Before the plugin is unloaded (EDT): no more banners or refreshes, and the banners on screen are removed
+   * ({@link #removePanels}), since a panel left in an editor keeps the plugin class loader alive. Afterwards the provider
+   * collects nothing, and a function it returned earlier creates no panel ({@link #isBannerHidden}).
    */
   static void shutDown() {
     shutDown = true;
@@ -153,12 +148,9 @@ final class HeicViews {
   }
 
   /**
-   * Before the plugin is unloaded (EDT): replaces the banner updates in flight for the open files of {@code project}
-   * with new ones. An update the platform started earlier holds the list of all banner providers it began with, this
-   * plugin's classes included, and needs the EDT between two providers, while the IDE checks on the EDT whether the
-   * plugin class loader can be collected. {@code updateNotifications(file)} cancels the file's current update, and the
-   * platform drains the EDT queue right after {@code beforePluginUnload}, so the cancelled updates end there. The new
-   * ones wait 100 ms before they list the providers, normally until this plugin's have been removed.
+   * Before the plugin is unloaded (EDT): restarts the banner updates of the open files of {@code project}. An update in
+   * flight holds the list of banner providers it began with, this plugin's included; {@code updateNotifications(file)}
+   * cancels it and starts a new one.
    */
   private static void restartBannerUpdates(@NotNull Project project) {
     try {
@@ -173,10 +165,9 @@ final class HeicViews {
   }
 
   /**
-   * {@code EditorNotifications.removeNotificationsForProvider(provider)}: removes the provider's panels from the editors
-   * right away (IntelliJ 2025.x and newer); 2024.1 and 2024.2 have the same operation as
-   * {@code updateNotifications(provider)}, which the newer platforms deprecate (and delegate to). Called by name, so that
-   * the plugin links neither a method that 2024.1 lacks nor a deprecated one.
+   * Removes the provider's panels from the editors right away:
+   * {@code EditorNotifications.removeNotificationsForProvider(provider)}, or {@code updateNotifications(provider)} where
+   * that method is missing. Called by name, so that the plugin links neither a missing nor a deprecated method.
    */
   static void removePanels(@NotNull EditorNotifications notifications, @NotNull EditorNotificationProvider provider)
     throws ReflectiveOperationException {

@@ -1,26 +1,10 @@
 package cn.yooss.heic.win;
 
 /**
- * The Microsoft Store packages that make Windows decode HEIC, as listed by the Store catalog
- * ({@code https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds=<id>&market=US&languages=en-US}) and Microsoft's
- * "HEIF extension codec" documentation (learn.microsoft.com/windows/win32/wic/heif-codec, which links 9PMMSR1CGPWG):
- * <table>
- *   <caption>Store packages</caption>
- *   <tr><th>Product id</th><th>Title</th><th>Package family</th><th>Price</th><th>Minimum Windows</th></tr>
- *   <tr><td>9PMMSR1CGPWG</td><td>HEIF Image Extension</td><td>Microsoft.HEIFImageExtension_8wekyb3d8bbwe</td>
- *   <td>free</td><td>10.0.17763 (Windows 10 1809)</td></tr>
- *   <tr><td>9NMZLZ57R3T7</td><td>HEVC Video Extensions</td><td>Microsoft.HEVCVideoExtensions_8wekyb3d8bbwe</td>
- *   <td>US$0.99</td><td>10.0.16299 (Windows 10 1709)</td></tr>
- *   <tr><td>9N4WGH0Z6VHQ</td><td>HEVC Video Extensions from Device Manufacturer</td>
- *   <td>Microsoft.HEVCVideoExtension_8wekyb3d8bbwe</td><td>free, but only preinstalled by PC makers (the Store offers
- *   no purchase action for it)</td><td>10.0.16299</td></tr>
- * </table>
- * Which systems have them preinstalled depends on the Windows edition and the PC maker; where no HEVC package came with
- * the PC, the paid one is the one a user can get.
- * <p>
- * The backend's statuses carry the Store app page ({@code ms-windows-store:}) and, for the free HEIF Image Extension,
- * the winget command; {@code backend.HeifRemedies} turns them into the banner's and the notifications' actions (with the
- * web page for systems without the Store app).
+ * The Microsoft Store packages that make Windows decode HEIC: the HEIF Image Extension ({@link #HEIF_PRODUCT_ID}) and
+ * the HEVC Video Extensions ({@link #HEVC_PRODUCT_ID}); {@link #HEVC_DEVICE_MANUFACTURER_PRODUCT_ID} is the HEVC variant
+ * that PC makers preinstall. The backend's statuses carry the Store app page and, for the HEIF Image Extension, the
+ * winget command; {@code backend.HeifRemedies} turns them into actions.
  */
 public final class WindowsCodecs {
   private WindowsCodecs() {

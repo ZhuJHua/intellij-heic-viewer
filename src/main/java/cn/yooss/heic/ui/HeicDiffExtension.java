@@ -13,10 +13,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The diff viewer shows no editor banner: when a diff of HEIC files is opened while the system decoder is unavailable
- * (its images show "Image not loaded"), the "decoder missing" balloon explains why, once per session
- * ({@link DecoderPrompt}). Called on the EDT for every diff viewer; only compares file extensions and reads the cached
- * status (a probe, if needed, runs on a pooled thread).
+ * Shows the "decoder missing" balloon ({@link DecoderPrompt}, once per session) when a diff of HEIC files is opened
+ * while the system decoder is unavailable, since the diff viewer has no editor banner. Runs on the EDT: it only compares
+ * file extensions and reads the cached status.
  */
 public final class HeicDiffExtension extends DiffExtension {
   @Override

@@ -42,12 +42,9 @@ import java.util.function.Supplier;
  * Both missing states carry the distribution's install command ({@link LibheifRemedy}, from {@code /etc/os-release})
  * and a link to the README section about Linux.
  * <p>
- * <b>Initialization and unloading.</b> libheif's {@code heif_init}/{@code heif_deinit} are reference counted and
- * process-wide. The backend calls {@code heif_init} once per loaded library and never {@code heif_deinit}, which would
- * unload the codec plugins and free libheif's global tables for every user of libheif in the IDE process, including a
- * decode still running while the plugin is unloaded. The plugins stay loaded until the process ends; {@code dlopen}
- * returns the same, still initialized library to a reinstalled plugin. {@link #dispose()} only drops the references to
- * JNA's objects.
+ * {@code heif_init} is called once per loaded library and {@code heif_deinit} never: it is process-wide and would unload
+ * the codec plugins for every user of libheif in the IDE, including a decode still running. {@link #dispose()} only
+ * drops the references to JNA's objects.
  */
 public final class LibheifHeifBackend extends AbstractHeifBackend {
   /** The names libheif is loaded by: its soname, then JNA's short name (JNA also searches {@code libheif.so*}). */

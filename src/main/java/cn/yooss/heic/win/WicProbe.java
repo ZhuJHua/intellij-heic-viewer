@@ -32,18 +32,17 @@ import java.util.Locale;
  * the status is then {@code ERROR} with the Media Feature Pack as the remedy in its detail, since neither Store
  * extension would help.
  * <p>
- * The decisive check is decoding a tiny embedded HEIC ({@link #SAMPLE_BASE64}, 128x64 with {@code irot} 90 degrees, left half
- * red, right half blue): it proves the whole chain (WIC, HEIF decoder, HEVC transform, this plugin's binding). The first
- * decode in a process activates the Store packages and loads the codec, so the probe runs on a background thread.
+ * The decisive check is decoding a tiny embedded HEIC ({@link #SAMPLE_BASE64}): it proves the whole chain (WIC, HEIF
+ * decoder, HEVC transform, this plugin's binding). The first decode in a process activates the Store packages and loads
+ * the codec, so the probe runs on a background thread.
  */
 final class WicProbe {
   /** {@code MFT_ENUM_FLAG_SYNCMFT | ASYNCMFT | HARDWARE | LOCALMFT | SORTANDFILTER} (mfapi.h). */
   static final int MFT_ENUM_FLAGS = 0x01 | 0x02 | 0x04 | 0x10 | 0x40;
 
   /**
-   * 428-byte HEIC encoded with libheif 1.23.5 ({@code heif-enc --rotate-cw 90 -q 30}) from a 128x64 image whose left
-   * half is red and right half blue: stored 128x64 with {@code irot} 270 (counter-clockwise), displayed 64x128 with red
-   * on top and blue at the bottom. {@code WicProbeTest} checks it with the macOS decoder.
+   * A 428-byte HEIC of a 128x64 image whose left half is red and right half blue, stored with {@code irot} 270
+   * (counter-clockwise): displayed 64x128 with red on top and blue at the bottom.
    */
   static final String SAMPLE_BASE64 =
     "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAWBtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAA"
@@ -110,7 +109,7 @@ final class WicProbe {
         probe.hevcDecoders = names;
       }
       else {
-        // The HRESULT of MFStartup if that failed: E_NOTIMPL means "the media components are not present" (KB2703761).
+        // The HRESULT of MFStartup if that failed: E_NOTIMPL means "the media components are not present".
         probe.mediaFoundationMissing = hr == Hresult.E_NOTIMPL;
         probe.hevcProblem = "MFStartup/MFTEnumEx failed: " + Hresult.describe(hr);
       }
@@ -192,8 +191,7 @@ final class WicProbe {
       return HeifBackendStatus.available("Windows Imaging Component with the HEIF Image Extension through " + details);
     }
     if (mediaFoundationMissing) {
-      // The HEIF decoder needs Media Foundation for HEVC: neither Store extension can work without it, so the user must
-      // not be sent to the Store in a loop. (No ms-settings: link: the UI opens https: and Store links only.)
+      // The HEIF decoder needs Media Foundation for HEVC: neither Store extension works without it.
       return HeifBackendStatus.unavailable(HeifBackendStatus.Reason.ERROR,
                                            "Media Foundation is not installed (Windows N edition?): install the Media "
                                            + "Feature Pack (Settings > Apps > Optional features), then the HEIF Image "

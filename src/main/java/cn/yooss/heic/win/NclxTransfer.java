@@ -5,18 +5,14 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Presents the SDR transfer characteristics that Microsoft's HEIF decoder converts to WIC as sRGB, like macOS
- * ImageIO and libheif (and so the plugin on the other platforms) display them.
+ * Presents the SDR transfer curves that Microsoft's HEIF decoder converts to sRGB as sRGB, so that Windows shows them
+ * like macOS ImageIO and libheif do.
  * <p>
- * The HEIF Image Extension converts images whose {@code colr}/{@code nclx} box signals the BT.709 transfer curve, or one
- * of its equivalents (H.273 {@code transfer_characteristics} 1, 6, 14, 15) or "unspecified" (2, which macOS writes),
- * from that curve to sRGB whenever it converts the colors itself: 10-bit images and grids (which
- * {@link SingleImageGrid} makes of single images). Shadows and midtones then come out brighter than in other viewers.
- * With {@code transfer_characteristics} 13 (sRGB) it converts nothing; macOS ImageIO and libheif decode 1, 2, 6, 14 and
- * 15 exactly like 13.
- * <p>
- * The rewrite changes those two bytes of every {@code nclx} box in the item properties to 13, in a copy of the file.
- * Other values (PQ, HLG, linear, ...) are left alone.
+ * For 10-bit images and grids ({@link SingleImageGrid}), the HEIF Image Extension converts the H.273
+ * {@code transfer_characteristics} 1, 6, 14 and 15 (BT.709 and its equivalents) and 2 (unspecified) to sRGB, which
+ * brightens shadows and midtones; with 13 (sRGB) it converts nothing. The rewrite sets those two bytes of every
+ * {@code nclx} box in the item properties to 13, in a copy of the file; other values (PQ, HLG, linear, ...) are left
+ * alone.
  */
 final class NclxTransfer {
   /** H.273 transfer characteristics 13: IEC 61966-2-1 (sRGB). */

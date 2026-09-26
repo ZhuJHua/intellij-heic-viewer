@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * A photo-like HEIC in Display P3: a grid of 512-pixel tiles with an ICC profile ({@code colr prof}), as iPhones write
- * them. {@code p3_grid_sips.heic} was made on macOS 26 from {@code p3_grid_source.png} (the quadrant fixture scaled to
+ * them. {@code p3_grid_sips.heic} is made on macOS from {@code p3_grid_source.png} (the quadrant fixture scaled to
  * 1152x768 with {@code sips -z 768 1152}): {@code sips -m "/System/Library/ColorSync/Profiles/Display P3.icc"} (pixels
  * converted to Display P3 and the profile attached), then {@code sips -s format heic}. Decoded with the system decoder
  * and converted to sRGB, it must match the sRGB source: on Windows this checks the ICC path of the backend

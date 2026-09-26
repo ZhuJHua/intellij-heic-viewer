@@ -15,9 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("platform")
 class HeicFileTypeMappingRepairTest {
   /**
-   * The repair waits in the EDT queue while a modal dialog (Settings | Plugins) is open. It must expire as soon as
-   * beforePluginUnload has deregistered the reader, so that DynamicPlugins purges it instead of it pinning the plugin
-   * class loader.
+   * A repair queued on the EDT (e.g. behind a modal dialog) expires once the application is disposed or the reader is
+   * deregistered on plugin unload, so that the platform drops it and it does not pin the plugin class loader.
    */
   @Test
   void queuedRepairExpiresWhenTheReaderIsDeregistered() {

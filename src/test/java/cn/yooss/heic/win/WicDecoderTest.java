@@ -88,7 +88,7 @@ class WicDecoderTest {
     api.assertClean();
   }
 
-  /** A HEIF decoder whose frames carry alpha themselves (not the one of HEIF Image Extension 1.2.36) keeps it too. */
+  /** A HEIF decoder whose frames carry alpha in their pixels keeps it too. */
   @Test
   void heifFramesWithAlphaInThePixels() throws IOException {
     FakeWinApi api = fake();
@@ -144,7 +144,7 @@ class WicDecoderTest {
     int[] raw = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
     for (int y = 0; y < 10; y++) {
       assertEquals(0, raw[y * 20 + 5], "transparent");
-      assertEquals(0x55FF0000, raw[y * 20 + 6], "the edge: red at a third of the alpha, not darkened"); // WIC: 0x55550000
+      assertEquals(0x55FF0000, raw[y * 20 + 6], "the edge: red at a third of the alpha, not darkened");
       assertEquals(0xFFFF0000, raw[y * 20 + 7], "opaque red");
     }
     api.assertClean();

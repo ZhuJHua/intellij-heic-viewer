@@ -9,10 +9,8 @@ import com.intellij.ui.EditorNotifications;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Makes the banner of {@link HeicDecoderNotificationProvider} appear when a HEIC file is opened. The platform collects
- * editor notifications by itself only for text editors; for other editors, such as the image editor, only when
- * something asks for an update. Does nothing while the decoder is available: a volatile read and an extension compare
- * per opened file. Registered in plugin.xml ({@code projectListeners}).
+ * Shows the banner of {@link HeicDecoderNotificationProvider} when a HEIC file is opened while the decoder is missing;
+ * the platform collects banners by itself only for text editors.
  */
 public final class HeicFileOpenedListener implements FileEditorManagerListener {
   @Override

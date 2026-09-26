@@ -11,9 +11,8 @@ import java.util.Objects;
  * installable component can carry an {@link #installUrl()} (store page, download or documentation page) and an
  * {@link #installCommand()} (a shell command such as {@code sudo apt install ...}), which the install prompt offers.
  * <p>
- * Immutable. A hand-written class, not a record: record {@code equals}/{@code hashCode}/{@code toString} are
- * bootstrapped through {@code java.lang.runtime.ObjectMethods}, whose method handle caches pin the plugin class loader
- * on Java 17 (IntelliJ 2024.1), so the plugin could not be unloaded without a restart.
+ * Immutable, with hand-written {@code equals}/{@code hashCode}/{@code toString}: those of a record are bootstrapped
+ * through {@code java.lang.runtime.ObjectMethods}, whose caches pin the plugin class loader on Java 17.
  */
 public final class HeifBackendStatus {
   /** Why a backend cannot decode. Each constant has the bundle key {@code backend.status.<NAME>} (EN + zh_CN). */

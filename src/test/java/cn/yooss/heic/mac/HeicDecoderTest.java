@@ -465,8 +465,8 @@ class HeicDecoderTest {
 
   /**
    * Decodes on 16 threads give the pixels of a decode on one thread: exactly on Apple silicon, within 2 levels per
-   * channel on Intel Macs, where ImageIO's GPU conversion may round differently while other processes decode. All
-   * decodes have finished before the results are checked.
+   * channel on Intel Macs, where ImageIO's GPU conversion may round differently. All decodes have finished before the
+   * results are checked.
    */
   @Test
   void concurrentDecodesAreIdentical() throws Exception {

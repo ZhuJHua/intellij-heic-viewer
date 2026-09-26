@@ -27,7 +27,7 @@ import java.util.Set;
  *   libheif1 libheif-HEIF}</td></tr>
  *   <tr><td>Arch Linux, Manjaro, EndeavourOS, ... ({@code libde265} is a dependency of {@code libheif})</td>
  *   <td colspan="2">{@code pacman -S --needed libheif libde265}</td></tr>
- *   <tr><td>Alpine ({@code libheif-libde265} is a separate package since 3.24, a dependency of {@code libheif})</td>
+ *   <tr><td>Alpine ({@code libheif-libde265} is a separate package, a dependency of {@code libheif})</td>
  *   <td>{@code apk add libheif}</td><td>{@code apk add libheif-libde265}</td></tr>
  *   <tr><td>Flatpak IDE on the freedesktop runtime 25.08 or newer ({@code ID=org.freedesktop.platform} in the
  *   sandbox's os-release; the runtime has libheif, its HEVC plugin is the {@code org.freedesktop.Platform.codecs-extra}
@@ -41,7 +41,7 @@ final class LibheifRemedy {
   /** README section that explains the Linux setup ("Learn More", or "Installation Instructions" without a command). */
   static final String HELP_URL = HeifRemedies.LINUX_HELP_URL;
 
-  /** Releases whose libheif has libde265 linked in (no plugin packages yet). */
+  /** Releases whose libheif has libde265 linked in (no plugin packages). */
   private static final Set<String> DEBIAN_CODENAMES_WITHOUT_PLUGINS = Set.of("stretch", "buster", "bullseye", "bookworm");
   private static final Set<String> UBUNTU_CODENAMES_WITHOUT_PLUGINS =
     Set.of("bionic", "focal", "hirsute", "impish", "jammy", "kinetic", "lunar");
@@ -59,8 +59,7 @@ final class LibheifRemedy {
     boolean hevcOnly = reason == Reason.LINUX_HEVC_PLUGIN_MISSING;
     if (reason != Reason.LINUX_LIBHEIF_MISSING && !hevcOnly) return null;
     if (distribution.isFlatpak()) {
-      // The sandbox only sees its runtime's libraries. The freedesktop runtime 25.08+ has libheif, and its HEVC plugin is
-      // the codecs-extra extension (normally installed with the runtime); the command is for the host, not the sandbox.
+      // The freedesktop runtime 25.08+ has libheif; its HEVC plugin is the codecs-extra extension, installed on the host.
       if (hevcOnly && distribution.id().equals(FREEDESKTOP_RUNTIME_ID) && distribution.versionNumber() >= 2508
           && distribution.versionId().matches("\\d+\\.\\d+")) {
         return "flatpak install flathub org.freedesktop.Platform.codecs-extra//" + distribution.versionId() + "-extra";

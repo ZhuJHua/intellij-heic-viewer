@@ -10,8 +10,8 @@ import java.io.IOException;
 import java.util.Locale;
 
 /**
- * Command-line checks for the <i>Linux install commands</i> CI job, which runs them in containers of several
- * distributions with the plugin's and the tests' classes, the JNA jar and a JDK mounted:
+ * Command-line checks of the Linux backend on the distribution they run on (with the plugin's and the tests' classes,
+ * the JNA jar and a JDK):
  * <ul>
  *   <li>{@code command <REASON>}: prints the install command the plugin suggests on this distribution (exit 3 if
  *   none);</li>
@@ -145,7 +145,7 @@ public final class DistroCheck {
 
   /**
    * Runs a check; a failure counts unless the check's name starts with one of the comma-separated prefixes of
-   * {@code -Dheic.check.known} (limitations of an old libheif, documented in the workflow).
+   * {@code -Dheic.check.known} (known limitations of the installed libheif).
    */
   private static int check(String name, Check check) {
     String problem;

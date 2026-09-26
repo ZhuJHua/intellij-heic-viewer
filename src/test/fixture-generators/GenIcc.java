@@ -16,7 +16,7 @@ import javax.imageio.ImageIO;
  *             Bradford-adapted to the D50 PCS) and a plain gamma 2.2 curve
  *   icc.png   400x300 (no profile), four 200x150 patches: TL (200, 60, 60), TR (60, 180, 80), BL (70, 90, 200),
  *             BR (128, 128, 128); values in the wide space
- * Then (macOS 26, Homebrew libheif 1.23.5):
+ * Then (macOS, libheif 1.23.5):
  *   sips --embedProfile wide.icc icc.png --out icc_wide.png
  *   heif-enc -q 95 -o icc_wide.heic icc_wide.png
  * Decoded to sRGB, the colored patches become visibly more saturated; the gray one stays about the same.

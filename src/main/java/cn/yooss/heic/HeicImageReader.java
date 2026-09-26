@@ -71,8 +71,7 @@ final class HeicImageReader extends ImageReader {
   @Override
   public Iterator<ImageTypeSpecifier> getImageTypes(int imageIndex) throws IOException {
     int type = info(imageIndex).hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
-    // The constructor form keeps the image's own color model: 24 bits per pixel for TYPE_INT_RGB (the IDE shows
-    // this number), whereas createFromBufferedImageType/createFromRenderedImage report 32.
+    // Keeps the image's own color model: 24 bits per pixel for TYPE_INT_RGB, which the IDE shows.
     return List.of(new ImageTypeSpecifier(new BufferedImage(1, 1, type))).iterator();
   }
 

@@ -82,9 +82,8 @@ class HeicSupportTest {
   }
 
   /**
-   * After beforePluginUnload nothing may put the reader back (e.g. the diff tool hook while the platform flushes the
-   * event queue before removing the extensions): it would pin the class loader being unloaded. Runs in a separate
-   * "plugin class loader" because the flag is permanent for a class loader.
+   * After {@code shutDown} (beforePluginUnload) {@code register} does nothing, so the class loader being unloaded is
+   * not pinned. Runs in a separate "plugin class loader" because the flag is permanent for a class loader.
    */
   @Test
   void noRegistrationAfterShutDown() throws Exception {

@@ -33,12 +33,9 @@ import java.util.stream.Stream;
  * uninstall without restart). Never touches native code: the decoder is loaded lazily on the first HEIC image.
  * <p>
  * <b>Split registry.</b> {@code ImageIO} (and therefore the IDE's {@code IfsUtil}) only searches the registry it
- * captured in its static initializer. {@link IIORegistry#getDefaultInstance()} is not thread-safe: when two threads
- * call it for the first time at once, each creates a registry, and ImageIO can end up with one that
- * {@code getDefaultInstance()} does not return (e.g. when the splash screen initializes ImageIO while the platform
- * registers its readers). A reader registered through {@code getDefaultInstance()} is then invisible to ImageIO for the
- * whole session. Registration therefore checks what ImageIO sees and, in that case, also registers a second instance
- * into ImageIO's registry.
+ * captured in its static initializer, which can differ from {@link IIORegistry#getDefaultInstance()} because that
+ * method is not thread-safe. Registration therefore checks what ImageIO sees and, if needed, also registers a second
+ * instance into ImageIO's registry.
  */
 public final class HeicSupport {
   public static final String PLUGIN_ID = "cn.yooss.heic-viewer";
@@ -192,7 +189,7 @@ public final class HeicSupport {
     Thread thread = Thread.currentThread();
     ClassLoader previous = thread.getContextClassLoader();
     try {
-      // A real file behind a plain file: URL (an in-memory URL handler needs Java 20 API).
+      // The service file is a real file behind a plain file: URL.
       directory = Files.createTempDirectory("heic-viewer-spi");
       Path serviceFile = directory.resolve(OnlyOurProvider.SERVICE_FILE);
       Files.createDirectories(serviceFile.getParent());

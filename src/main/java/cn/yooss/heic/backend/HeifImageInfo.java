@@ -10,8 +10,7 @@ import java.util.Objects;
  * already applies the HEIF transformations ({@code irot}/{@code imir}, e.g. libheif) reports the transformed size as
  * the raw size and orientation {@code 1}.
  * <p>
- * Immutable, with hand-written {@code equals}/{@code hashCode}/{@code toString} (see {@link HeifBackendStatus} for why
- * this is not a record).
+ * Immutable, with hand-written {@code equals}/{@code hashCode}/{@code toString} (see {@link HeifBackendStatus}).
  */
 public final class HeifImageInfo {
   private final String typeIdentifier;

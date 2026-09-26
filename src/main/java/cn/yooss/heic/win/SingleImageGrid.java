@@ -11,32 +11,25 @@ import java.util.Set;
 
 /**
  * Gives Microsoft's HEIF decoder a file whose primary image is a single 8-bit HEVC image as a 1x1 grid of that image,
- * which it decodes with the right colors. Pure Java; nothing is re-encoded, and the file itself is not changed (WIC reads
- * a rewritten copy in memory).
- * <p>
- * For a primary item of type {@code hvc1} with 8-bit samples, the decoder converts YCbCr to RGB with the BT.709 matrix
- * whatever the file signals (only the {@code nclx} full-range flag is honored); derived {@code grid} images and 10-bit
- * images take another path in the decoder, which honors the {@code nclx} matrix and range.
+ * which it decodes with the right colors: for a single 8-bit {@code hvc1} image the decoder uses the BT.709 matrix
+ * whatever the file signals, for a grid it honors the {@code nclx} matrix and range. Pure Java; nothing is re-encoded,
+ * and WIC reads a rewritten copy in memory.
  * <p>
  * <b>The rewrite</b>, only when the primary item is an 8-bit {@code hvc1} image with chroma and the file uses nothing
  * this class does not understand (otherwise {@link #wrap} returns {@code null} and the file is decoded as it is):
  * <ul>
  *   <li>a new item of type {@code grid} takes over the primary item's ID, so {@code pitm} and every reference to the
- *   primary image ({@code auxl} alpha and depth planes, {@code thmb} thumbnails, {@code cdsc} metadata,
- *   {@code prem}) now refer to the grid;</li>
+ *   primary image now refer to the grid;</li>
  *   <li>the coded image gets a new ID (one above the largest item or entity group ID), is marked hidden and becomes
  *   the grid's only tile ({@code dimg});</li>
  *   <li>the grid gets an {@code ispe} of the image's size, shares the tile's {@code colr} and {@code pixi} properties
- *   and takes over the transformative properties ({@code irot}, {@code imir}, {@code clap}), which apply to the
- *   derived image;</li>
- *   <li>if the tile's {@code hvcC} record has {@code general_progressive_source_flag} set (Apple's encoder sets it),
- *   the tile gets a copy with the flag cleared: otherwise the decoder decodes a tile that fills the grid exactly (no
- *   cropping) with its single-image path again ({@link #withoutProgressiveSource});</li>
- *   <li>the grid's {@code ImageGrid} payload (8 bytes) goes into an {@code mdat} box at the end.</li>
+ *   and takes over the transformative properties ({@code irot}, {@code imir}, {@code clap});</li>
+ *   <li>if the tile's {@code hvcC} has {@code general_progressive_source_flag} set, the tile gets a copy with the flag
+ *   cleared ({@link #withoutProgressiveSource});</li>
+ *   <li>the grid's {@code ImageGrid} payload goes into an {@code mdat} box at the end.</li>
  * </ul>
  * Nothing in the file moves: the old {@code meta} box becomes a {@code free} box of the same size and the new one is
- * appended after the last box, so the {@code iloc} offsets (and those of an image sequence's {@code moov}) stay valid.
- * The cost is one copy of the file plus a few hundred bytes.
+ * appended after the last box, so the {@code iloc} offsets stay valid.
  */
 final class SingleImageGrid {
   /** Properties that apply to the reconstructed (derived) image, so they move to the grid. */
@@ -458,11 +451,9 @@ final class SingleImageGrid {
 
   /**
    * The {@code hvcC} payload with {@code general_progressive_source_flag} cleared in the record's
-   * {@code general_constraint_indicator_flags}, or {@code null} if it is clear already. With the flag set (as Apple's
-   * encoder writes it), the decoder takes its single-image path for a tile that fills the whole grid, which has the
-   * BT.709 matrix error; with it clear (as libheif writes the record, whatever x265 put in the SPS) it converts the
-   * tile itself. The decoder goes by the record: the parameter sets are left as they are. The flag describes the source
-   * and does not change how a picture is decoded.
+   * {@code general_constraint_indicator_flags}, or {@code null} if it is clear already. With the flag set, the decoder
+   * takes its single-image path for a tile that fills the whole grid. The flag does not change how a picture is decoded;
+   * the parameter sets are left as they are.
    */
   static byte @Nullable [] withoutProgressiveSource(byte[] config) {
     if (config.length < 23 || (config[6] & 0x80) == 0) return null;

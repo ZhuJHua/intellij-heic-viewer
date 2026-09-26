@@ -24,9 +24,8 @@ public abstract class AbstractHeifBackend implements HeifBackend {
 
   /**
    * Checks whether the system decoder can be used: loads the native libraries and asks them, but decodes nothing
-   * (or at most a tiny embedded sample). Runs once per {@link #status()} cache on a background thread, but possibly while
-   * the IDE starts, so it must be fast (a few milliseconds, at most ~50 ms). May throw: an exception becomes an
-   * {@code ERROR} status. Must not show any UI (the plugin prompts the user when the status says so).
+   * (or at most a tiny embedded sample). Runs once per {@link #status()} cache on a background thread, possibly while
+   * the IDE starts, so it must be fast. May throw: an exception becomes an {@code ERROR} status. Must not show any UI.
    */
   protected abstract @NotNull HeifBackendStatus probe();
 

@@ -5,7 +5,7 @@
  *   rgb16.png  512x256 16-bit RGB gradient (source of the 10-bit HEIC fixtures)
  * Run: java Gen.java <outputDir>
  *
- * The HEIC/HEIF/AVIF fixtures were encoded from these PNGs on macOS 26:
+ * The HEIC/HEIF/AVIF fixtures are encoded from these PNGs on macOS:
  *   sips -s format heic ...                  -> rgb_sips.heic, alpha_sips.heic, rgb16_sips.heic (10-bit, brand heix),
  *                                               seq.heics (public.heics), rgb_sips.avif
  *   heif-enc (libheif 1.23.5, Homebrew)      -> rgb_libheif.heic, rot90_irot.heic (irot), fliph_imir.heic (imir),
@@ -24,12 +24,12 @@
  *   (the layout of rgb.png: TL red, TR green, BL blue, BR white, black marker top-left; an 8-bit 8x6 grid of 512 px tiles).
  * GenIcc.java produces the ICC profile and PNG of icc_wide.heic (colors in a wide-gamut space, embedded ICC profile).
  *
- * Color fixtures of the Windows workarounds in src/test/resources/cn/yooss/heic/win (heif-enc 1.23.5, macOS 26 sips):
+ * Color fixtures of the Windows decoder tests in src/test/resources/cn/yooss/heic/win (heif-enc 1.23.5, macOS sips):
  *   heif-enc -q 90 --matrix_coefficients=1 rgb.png   -> rgb_bt709.heic   (single image, BT.709 matrix)
  *   heif-enc -q 90 --full_range_flag=0 rgb.png       -> rgb_limited.heic (single image, BT.601 limited range)
  *   heif-enc -q 90 -p chroma=444 rgb.png             -> rgb_444.heic     (single image, 4:4:4)
- *   smooth.png: 320x240, smooth sine/cosine gradients in R, G and B with eight saturated patches (a downscaled 4032x3024
- *   test image), for transfer-curve errors that the quadrant fixtures cannot show;
+ *   smooth.png: 320x240, smooth sine/cosine gradients in R, G and B with eight saturated patches, for transfer-curve
+ *   errors that the quadrant fixtures cannot show;
  *   sips -s format heic smooth.png                   -> smooth_sips.heic (single image, nclx 2/2/6/full as macOS writes)
  *   heif-enc -q 80 --cut-tiles 128 --transfer_characteristic=1 smooth.png -> smooth_grid_tc1.heic (grid, BT.709 curve)
  */

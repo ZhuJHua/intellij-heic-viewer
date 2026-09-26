@@ -11,11 +11,9 @@ import java.io.IOException;
 import java.util.Arrays;
 
 /**
- * Turns an 8-bit interleaved RGB or RGBA plane, read row by row from native memory, into the backend's
- * {@link BufferedImage}, downscaled to at most {@code maxPixelSize} on the longer side without ever holding the
- * full-size image in the Java heap: libheif's decoded image (libheif always decodes at full resolution), and on Windows
- * the full-size frame of an image with alpha together with its alpha plane (scaling the colors of such an image with
- * WIC would mix in the black of its transparent pixels). Downscaling:
+ * Turns an 8-bit interleaved RGB or RGBA plane, read in strips from native memory, into the backend's
+ * {@link BufferedImage}, downscaled to at most {@code maxPixelSize} on the longer side without holding the full-size
+ * image in the Java heap. Downscaling:
  * <ol>
  *   <li>an integer box filter (area average, alpha-weighted, so that transparent pixels do not darken their neighbors)
  *   reduces the plane by the largest factor {@code k} that keeps the result at least as large as the target, while the

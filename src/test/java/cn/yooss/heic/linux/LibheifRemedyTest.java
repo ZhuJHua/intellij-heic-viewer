@@ -17,8 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The install command per distribution (pure Java, runs on every OS). The package names are documented in
- * {@link LibheifRemedy}; the {@code Linux install commands} CI job runs these commands in containers of the
- * distributions.
+ * {@link LibheifRemedy}.
  */
 class LibheifRemedyTest {
   private static String missing(String osRelease) {

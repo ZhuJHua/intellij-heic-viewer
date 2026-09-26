@@ -34,12 +34,9 @@ import java.util.Locale;
  * The Microsoft Store data (product ids, pages) is {@link WindowsCodecs}'; the Linux install commands come from the
  * Linux backend ({@code cn.yooss.heic.linux.LibheifRemedy}, per distribution, from {@code /etc/os-release}).
  * <p>
- * A backend knows the details of the running system better than these defaults: {@link HeifBackendStatus#installUrl()}
- * replaces the default install page (the Store app page on Windows, the README section on Linux) and
- * {@link HeifBackendStatus#installCommand()} (e.g. the package command of the detected Linux distribution) is offered to
- * copy. Values that are not {@linkplain #isAllowedUrl allowed URLs} or {@linkplain #isAllowedCommand single-line
- * commands} are ignored, so a backend can never make the IDE open another URL scheme. {@code HeifRemediesTest} checks
- * every remedy (texts in both bundles, URL schemes, commands).
+ * A backend's {@link HeifBackendStatus#installUrl()} replaces the default install page and its
+ * {@link HeifBackendStatus#installCommand()} is offered to copy; values that are not {@linkplain #isAllowedUrl allowed
+ * URLs} or {@linkplain #isAllowedCommand single-line commands} are ignored.
  */
 public final class HeifRemedies {
   /** The project page; the README's "Requirements" section explains what each OS needs. */
@@ -96,7 +93,7 @@ public final class HeifRemedies {
         return new HeifRemedy(reason, command, isHostCommand(command), actions);
       }
       case ERROR:
-        // Unexpected (on macOS practically impossible: ImageIO.framework is part of the system).
+        // The probe failed unexpectedly.
         actions.add(Action.checkAgain());
         actions.add(Action.openUrl("remedy.action.report", ISSUES_URL));
         return new HeifRemedy(reason, command, actions);

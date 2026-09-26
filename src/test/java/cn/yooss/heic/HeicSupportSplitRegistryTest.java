@@ -98,7 +98,7 @@ class HeicSupportSplitRegistryTest {
         boolean split = forceSplitRegistry();
         out("split", split);
 
-        // What the plugin did before the fix (and what the IDE's own WebP/SVG registrars still do).
+        // A reader registered through getDefaultInstance() only.
         ProbeSpi probe = new ProbeSpi();
         IIORegistry.getDefaultInstance().registerServiceProvider(probe, ImageReaderSpi.class);
         out("probeVisible", ImageIO.getImageReadersByFormatName(ProbeSpi.FORMAT).hasNext());
@@ -130,11 +130,11 @@ class HeicSupportSplitRegistryTest {
     }
 
     /**
-     * Replays the startup race deterministically: thread A initializes ImageIO, which calls getDefaultInstance(),
-     * finds no registry and builds one; before A stores it, thread B calls getDefaultInstance(), also finds none and
-     * builds a second one; A stores its registry (ImageIO keeps it), then B stores its own (getDefaultInstance()
-     * returns it from now on). Both threads are held inside {@code new IIORegistry()} through their context class
-     * loader, which the constructor asks for META-INF/services files.
+     * Creates two registries deterministically: thread A initializes ImageIO, which calls getDefaultInstance(), finds
+     * no registry and builds one; before A stores it, thread B calls getDefaultInstance(), also finds none and builds a
+     * second one; A stores its registry (ImageIO keeps it), then B stores its own (getDefaultInstance() returns it from
+     * now on). Both threads are held inside {@code new IIORegistry()} through their context class loader, which the
+     * constructor asks for META-INF/services files.
      */
     static boolean forceSplitRegistry() throws Exception {
       Gate imageIoGate = new Gate();
@@ -210,7 +210,7 @@ class HeicSupportSplitRegistryTest {
     }
   }
 
-  /** Stand-in for a reader registered the way the plugin used to (only through getDefaultInstance()). */
+  /** A reader that is registered only through getDefaultInstance(). */
   private static final class ProbeSpi extends ImageReaderSpi {
     static final String FORMAT = "split-registry-probe";
 

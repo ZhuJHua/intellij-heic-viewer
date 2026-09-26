@@ -16,24 +16,21 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Decodes HEIC/HEIF files into {@link BufferedImage}s with macOS ImageIO.framework.
  * <p>
- * ImageIO.framework picks the codec by content, so only HEIF data may reach it: {@link HeifInput#check} rejects anything
- * whose header is not a HEIC/HEIF {@code ftyp} box (pure Java) and truncated files before any native call, and the image
- * source must report a HEIF-family type.
+ * ImageIO.framework picks the codec by content, so {@link HeifInput#check} rejects data that is not HEIC/HEIF or is
+ * truncated before any native call, and the image source must report a HEIF-family type.
  * <p>
- * Algorithm (see README): {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} ->
- * primary image -> properties -> {@code CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform,
- * ThumbnailMaxPixelSize, ShouldCacheImmediately)} so that the HEIF {@code irot}/{@code imir} and EXIF orientation
- * are applied -> drawn once into an explicit 8-bit sRGB bitmap context of the image's size (native memory) -> the image
- * and its source released -> copied (in ~1M-pixel chunks) into a {@code TYPE_INT_RGB} image, or a non-premultiplied
- * {@code TYPE_INT_ARGB} image when the file has alpha ({@link Session#render}). An image with alpha that is requested
- * smaller is decoded at full size and downscaled alpha-weighted by {@link PlaneConverter} instead of by ImageIO
- * ({@link #isAlphaWeighted}), drawn in strips of ~1M pixels, but at most {@link #MAX_DRAWS} of them (cropped with
- * {@code CGImageCreateWithImageInRect}).
+ * Algorithm: {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} -> primary image ->
+ * properties -> {@code CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform, ThumbnailMaxPixelSize,
+ * ShouldCacheImmediately)}, which applies the HEIF {@code irot}/{@code imir} and EXIF orientation -> drawn once into an
+ * 8-bit sRGB bitmap context of the image's size (native memory) -> the image and its source released -> copied in
+ * strips into a {@code TYPE_INT_RGB} image, or a non-premultiplied {@code TYPE_INT_ARGB} image when the file has alpha
+ * ({@link Session#render}). An image with alpha that is requested smaller is decoded at full size and downscaled
+ * alpha-weighted by {@link PlaneConverter} ({@link #isAlphaWeighted}), drawn in at most {@link #MAX_DRAWS} strips.
  * <p>
- * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
- * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
- * in {@code finally}), so the class is thread-safe; on Intel Macs the native part of the decodes runs on one thread at
- * a time ({@link #NATIVE_DECODE}). All failures, including a missing native layer, surface as {@link IOException}; only
+ * The algorithm is written against {@link MacApi}; the binding ({@link JnaMacApi}) is created on the first decode.
+ * Every call is self-contained (own autorelease pool, every CF object and native buffer released in {@code finally}),
+ * so the class is thread-safe; on Intel Macs the native part of the decodes runs on one thread at a time
+ * ({@link #NATIVE_DECODE}). All failures, including a missing native layer, surface as {@link IOException}; only
  * {@link OutOfMemoryError} and other VM errors propagate.
  */
 public final class HeicDecoder {
@@ -108,10 +105,9 @@ public final class HeicDecoder {
   }
 
   /**
-   * Whether an image is downscaled by {@link PlaneConverter} (alpha-weighted) rather than by ImageIO.framework: an image
-   * with alpha, requested smaller than it is, of at most {@link #ALPHA_WEIGHTED_MAX_PIXELS}. ImageIO's scaler does not
-   * weight the colors by alpha on every Mac, so the color under transparent pixels (black in HEIC files) would darken
-   * the edges. Larger images keep ImageIO's scaler, which does not need the full-size image a second time.
+   * Whether an image is downscaled alpha-weighted by {@link PlaneConverter} instead of by ImageIO.framework: an image
+   * with alpha, requested smaller than it is, of at most {@link #ALPHA_WEIGHTED_MAX_PIXELS}. ImageIO's scaler may mix
+   * the color under transparent pixels (black in HEIC files) into the edges.
    */
   static boolean isAlphaWeighted(HeifImageInfo info, int maxPixelSize) {
     if (!info.hasAlpha() || maxPixelSize <= 0) return false;
@@ -163,9 +159,8 @@ public final class HeicDecoder {
   static final int kCGBlendModeCopy = 17;
   /**
    * The most strips one decode draws when it draws in strips (the alpha-weighted downscaling, or {@link Session#render}
-   * when the full-size bitmap cannot be allocated). A cropped view shares the decoded pixels only while ImageIO.framework
-   * keeps them cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), every
-   * draw runs the whole HEIF decode again. Fewer, taller strips cost a larger native scratch buffer (1/8 of the image).
+   * when the full-size bitmap cannot be allocated): each draw of a cropped view decodes the whole image again when
+   * ImageIO.framework cannot cache the decoded pixels.
    */
   static final int MAX_DRAWS = 8;
   /** Largest image with alpha that is downscaled alpha-weighted (64 MP), see {@link #isAlphaWeighted}. */
@@ -173,15 +168,13 @@ public final class HeicDecoder {
 
   /**
    * The gate of the native part of a decode on Intel Macs ({@link Bound#serialized}): one decode at a time per process,
-   * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source. ImageIO
-   * converts the pixels of every HEIC decode on the GPU (VideoToolbox's Metal pixel transfer), which is not reliable on
-   * Intel Macs while decodes overlap. The system property {@code heic.mac.serializeDecodes} ({@code true}/{@code false})
-   * overrides the default.
+   * from {@code CGImageSourceCreateWithData} through the draw to the release of the image and its source, because
+   * ImageIO's GPU pixel conversion is not reliable on Intel Macs while decodes overlap. The system property
+   * {@code heic.mac.serializeDecodes} ({@code true}/{@code false}) overrides the default.
    * <p>
-   * A fair leaf lock: a decode waits at most for those that asked before it, and nothing else is locked while it is
-   * held. It is acquired uninterruptibly, so a thread whose interrupt flag is set still decodes. The Java side of a
-   * decode (copying the pixels into the Java image) runs outside it ({@link Session#render}), except for the images drawn
-   * in strips.
+   * A fair leaf lock (nothing else is locked while it is held), acquired uninterruptibly, so a thread whose interrupt
+   * flag is set still decodes. Copying the pixels into the Java image runs outside it ({@link Session#render}), except
+   * for the images drawn in strips.
    */
   private static final ReentrantLock NATIVE_DECODE = new ReentrantLock(true);
 
@@ -382,10 +375,8 @@ public final class HeicDecoder {
 
     /**
      * Draws {@code image} once into an sRGB 8-bit bitmap of its size (native memory), releases the image, its source and
-     * the data (ImageIO.framework's decoded copy), and only then copies the bitmap into a new {@link BufferedImage}, in
-     * chunks of about {@code stripPixels} pixels. One draw, because a draw of an image that ImageIO.framework could not
-     * cache (a malformed file) decodes the whole image again; ImageIO's copy is freed before the Java image is allocated.
-     * If the bitmap cannot be allocated, the image is drawn in strips instead ({@link #renderStrips}).
+     * the data, and only then copies the bitmap into a new {@link BufferedImage}, in chunks of about {@code stripPixels}
+     * pixels. If the bitmap cannot be allocated, the image is drawn in strips ({@link #renderStrips}).
      */
     BufferedImage render(long image, boolean alpha, int stripPixels) throws IOException {
       long imageWidth = api.cgImageGetWidth(image), imageHeight = api.cgImageGetHeight(image);
@@ -474,9 +465,7 @@ public final class HeicDecoder {
       // undrawn, and those must come out black rather than as stale pixels.
       api.zero(buffer, 4L * width * Math.min(stripRows, height));
       if (stripRows < height) {
-        // Drawing the whole image into a strip-sized context costs O(whole image) per strip; draw a cropped view into
-        // the top `rows` rows of the context instead. The view shares the decoded pixels only if ImageIO cached them;
-        // otherwise each draw decodes the whole image again, hence at most MAX_DRAWS strips.
+        // A cropped view, drawn into the top `rows` rows of the context (see MAX_DRAWS).
         long strip = api.cgImageCreateWithImageInRect(image, 0, y0, width, rows); // image space, origin top-left
         if (strip == 0) throw new IOException("CGImageCreateWithImageInRect failed");
         try {

@@ -28,8 +28,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * {@link SingleImageGrid} on every OS: which files are rewritten, the structure of the result, robustness against
- * damaged files, and (where the system decoder is not the affected Windows one: macOS ImageIO, libheif) that the
- * rewritten file decodes to exactly the same image, orientation, alpha, thumbnail and sequence frame included.
+ * damaged files, and (where the system decoder is not WIC: macOS ImageIO, libheif) that the rewritten file decodes to
+ * the same image, orientation, alpha, thumbnail and sequence frame included.
  * {@code WicColorTest} checks the colors on Windows.
  */
 class SingleImageGridTest {

@@ -170,8 +170,8 @@ class LibheifDecodingTest {
   }
 
   /**
-   * An embedded ICC profile (a wide-gamut space) is converted to sRGB. Expected: ImageIO.framework's result on macOS 26
-   * (ColorSync); without the conversion the patches would keep their source values (200, 60, 60), (60, 180, 80), ...
+   * An embedded ICC profile (a wide-gamut space) is converted to sRGB, with the colors ImageIO.framework (ColorSync)
+   * gives; the source values are (200, 60, 60), (60, 180, 80), ...
    */
   @Test
   void iccProfileIsConvertedToSrgb() throws IOException {

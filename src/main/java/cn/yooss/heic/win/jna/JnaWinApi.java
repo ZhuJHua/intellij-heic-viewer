@@ -15,18 +15,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * {@link WinApi} on top of the JNA that every IntelliJ-based IDE bundles, following the rules of {@link JnaLibraries}
- * (no {@code Library} interface, no {@code Structure}, no {@code Memory}, no callbacks; only {@link NativeLibrary},
- * {@link Function#invokeInt(Object[])} etc. with arguments of JDK types, and {@link Native#malloc}/{@link Native#free}),
- * so that the plugin class loader stays collectable; {@code jna-platform}'s COM helpers are {@code Structure}s and
- * {@code Library} proxies that would register plugin-loaded state in JNA's caches.
+ * {@link WinApi} on top of the IDE's bundled JNA, under the rules of {@link JnaLibraries} (no {@code Library}
+ * interface, no {@code Structure}, no {@code Memory}, no callbacks; only {@link NativeLibrary},
+ * {@link Function#invokeInt(Object[])} etc. with arguments of JDK types, and {@link Native#malloc}/{@link Native#free}).
  * <p>
  * <b>COM methods</b> are called through the object's vtable: {@code *(void***) object} is the vtable, slot {@code i}
  * holds the function pointer of the {@code i}-th method, whose first argument is the object itself. The slots below
- * are the declaration order of the methods in the interface and its base interfaces, from the Windows SDK's
- * {@code wincodec.idl} (as published in microsoft/win32metadata, {@code generation/WinSDK/RecompiledIdlHeaders/um}),
- * {@code objidlbase.idl} and {@code mfobjects.idl}, cross-checked against the generated C {@code Vtbl} structs of the
- * mingw-w64 headers ({@code mingw-w64-headers/include/wincodec.h}, {@code mfobjects.h}):
+ * are the declaration order of the methods in the interface and its base interfaces (Windows SDK {@code wincodec.idl},
+ * {@code objidlbase.idl}, {@code mfobjects.idl}):
  * <pre>
  * IUnknown                   0 QueryInterface  1 AddRef  2 Release
  * IWICImagingFactory         4 CreateDecoderFromStream  6 CreateComponentInfo  7 CreateDecoder  10 CreateFormatConverter
@@ -47,10 +43,7 @@ import java.util.Locale;
  * {@code Long}, {@code UINT}/{@code BOOL}/enums as {@code Integer}, {@code REFGUID}/{@code REFIID} as a {@code byte[16]}
  * (JNA passes a pointer to a copy), out-parameters as one-element {@code long[]}/{@code int[]} arrays (JNA copies them
  * back), wide strings as NUL-terminated {@code char[]} ({@link JnaLibraries#utf16z}). {@code MFTEnumEx} takes its
- * category {@code GUID} <em>by value</em>: on x64 a 16-byte struct is passed as a pointer to a caller-owned copy (so a
- * {@code byte[16]}), on arm64 (AAPCS64, which Windows follows for non-variadic calls) a composite of at most 16 bytes
- * that is not a floating-point aggregate travels in two consecutive general-purpose registers (so two {@code Long}s
- * holding the little-endian halves); see {@link GuidByValue}.
+ * category {@code GUID} <em>by value</em> ({@link GuidByValue}).
  */
 public final class JnaWinApi implements WinApi {
   private static final int MF_VERSION = 0x0002_0070; // MF_SDK_VERSION 2 << 16 | MF_API_VERSION 0x70 (mfapi.h, Windows 7+)
@@ -464,15 +457,13 @@ public final class JnaWinApi implements WinApi {
   }
 
   /**
-   * How a {@code GUID} parameter passed by value (16 bytes, four 32-bit-aligned members, no floating point) is spread
-   * over JNA arguments. Package-private for tests.
+   * How a {@code GUID} parameter passed by value (16 bytes, no floating point) is spread over JNA arguments.
+   * Package-private for tests.
    * <ul>
-   *   <li>x64: "Structs or unions of other sizes [than 1, 2, 4 or 8 bytes] are passed as a pointer to memory allocated
-   *   by the caller" (Microsoft, x64 calling convention, Parameter passing): a {@code byte[16]}, which JNA passes as a
-   *   pointer to a temporary copy.</li>
-   *   <li>arm64: Windows follows AAPCS64 for non-variadic functions (Microsoft, ARM64 ABI conventions); rule C.10: a
-   *   composite of at most 16 bytes that is not an HFA/HVA is "copied into consecutive general-purpose registers", as
-   *   if loaded with LDR from memory: two {@code Long}s, the little-endian first and second halves.</li>
+   *   <li>x64: a struct of 16 bytes is passed as a pointer to a caller-owned copy: a {@code byte[16]}, which JNA passes
+   *   as a pointer to a temporary copy.</li>
+   *   <li>arm64 (AAPCS64 for non-variadic functions): a composite of at most 16 bytes that is not an HFA/HVA is passed in
+   *   two consecutive general-purpose registers: two {@code Long}s, the little-endian first and second halves.</li>
    * </ul>
    */
   enum GuidByValue {

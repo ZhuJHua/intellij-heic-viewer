@@ -18,33 +18,24 @@ import java.util.Locale;
  * <p>
  * Algorithm (one self-contained {@link Session} per call, so the class is thread-safe):
  * <ol>
- *   <li>COM on the calling thread: {@code CoInitializeEx(NULL, COINIT_MULTITHREADED)}. {@code S_OK} and
- *   {@code S_FALSE} (already initialized in the multithreaded apartment) are balanced by {@code CoUninitialize} at the
- *   end; {@code RPC_E_CHANGED_MODE} (the thread is in a single-threaded apartment, e.g. an AWT thread) means COM is
- *   usable as it is and must not be uninitialized. WIC's objects are free-threaded, so either apartment works.</li>
+ *   <li>COM on the calling thread: {@code CoInitializeEx(NULL, COINIT_MULTITHREADED)}; {@code S_OK} and
+ *   {@code S_FALSE} are balanced by {@code CoUninitialize}, and after {@code RPC_E_CHANGED_MODE} (a single-threaded
+ *   apartment) COM is used as it is: WIC's objects are free-threaded.</li>
  *   <li>{@code CoCreateInstance(CLSID_WICImagingFactory)}, {@code SHCreateMemStream} on a copy of the data,
- *   {@code CreateDecoderFromStream} (WIC picks the decoder by content, which is why only data that passed
- *   {@code HeifInput.check} gets here), and the decoder's container format must be {@code GUID_ContainerFormatHeif}.</li>
- *   <li>Frame 0 (the primary image), its size, alpha and the orientation still to be applied. The Microsoft HEIF
- *   decoder applies the HEIF {@code irot}/{@code imir} transformations itself and reports
- *   {@code System.Photo.Orientation} = 1 (ignoring the EXIF orientation, as the HEIF standard requires); the reported
- *   orientation is applied anyway, which is what Windows' own viewers do. Its frames are always
- *   {@code 32bppBGR}: the alpha of an image is only available as a separate {@code 8bppAlpha} plane through
- *   {@code IWICBitmapSourceTransform} (its {@code GetClosestPixelFormat} returns {@code 8bppAlpha} only for images with
- *   alpha).</li>
+ *   {@code CreateDecoderFromStream} (WIC picks the decoder by content), and the decoder's container format must be
+ *   {@code GUID_ContainerFormatHeif}.</li>
+ *   <li>Frame 0 (the primary image), its size, alpha and {@code System.Photo.Orientation}, which is applied. The HEIF
+ *   decoder applies {@code irot}/{@code imir} itself; its frames are {@code 32bppBGR}, and the alpha of an image is a
+ *   separate {@code 8bppAlpha} plane from {@code IWICBitmapSourceTransform}.</li>
  *   <li>{@code IWICBitmapScaler} (Fant) when the image is larger than requested, {@code IWICFormatConverter} to
  *   {@code 32bppBGR} ({@code 32bppBGRA}, straight alpha, for other formats with alpha), {@code CreateBitmapFromSource}
- *   with {@code WICBitmapCacheOnLoad} (decodes once), then {@code CopyPixels} in strips into the
- *   {@link BufferedImage}; the alpha plane is merged in. An image with an alpha plane is not scaled by WIC (up to
- *   {@link #ALPHA_WEIGHTED_MAX_PIXELS}): WIC would scale its colors and its alpha plane separately, so the color of the
- *   transparent pixels (black in HEIC files) would darken every edge. Its full-size frame and alpha plane are
- *   combined strip by strip and downscaled with an alpha-weighted filter ({@link PlaneConverter}) instead.</li>
- *   <li>An embedded ICC profile ({@code IWICColorContext} of type profile, e.g. Display P3 of iPhone photos) is
- *   converted to sRGB with {@link PixelPipeline#convertToSrgb}; an EXIF color space context of sRGB needs nothing.
- *   The YCbCr to RGB conversion is the decoder's, with two color fixes applied to a copy of the data: a primary image
- *   that is a single 8-bit HEVC image is decoded as a 1x1 grid of that image ({@link SingleImageGrid}), which the
- *   decoder converts with the file's matrix; and the BT.709-like and unspecified transfer curves, which the decoder
- *   converts to sRGB unlike other viewers, are presented as sRGB ({@link NclxTransfer}). If the decoder rejects the
+ *   with {@code WICBitmapCacheOnLoad}, then {@code CopyPixels} in strips into the {@link BufferedImage}; the alpha plane
+ *   is merged in. An image with an alpha plane (up to {@link #ALPHA_WEIGHTED_MAX_PIXELS}) is downscaled alpha-weighted
+ *   by {@link PlaneConverter} instead, since WIC scales its colors and alpha plane separately, which darkens the
+ *   edges.</li>
+ *   <li>An embedded ICC profile is converted to sRGB ({@link PixelPipeline#convertToSrgb}). Two color fixes apply to a
+ *   copy of the data: a single 8-bit HEVC primary image is decoded as a 1x1 grid ({@link SingleImageGrid}), and the
+ *   BT.709-like and unspecified transfer curves are presented as sRGB ({@link NclxTransfer}). If the decoder rejects the
  *   rewritten data, the file is decoded as it is.</li>
  * </ol>
  * Every COM object and native buffer is released in {@link Session#close()}, in reverse order, on every path. All

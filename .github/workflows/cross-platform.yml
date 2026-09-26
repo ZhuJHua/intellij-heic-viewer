@@ -1,13 +1,9 @@
-# Builds the plugin and runs the unit tests on macOS, Linux and Windows, on the Java runtimes of the supported IDEs
-# (JDK 25: 2026.1.3+; JDK 21: 2024.2 - 2026.1.2; JDK 17: 2024.1), with and without the system HEIF decoder.
-# HEIC_EXPECT_BACKEND is the status HeifBackendContractTest requires of the system decoder in each job: "available", or
-# the HeifBackendStatus.Reason the backend must report (e.g. LINUX_LIBHEIF_MISSING). Test reports are uploaded for every
-# job. The IDE to compile against (platformType/platformVersion in gradle.properties) is downloaded per OS and cached.
-# Plugin Verifier runs against pluginVerificationIdes in a separate job, and the install job runs the Linux install
-# commands the plugin suggests in containers of several distributions.
+# Builds the plugin and runs the unit tests on macOS, Linux and Windows on JDK 25, 21 and 17, with and without the
+# system HEIF decoder. HEIC_EXPECT_BACKEND is the decoder status HeifBackendContractTest requires in each job:
+# "available" or a HeifBackendStatus.Reason (e.g. LINUX_LIBHEIF_MISSING).
+# Also runs the Linux install commands the plugin suggests in containers of several distributions, and Plugin Verifier.
 #
-# Triggered by pushes to dev/** branches, by pull requests to main and manually. The concurrency group of a pull request
-# is its own (github.ref is refs/pull/<number>/merge).
+# Triggered by pushes to dev/** branches, by pull requests to main and manually.
 
 name: Cross-platform
 
@@ -38,7 +34,7 @@ jobs:
           - name: macOS x86_64
             os: macos-15-intel
             expect: available
-          # libheif 1.17 with its codecs as plugins, with and without the HEVC plugin (libheif-plugin-libde265).
+          # libheif with its codecs as plugins, with and without the HEVC plugin (libheif-plugin-libde265).
           - name: Linux x64, libheif
             os: ubuntu-24.04
             libheif: install
@@ -51,13 +47,12 @@ jobs:
             os: ubuntu-24.04
             libheif: remove
             expect: LINUX_LIBHEIF_MISSING
-          # libheif 1.12: no heif_init, no plugins (libde265 linked in), the oldest libheif of a supported LTS.
+          # libheif 1.12 with libde265 linked in.
           - name: Linux x64, libheif 1.12
             os: ubuntu-22.04
             libheif: install
             expect: available
-          # Android Studio has no Linux/Windows arm64 build: IntelliJ IDEA 2026.1 there (its arm64 build ships JNA's
-          # native library for arm64; the 2026.2 platform jars need a newer JDK than the JDK 17/21 test runs).
+          # Android Studio has no Linux arm64 build: IntelliJ IDEA instead.
           - name: Linux arm64, libheif
             os: ubuntu-24.04-arm
             libheif: install
@@ -66,14 +61,13 @@ jobs:
           - name: Windows x64
             os: windows-latest
             expect: WINDOWS_HEIF_EXTENSION_MISSING
-          # winget installs the HEIF Image Extension; without the HEVC Video Extensions the backend reports the missing
-          # codec, unless the best-effort installation gets both.
+          # Tries to install the extensions; the expected status follows what is installed.
           - name: Windows x64, HEIF Image Extension
             os: windows-latest
             codecs: try-install
             expect: WINDOWS_HEIF_EXTENSION_MISSING
-          # The IntelliJ IDEA downloaded here is the x64 build (lib/jna/amd64 only): JNA's arm64 library comes from the
-          # JNA release of the IDE's version (jna-natives).
+          # Android Studio has no Windows arm64 build: IntelliJ IDEA instead, with JNA's arm64 library from the JNA
+          # release of the IDE's version (jna-natives).
           - name: Windows arm64
             os: windows-11-arm
             platform: -PplatformType=IU -PplatformVersion=2026.1.5
@@ -89,12 +83,12 @@ jobs:
       - name: Fetch Sources
         uses: actions/checkout@v6
 
-      # The libheif states of the Linux jobs; the commands are those the plugin suggests (see LibheifRemedy).
+      # The libheif states of the Linux jobs, installed with the commands the plugin suggests (LibheifRemedy).
       - name: Install libheif
         if: ${{ matrix.libheif == 'install' }}
         run: |
           sudo apt-get update
-          # Ubuntu 23.10+ splits the codecs into plugin packages; before, libde265 is linked into libheif1.
+          # Ubuntu 23.10+ has the HEVC decoder in a plugin package.
           if apt-cache show libheif-plugin-libde265 > /dev/null 2>&1; then plugin=libheif-plugin-libde265; fi
           sudo apt-get install -y --no-install-recommends libheif1 $plugin
           dpkg -l 'libheif*' | grep ^ii
@@ -124,9 +118,8 @@ jobs:
           Get-AppxPackage -AllUsers | Where-Object { $_.Name -match 'HEIF|HEVC' } |
             Select-Object Name, Version, Architecture | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
 
-      # Best effort: the HEIF Image Extension (free) and the HEVC Video Extensions from Device Manufacturer (free, where
-      # the Store allows it) through winget's Microsoft Store source. If both end up installed, the HEIC tests run and the
-      # backend must be available.
+      # Installs the HEIF Image Extension and the HEVC Video Extensions from Device Manufacturer with winget where
+      # possible, and sets the status the tests expect.
       - name: Try to install the HEIF and HEVC extensions
         if: ${{ matrix.codecs == 'try-install' }}
         continue-on-error: true
@@ -173,8 +166,8 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # The downloaded IDE archive (about 1.5 GB), per OS/architecture, platform override and gradle.properties.
-      # (setup-gradle may move the Gradle user home, e.g. to D:\a\.gradle on Windows x64.)
+      # The downloaded IDE, per OS, architecture, platform override and gradle.properties; setup-gradle may set
+      # GRADLE_USER_HOME.
       - name: Cache IDE
         uses: actions/cache@v6
         with:
@@ -183,7 +176,7 @@ jobs:
             ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/idea
           key: ide-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('gradle.properties') }}
 
-      # testJdk25 rather than `test`, which the IntelliJ Platform Gradle Plugin only runs on the IDE's architectures.
+      # testJdk25 also runs on architectures the IDE has no build for.
       - name: Build and test
         env:
           HEIC_EXPECT_BACKEND: ${{ env.HEIC_EXPECT_INSTALLED || matrix.expect }}
@@ -191,9 +184,8 @@ jobs:
           ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }} ${{ env.JNA_NATIVE_DIR_ARG }}
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
-      # The light-IDE tests (*PlatformIntegrationTest: the plugin inside the IntelliJ test framework, e.g. the decoder
-      # banner and notifications, IfsUtil decoding through the system decoder) need the `test` task, which only runs
-      # where the IDE compiled against has a build for the job's architecture: not on the arm64 jobs.
+      # The light-IDE tests (*PlatformIntegrationTest) need `test`, which runs only where the IDE has a build for the
+      # job's architecture.
       - name: Light-IDE tests
         if: ${{ !cancelled() && !matrix.platform }}
         env:
@@ -202,19 +194,19 @@ jobs:
           ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
 
-      # The colors of Microsoft's HEIF decoder as WIC decodes the fixtures and as the plugin does (WicColorTest).
+      # The color report of WicColorTest.
       - name: Windows color report
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: cat build/reports/color/wic-colors.txt 2> /dev/null || echo "no color report (no HEVC codec here)"
 
-      # Which native JNA directories the IDE provides (JNA can only be used in tests on the job's architecture).
+      # Lists the IDE's JNA native directories and JNA version.
       - name: Show the IDE's JNA native directories
         if: ${{ always() }}
         run: |
           home="${GRADLE_USER_HOME:-$HOME/.gradle}"
           if command -v cygpath > /dev/null; then home="$(cygpath -u "$home")"; fi
           find "$home/caches" -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
-          # JNA version of the IDE (jna-natives must match it): the constants of com/sun/jna/Version.class in util-8.jar.
+          # The JNA version in util-8.jar (jna-natives must match it).
           for jar in $(find "$home/caches" -name util-8.jar -path '*/lib/*' 2>/dev/null | head -3); do
             echo "$jar: JNA $(unzip -p "$jar" com/sun/jna/Version.class | grep -a -o -E '[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')"
           done || true
@@ -229,8 +221,8 @@ jobs:
             build/test-results
           if-no-files-found: ignore
 
-  # The install commands the plugin suggests on Linux (LibheifRemedy), run in containers of the distributions: the
-  # classes built here are mounted into each container together with JNA and a JDK (.github/scripts/linux-install-check.sh).
+  # The install commands the plugin suggests on Linux (LibheifRemedy), run in containers of the distributions with the
+  # classes built here, JNA and a JDK (.github/scripts/linux-install-check.sh).
   install-classes:
     name: Linux install commands (build)
     runs-on: ubuntu-24.04
@@ -265,7 +257,7 @@ jobs:
           mkdir -p out/classes out/resources
           cp -r build/classes/java/main build/classes/java/test out/classes/
           cp -r build/resources/main build/resources/test out/resources/
-          # JNA as in IntelliJ 2024.1 (the IDEs bundle it; here it comes from Maven Central, with its native part)
+          # JNA of IntelliJ 2024.1, with its native part
           curl -fsSL -o out/jna.jar https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
 
       - name: Upload classes
@@ -283,8 +275,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # libheif 1.6.1: images with alpha fail (heif_error 7/129) and it does not read the 10-bit brand heix (3/0);
-          # 8-bit images, grids, transformations and ICC profiles work.
+          # libheif 1.6 decodes no images with transparency or 10 bits per channel.
           - image: ubuntu:20.04
             prepare: apt-get update
             known: alpha_sips.heic,alpha_libheif.heic,rgb16_sips.heic,ten_bit.heic
@@ -332,7 +323,7 @@ jobs:
     timeout-minutes: 60
     steps:
 
-      # The IDEs in pluginVerificationIdes need more disk space than is free by default.
+      # Frees disk space for the IDEs in pluginVerificationIdes.
       - name: Maximize Build Space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:

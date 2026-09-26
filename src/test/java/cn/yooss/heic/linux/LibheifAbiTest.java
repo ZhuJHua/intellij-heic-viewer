@@ -17,8 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The {@code struct heif_error} return convention of {@link Libheif}: a 16-byte struct returned by value is read as the
  * 64-bit integer in the first return register ({@code RAX} on x86-64, {@code X0} on AArch64), {@code code} in the low
- * and {@code subcode} in the high half. Real libheif errors with known codes prove it on the CPU the tests run on (Linux
- * x86-64 and AArch64, and macOS with Homebrew's libheif).
+ * and {@code subcode} in the high half, checked with real libheif errors of known codes on the CPU the tests run on.
  */
 @EnabledIf("cn.yooss.heic.linux.TestLibheif#isLoadable")
 class LibheifAbiTest {
