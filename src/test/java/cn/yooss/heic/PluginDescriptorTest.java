@@ -20,18 +20,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Keeps the plugin descriptor, the Java constants and the message bundles consistent: a mismatch would not fail the
- * build, but silently break dynamic loading (plugin id), settings (ids, texts) or loading on some operating systems.
+ * Keeps the plugin descriptor, the Java constants and the message bundles consistent: the plugin id of the dynamic
+ * plugin listener, the file type, the registered classes and the texts.
  */
 class PluginDescriptorTest {
   @Test
@@ -59,8 +57,6 @@ class PluginDescriptorTest {
     assertEquals(List.of("com.intellij.modules.platform", "com.intellij.platform.images"), dependencies);
     assertEquals(1, plugin.getElementsByTagName("extensions").getLength());
     assertEquals(1, plugin.getElementsByTagName("applicationListeners").getLength());
-    assertNull(PluginDescriptorTest.class.getClassLoader().getResource("META-INF/heic-viewer-macos.xml"),
-               "the former macOS-only config file must be gone");
   }
 
   @Test
@@ -72,32 +68,19 @@ class PluginDescriptorTest {
     assertEquals(String.join(";", HeicImageReaderSpi.SUFFIXES), fileTypes.get(0).getAttribute("extensions"));
   }
 
+  /** The plugin adds no settings, no icons and no editors of its own. */
   @Test
-  void advancedSettingsMatchTheConstantsAndHaveTextsInEveryBundle() throws Exception {
-    List<Element> settings = elements(parse("META-INF/plugin.xml"), "advancedSetting");
-    Set<String> ids = new TreeSet<>();
-    for (Element setting : settings) {
-      ids.add(setting.getAttribute("id"));
-      assertEquals("messages.HeicBundle", setting.getAttribute("bundle"));
-      assertEquals("group.advanced.settings.heic", setting.getAttribute("groupKey"));
-    }
-    assertEquals(new TreeSet<>(Set.of(HeicSettings.LIBHEIF_PATH)), ids);
-
-    for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
-      Properties texts = properties(bundle);
-      assertEquals("HEIC Viewer", texts.getProperty("group.advanced.settings.heic"), bundle);
-      for (String id : ids) {
-        assertTrue(id.startsWith("heic.viewer."), id);
-        assertNotNull(texts.getProperty("advanced.setting." + id), bundle + ": " + id);
-        assertNotNull(texts.getProperty("advanced.setting." + id + ".description"), bundle + ": " + id);
-      }
-      assertEquals(properties("messages/HeicBundle.properties").stringPropertyNames(), texts.stringPropertyNames(), bundle);
+  void noSettingsIconsOrEditors() throws Exception {
+    Document plugin = parse("META-INF/plugin.xml");
+    for (String tag : List.of("advancedSetting", "applicationConfigurable", "projectConfigurable", "fileIconProvider",
+                              "iconProvider", "action", "actions")) {
+      assertEquals(0, elements(plugin, tag).size(), tag);
     }
   }
 
   /**
-   * Every backend status reason and every text of the decoder UI exists in English and Chinese (the remedies of each
-   * reason are checked by HeifRemediesTest).
+   * Every backend status reason and every text of the decoder UI exists in English and Chinese, and the bundles hold no
+   * other texts (the remedies of each reason are checked by HeifRemediesTest).
    */
   @Test
   void decoderStatusTextsExistInEveryBundle() throws Exception {
@@ -110,8 +93,8 @@ class PluginDescriptorTest {
                         "backend.status.LINUX_LIBHEIF_MISSING.flatpak", "backend.status.LINUX_HEVC_PLUGIN_MISSING.flatpak"));
     keys.addAll(List.of("notification.group.heic", "remedy.command.label", "remedy.banner.command", "remedy.command.copied",
                         "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
-                        "remedy.action.copy.command", "remedy.action.open.settings", "remedy.action.check.again",
-                        "remedy.action.learn.more", "remedy.action.report", "remedy.action.dont.show.again", "remedy.action.more",
+                        "remedy.action.copy.command", "remedy.action.check.again", "remedy.action.learn.more",
+                        "remedy.action.report", "remedy.action.dont.show.again", "remedy.action.more",
                         "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title",
                         "remedy.check.missing.restart"));
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
@@ -121,6 +104,7 @@ class PluginDescriptorTest {
         assertNotNull(text, bundle + ": " + key);
         assertFalse(text.trim().isEmpty(), bundle + ": " + key);
       }
+      assertEquals(new TreeSet<>(keys), new TreeSet<>(texts.stringPropertyNames()), bundle + ": no other texts");
     }
     // The success balloon quotes the image viewer's own error text, as the IDE shows it in that language (the Chinese
     // language pack's ImagesBundle: error.broken.image.file.format = "<b>图像未加载</b>").

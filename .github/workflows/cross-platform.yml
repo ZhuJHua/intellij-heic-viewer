@@ -319,9 +319,6 @@ jobs:
           - image: archlinux:latest
           - image: alpine:3.22
             mode: alpine
-          - image: nixos/nix
-            prepare: nix-channel --update
-            mode: nix
     steps:
 
       - name: Fetch Sources

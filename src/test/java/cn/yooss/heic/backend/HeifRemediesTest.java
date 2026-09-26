@@ -76,10 +76,6 @@ class HeifRemediesTest {
           assertFalse(target.contains("\n") || target.contains("\r"), action.toString());
           assertEquals(remedy.command(), target, "the copied command is the one shown");
           break;
-        case OPEN_SETTINGS:
-          assertNotNull(target, action.toString());
-          assertFalse(target.trim().isEmpty(), action.toString());
-          break;
         case CHECK_AGAIN:
           assertNull(target, action.toString());
           break;
@@ -314,7 +310,7 @@ class HeifRemediesTest {
     assertEquals(Action.checkAgain(), Action.checkAgain());
     assertEquals(Action.checkAgain().hashCode(), Action.checkAgain().hashCode());
     assertEquals("CHECK_AGAIN(remedy.action.check.again)", Action.checkAgain().toString());
-    assertEquals(Action.openSettings("advanced.settings"), Action.openSettings("advanced.settings"));
+    assertEquals(Action.copyCommand("sudo apt install libheif1"), Action.copyCommand("sudo apt install libheif1"));
     assertEquals(HeifRemedies.forReason(Reason.ERROR), HeifRemedies.forReason(Reason.ERROR));
     assertEquals(HeifRemedies.forReason(Reason.ERROR).hashCode(), HeifRemedies.forReason(Reason.ERROR).hashCode());
     assertThrows(UnsupportedOperationException.class, () -> HeifRemedies.forReason(Reason.ERROR).actions().clear());

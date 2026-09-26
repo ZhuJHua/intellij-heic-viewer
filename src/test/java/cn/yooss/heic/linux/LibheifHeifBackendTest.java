@@ -9,15 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -34,32 +28,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class LibheifHeifBackendTest {
   private static final LinuxDistribution UBUNTU = OsReleaseSamples.parse(OsReleaseSamples.UBUNTU_24_04);
 
+  /** libheif is loaded by its soname, then by JNA's short name. */
   @Test
-  void systemLibraryNamesByDefault() {
-    List<String> candidates = LibheifHeifBackend.libraryCandidates("", UBUNTU);
-    assertEquals(List.of("libheif.so.1", "heif"), candidates);
-    assertEquals(candidates, LibheifHeifBackend.libraryCandidates("  ", UBUNTU));
-  }
-
-  @Test
-  void configuredPathReplacesTheSystemSearch(@TempDir Path directory) throws IOException {
-    assertEquals(List.of("/opt/libheif/lib/libheif.so.1.19.8"),
-                 LibheifHeifBackend.libraryCandidates(" /opt/libheif/lib/libheif.so.1.19.8 ", UBUNTU));
-    assertEquals(List.of(System.getProperty("user.home") + "/libheif/libheif.so.1"),
-                 LibheifHeifBackend.libraryCandidates("~/libheif/libheif.so.1", UBUNTU));
-    Files.createDirectories(directory);
-    assertEquals(List.of(new File(directory.toFile(), "libheif.so.1").getPath(), new File(directory.toFile(), "libheif.so").getPath()),
-                 LibheifHeifBackend.libraryCandidates(directory.toString(), UBUNTU));
-  }
-
-  /** NixOS has no global library path: profiles are added, but only where a libheif.so.1 exists. */
-  @Test
-  void nixosProfiles() {
-    List<String> candidates = LibheifHeifBackend.libraryCandidates("", OsReleaseSamples.parse(OsReleaseSamples.NIXOS));
-    assertEquals(List.of("libheif.so.1", "heif"), candidates.subList(0, 2));
-    for (String candidate : candidates.subList(2, candidates.size())) {
-      assertTrue(new File(candidate).exists(), candidate);
-    }
+  void standardLibraryNames() {
+    assertEquals(List.of("libheif.so.1", "heif"), LibheifHeifBackend.SYSTEM_LIBRARY_NAMES);
   }
 
   @Test
@@ -76,7 +48,7 @@ class LibheifHeifBackendTest {
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void missingLibrary() {
     List<String> candidates = List.of("/nonexistent/libheif.so.1", "libheif-that-does-not-exist.so.1");
-    LibheifHeifBackend backend = new LibheifHeifBackend(() -> candidates, () -> UBUNTU, false);
+    LibheifHeifBackend backend = new LibheifHeifBackend(candidates, () -> UBUNTU, false);
     HeifBackendStatus status = backend.status();
     assertEquals(Reason.LINUX_LIBHEIF_MISSING, status.reason(), status.toString());
     assertTrue(status.detail().contains("/nonexistent/libheif.so.1") && status.detail().contains("libheif-that-does-not-exist.so.1"),
@@ -96,7 +68,7 @@ class LibheifHeifBackendTest {
   @EnabledOnOs({OS.LINUX, OS.MAC})
   void notLibheif() {
     String other = HeifBackends.Os.current() == HeifBackends.Os.MAC ? "/usr/lib/libz.1.dylib" : "libz.so.1";
-    LibheifHeifBackend backend = new LibheifHeifBackend(() -> List.of(other), () -> UBUNTU, false);
+    LibheifHeifBackend backend = new LibheifHeifBackend(List.of(other), () -> UBUNTU, false);
     HeifBackendStatus status = backend.status();
     assertEquals(Reason.LINUX_LIBHEIF_MISSING, status.reason(), status.toString());
     assertTrue(status.detail().contains("heif_"), status.detail());
@@ -137,51 +109,6 @@ class LibheifHeifBackendTest {
     assertTrue(status.detail().contains("has no HEVC decoder") && status.detail().contains("plugin directories"), status.detail());
     IOException e = assertThrows(IOException.class, () -> TestLibheif.backend().decode(Fixtures.bytes("rgb_libheif.heic"), 0));
     assertTrue(e.getMessage().contains("LINUX_HEVC_PLUGIN_MISSING"), e.getMessage());
-  }
-
-  /**
-   * Once a libheif is mapped in the process, a configured libheif that is another file is never opened: JNA opens
-   * libraries with RTLD_GLOBAL, so a second libheif would bind its plugins and its own functions to the first one and
-   * mix the objects of two versions. The loaded one stays in use, and the detail says that the configured one is used
-   * after a restart. The same file under another name is opened (dlopen returns the loaded library).
-   */
-  @Test
-  @EnabledIf("cn.yooss.heic.linux.TestLibheif#isLoadable")
-  void aSecondLibheifIsNeverOpenedNextToTheLoadedOne(@TempDir Path directory) throws IOException {
-    Path mapped = Files.createFile(directory.resolve("libheif.so.1")); // stands for the libheif mapped in the process
-    Path other = Files.createFile(Files.createDirectories(directory.resolve("other")).resolve("libheif.so.1"));
-    Path link = Files.createSymbolicLink(directory.resolve("libheif-link.so.1"), mapped);
-    String testLibrary = TestLibheif.candidates().get(0);
-    List<String> opened = new ArrayList<>();
-    Function<String, Libheif> opener = name -> {
-      opened.add(name);
-      if (name.equals(mapped.toString()) || name.equals(link.toString())) return Libheif.open(testLibrary);
-      throw new UnsatisfiedLinkError("a second libheif must not be opened: " + name);
-    };
-
-    LibheifHeifBackend backend = new LibheifHeifBackend(() -> List.of(other.toString()), () -> UBUNTU, false, opener, () -> mapped);
-    HeifBackendStatus status = backend.status();
-    assertEquals(List.of(mapped.toString()), opened, "only the loaded library itself");
-    assertTrue(status.isAvailable() || status.reason() == Reason.LINUX_HEVC_PLUGIN_MISSING, status.toString());
-    assertTrue(status.detail().contains(other + " is used after an IDE restart"), status.detail());
-    Libheif lib = backend.library();
-    assertNotNull(lib);
-    HeifBackendStatus again = backend.recheckStatus(); // "Check Again": the same library, not opened again
-    assertSame(lib, backend.library());
-    assertEquals(1, opened.size(), opened.toString());
-    assertTrue(again.detail().contains("is used after an IDE restart"), again.detail());
-
-    opened.clear();
-    LibheifHeifBackend sameFile = new LibheifHeifBackend(() -> List.of(link.toString()), () -> UBUNTU, false, opener, () -> mapped);
-    HeifBackendStatus sameStatus = sameFile.status();
-    assertEquals(List.of(link.toString()), opened);
-    assertFalse(sameStatus.detail().contains("IDE restart"), sameStatus.detail());
-
-    // Nothing mapped yet (the first load in the process): the configured path is opened.
-    opened.clear();
-    LibheifHeifBackend first = new LibheifHeifBackend(() -> List.of(other.toString()), () -> UBUNTU, false, opener, () -> null);
-    assertEquals(Reason.LINUX_LIBHEIF_MISSING, first.status().reason());
-    assertEquals(List.of(other.toString()), opened);
   }
 
   @Test

@@ -85,20 +85,21 @@ class LibheifRemedyTest {
   }
 
   @Test
-  void archAlpineNixos() {
+  void archAndAlpine() {
     for (String release : new String[]{OsReleaseSamples.ARCH, OsReleaseSamples.MANJARO, OsReleaseSamples.ENDEAVOUROS}) {
       assertEquals("sudo pacman -S --needed libheif libde265", missing(release));
       assertEquals("sudo pacman -S --needed libheif libde265", hevc(release));
     }
     assertEquals("sudo apk add libheif", missing(OsReleaseSamples.ALPINE_3_22));
     assertEquals("sudo apk add libheif-libde265", hevc(OsReleaseSamples.ALPINE_3_22));
-    assertEquals("nix-env -iA nixos.libheif.lib", missing(OsReleaseSamples.NIXOS));
-    assertTrue(LibheifRemedy.note(parse(OsReleaseSamples.NIXOS)).contains("/run/current-system/sw/lib"));
   }
 
   @Test
   void noCommandWhereThereIsNone() {
     assertNull(missing(OsReleaseSamples.GENTOO));
+    assertNull(missing(OsReleaseSamples.NIXOS));
+    assertNull(hevc(OsReleaseSamples.NIXOS));
+    assertNull(LibheifRemedy.note(parse(OsReleaseSamples.NIXOS)));
     assertNull(missing(""));
     assertNull(LibheifRemedy.installCommand(Reason.LINUX_LIBHEIF_MISSING,
                                             LinuxDistribution.parse(OsReleaseSamples.UBUNTU_24_04, true, false)));

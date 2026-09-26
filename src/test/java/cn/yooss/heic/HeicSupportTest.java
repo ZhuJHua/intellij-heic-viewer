@@ -57,11 +57,6 @@ class HeicSupportTest {
   }
 
   @Test
-  void settingsFallBackToDefaultsOutsideTheIde() {
-    assertEquals("", HeicSettings.libheifPath());
-  }
-
-  @Test
   void ourReaderWinsOverAnotherHeifReader() throws IOException {
     OtherHeifReaderSpi other = new OtherHeifReaderSpi();
     IIORegistry.getDefaultInstance().registerServiceProvider(other, ImageReaderSpi.class);

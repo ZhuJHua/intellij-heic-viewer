@@ -115,7 +115,7 @@ val localSigningFiles: Pair<File, File>? =
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
 intellijPlatform {
-    // No Configurable of its own (the settings live in Advanced Settings): nothing to index.
+    // The plugin has no settings: nothing to index.
     buildSearchableOptions = false
 
     pluginConfiguration {

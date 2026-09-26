@@ -8,8 +8,7 @@
 #      (no sudo; -y, -n, --noconfirm; the packages and repositories are unchanged);
 #   3. the backend must then be available and decode the fixtures correctly.
 # Mode "alpine" (musl: JNA's library in jna.jar is built for glibc): the suggested command is run and the libraries
-#   must be installed. Mode "nix": the NixOS command (channel "nixpkgs" instead of "nixos" in the nixos/nix image) must
-#   put libheif.so.1 where the plugin looks for it.
+#   must be installed.
 # $PREPARE is run first (e.g. apt-get update). $KNOWN lists decode checks that fail with that distribution's libheif
 # (limitations of an old version, see the workflow).
 set -eu
@@ -26,8 +25,7 @@ adapt() {
       -e 's/apt install /apt-get install -y --no-install-recommends /g' \
       -e 's/dnf install /dnf install -y /g' \
       -e 's/zypper /zypper -n /g' \
-      -e 's/pacman -S /pacman -Sy --noconfirm /g' \
-      -e 's/nix-env -iA nixos\./nix-env -iA nixpkgs./g'
+      -e 's/pacman -S /pacman -Sy --noconfirm /g'
 }
 
 run() {
@@ -55,12 +53,6 @@ case "$mode" in
     command=$(check command LINUX_LIBHEIF_MISSING)
     run "$command"
     ls -l /usr/lib/libheif.so.1 /usr/lib/libde265.so.0
-    ;;
-  nix)
-    # LibheifRemedyTest pins the NixOS command: nix-env -iA nixos.libheif.lib
-    echo "Suggested: nix-env -iA nixos.libheif.lib"
-    nix-env -iA nixpkgs.libheif.lib
-    ls -l "$HOME/.nix-profile/lib/libheif.so.1"
     ;;
   *)
     echo "unknown mode $mode"; exit 2

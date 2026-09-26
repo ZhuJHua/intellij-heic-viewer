@@ -47,7 +47,7 @@ public final class HeifRemedies {
   static final String REQUIREMENTS_URL = PROJECT_URL + "#requirements";
   /** README section about the Microsoft Store extensions Windows needs. */
   public static final String WINDOWS_HELP_URL = PROJECT_URL + "#windows-heif-and-hevc-extensions";
-  /** README section with the install commands of every distribution, Flatpak and custom libheif locations. */
+  /** README section with the install commands of every distribution and Flatpak. */
   public static final String LINUX_HELP_URL = PROJECT_URL + "#linux-libheif";
   static final String ISSUES_URL = PROJECT_URL + "/issues";
 

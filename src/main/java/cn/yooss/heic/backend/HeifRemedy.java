@@ -26,8 +26,6 @@ public final class HeifRemedy {
     OPEN_URL,
     /** Copies {@link Action#target()}, a shell command that installs the missing component, to the clipboard. */
     COPY_COMMAND,
-    /** Opens the IDE settings page whose configurable id is {@link Action#target()}. */
-    OPEN_SETTINGS,
     /** Forgets the cached status and probes the system decoder again; HEIC images load without a restart once it is there. */
     CHECK_AGAIN,
     /** Opens {@link Action#target()} ({@code https:}): documentation of the requirements. */
@@ -38,11 +36,11 @@ public final class HeifRemedy {
      * checks again when the IDE window is activated.
      */
     public boolean startsInstallation() {
-      return this == OPEN_URL || this == COPY_COMMAND || this == OPEN_SETTINGS;
+      return this == OPEN_URL || this == COPY_COMMAND;
     }
   }
 
-  /** One action: its type, the bundle key of its label and its target (URL, command, configurable id or none). */
+  /** One action: its type, the bundle key of its label and its target (URL, command or none). */
   public static final class Action {
     private final ActionType type;
     private final String textKey;
@@ -75,11 +73,6 @@ public final class HeifRemedy {
       return new Action(ActionType.COPY_COMMAND, "remedy.action.copy.command", command);
     }
 
-    /** @param configurableId id of a {@code SearchableConfigurable}, e.g. {@code advanced.settings} */
-    public static @NotNull Action openSettings(@NotNull String configurableId) {
-      return new Action(ActionType.OPEN_SETTINGS, "remedy.action.open.settings", configurableId);
-    }
-
     public static @NotNull Action checkAgain() {
       return new Action(ActionType.CHECK_AGAIN, "remedy.action.check.again", null);
     }
@@ -97,7 +90,7 @@ public final class HeifRemedy {
       return textKey;
     }
 
-    /** URL ({@code OPEN_URL}, {@code LEARN_MORE}), command, configurable id, or {@code null} ({@code CHECK_AGAIN}). */
+    /** URL ({@code OPEN_URL}, {@code LEARN_MORE}), command, or {@code null} ({@code CHECK_AGAIN}). */
     public @Nullable String target() {
       return target;
     }

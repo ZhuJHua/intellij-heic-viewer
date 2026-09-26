@@ -10,35 +10,31 @@ import java.util.Set;
 
 /**
  * The command that installs a working libheif (with an HEVC decoder) on the user's distribution, offered by the install
- * prompt ({@code HeifBackendStatus.installCommand}). The package names were checked against the distributions'
- * package indexes (September 2026; see README.md, "Linux: libheif"):
+ * prompt ({@code HeifBackendStatus.installCommand}); README.md, "Linux: libheif", lists them for users:
  * <table>
  *   <caption>Install commands</caption>
  *   <tr><th>Distribution</th><th>libheif missing</th><th>HEVC decoder missing</th></tr>
- *   <tr><td>Debian 13+, Ubuntu 23.10+ and derivatives (plugins are separate packages; Ubuntu 24.04 updates and 26.04
- *   only suggest {@code libheif-plugin-libde265}, Launchpad bug 2142762)</td>
+ *   <tr><td>Debian 13+, Ubuntu 23.10+ and derivatives (the codecs are separate plugin packages)</td>
  *   <td>{@code apt install libheif1 libheif-plugin-libde265}</td><td>{@code apt install libheif-plugin-libde265}</td></tr>
  *   <tr><td>Debian 11/12, Ubuntu 20.04-23.04 (libde265 is linked in)</td><td>{@code apt install libheif1}</td>
  *   <td>as above</td></tr>
- *   <tr><td>Fedora (Fedora's libheif has no HEVC because of patents; RPM Fusion Free has {@code libheif-freeworld})</td>
+ *   <tr><td>Fedora (Fedora's libheif has no HEVC decoder; RPM Fusion Free has {@code libheif-freeworld})</td>
  *   <td colspan="2">enable RPM Fusion Free, {@code dnf install libheif-freeworld}</td></tr>
  *   <tr><td>RHEL, AlmaLinux, Rocky, CentOS Stream, Oracle Linux (libheif from EPEL, the HEVC plugins from RPM Fusion)</td>
  *   <td colspan="2">enable EPEL, CRB and RPM Fusion Free, {@code dnf install libheif-freeworld}</td></tr>
- *   <tr><td>openSUSE Tumbleweed, Slowroll, Leap (openSUSE's libheif has no HEVC; Packman Essentials has
+ *   <tr><td>openSUSE Tumbleweed, Slowroll, Leap (openSUSE's libheif has no HEVC decoder; Packman Essentials has
  *   {@code libheif-HEIF})</td><td colspan="2">add Packman Essentials, {@code zypper install --from packman-essentials
  *   libheif1 libheif-HEIF}</td></tr>
  *   <tr><td>Arch Linux, Manjaro, EndeavourOS, ... ({@code libde265} is a dependency of {@code libheif})</td>
  *   <td colspan="2">{@code pacman -S --needed libheif libde265}</td></tr>
  *   <tr><td>Alpine ({@code libheif-libde265} is a separate package since 3.24, a dependency of {@code libheif})</td>
  *   <td>{@code apk add libheif}</td><td>{@code apk add libheif-libde265}</td></tr>
- *   <tr><td>NixOS (no global library path)</td><td colspan="2">{@code nix-env -iA nixos.libheif.lib} (found in
- *   {@code ~/.nix-profile/lib}), or {@code pkgs.libheif.lib} in {@code environment.systemPackages}</td></tr>
  *   <tr><td>Flatpak IDE on the freedesktop runtime 25.08 or newer ({@code ID=org.freedesktop.platform} in the
  *   sandbox's os-release; the runtime has libheif, its HEVC plugin is the {@code org.freedesktop.Platform.codecs-extra}
- *   extension, which Flatpak normally installs with the runtime)</td><td>none (libheif is part of the runtime)</td>
+ *   extension)</td><td>none (libheif is part of the runtime)</td>
  *   <td>{@code flatpak install flathub org.freedesktop.Platform.codecs-extra//<branch>-extra}, run on the host</td></tr>
- *   <tr><td>Flatpak IDE on an older runtime (24.08's libheif looks for plugins elsewhere, 23.08 has no libheif), other
- *   distributions</td><td colspan="2">none (the README explains the options)</td></tr>
+ *   <tr><td>Flatpak IDE on an older runtime, NixOS, other distributions</td><td colspan="2">none (the README explains
+ *   the options)</td></tr>
  * </table>
  */
 final class LibheifRemedy {
@@ -72,7 +68,6 @@ final class LibheifRemedy {
       return null;
     }
     String id = distribution.id();
-    if (id.equals("nixos")) return "nix-env -iA nixos.libheif.lib";
     if (isDebianFamily(distribution)) {
       if (hevcOnly) return "sudo apt install libheif-plugin-libde265";
       return hasPluginPackages(distribution) ? "sudo apt install libheif1 libheif-plugin-libde265" : "sudo apt install libheif1";
@@ -102,9 +97,6 @@ final class LibheifRemedy {
     if (distribution.isFlatpak()) {
       return "The IDE runs as a Flatpak and only sees the libraries of its Flatpak runtime (the freedesktop runtime 25.08"
              + " and newer has libheif; its HEVC decoder is the org.freedesktop.Platform.codecs-extra extension)";
-    }
-    if (distribution.id().equals("nixos")) {
-      return "NixOS: libheif is looked for in /run/current-system/sw/lib, ~/.nix-profile/lib and /etc/profiles/per-user";
     }
     return null;
   }

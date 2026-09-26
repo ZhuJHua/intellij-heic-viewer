@@ -6,9 +6,6 @@ import cn.yooss.heic.backend.HeifRemedy;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ide.CopyPasteManager;
-import com.intellij.openapi.options.Configurable;
-import com.intellij.openapi.options.SearchableConfigurable;
-import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.popup.Balloon;
@@ -71,9 +68,6 @@ final class RemedyActions {
           CopyPasteManager.getInstance().setContents(new StringSelection(target));
           showCopied(anchor, target);
           break;
-        case OPEN_SETTINGS:
-          if (target != null) ShowSettingsUtil.getInstance().showSettingsDialog(project, configurable -> hasId(configurable, target), null);
-          break;
         case CHECK_AGAIN:
           DecoderStatus.recheck(DecoderStatus.Trigger.USER, project);
           break;
@@ -84,10 +78,6 @@ final class RemedyActions {
     }
     // The user may install the component outside the IDE now: check again when the IDE is activated.
     if (action.type().startsInstallation()) DecoderStatus.remedyActionPerformed();
-  }
-
-  private static boolean hasId(Configurable configurable, String id) {
-    return configurable instanceof SearchableConfigurable && id.equals(((SearchableConfigurable) configurable).getId());
   }
 
   /** A short confirmation below the clicked link: what was copied and what to do next. */

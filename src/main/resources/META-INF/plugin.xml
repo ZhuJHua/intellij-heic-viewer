@@ -22,10 +22,6 @@
          type, like the bundled WebP support). -->
     <fileType name="Image" extensions="heic;heif;hif;heics"/>
 
-    <!-- Linux only (os="linux": not registered elsewhere): a libheif.so.1 outside the dynamic linker's search path. -->
-    <advancedSetting id="heic.viewer.libheif.path" default="" os="linux" bundle="messages.HeicBundle"
-                     groupKey="group.advanced.settings.heic"/>
-
     <!-- Registers the javax.imageio reader in the command-line diff and merge starters (`studio diff a.heic b.heic`
          while the IDE is not running), which never fire appFrameCreated: asked before an image viewer is created for
          an Image file. accept() always returns false, so it never provides an editor. -->

@@ -24,7 +24,7 @@ final class TestLibheif {
     String configured = System.getProperty("heic.test.libheif", "").trim();
     if (!configured.isEmpty()) return List.of(configured);
     if (HeifBackends.Os.current() == HeifBackends.Os.LINUX) {
-      return LibheifHeifBackend.libraryCandidates("", LinuxDistribution.current());
+      return LibheifHeifBackend.SYSTEM_LIBRARY_NAMES;
     }
     if (HeifBackends.Os.current() == HeifBackends.Os.MAC) {
       for (String path : HOMEBREW) {
@@ -41,7 +41,7 @@ final class TestLibheif {
     List<String> candidates = candidates();
     if (candidates == null) return null;
     synchronized (TestLibheif.class) {
-      if (backend == null) backend = new LibheifHeifBackend(() -> candidates, LinuxDistribution::current, false);
+      if (backend == null) backend = new LibheifHeifBackend(candidates, LinuxDistribution::current, false);
       return backend;
     }
   }
