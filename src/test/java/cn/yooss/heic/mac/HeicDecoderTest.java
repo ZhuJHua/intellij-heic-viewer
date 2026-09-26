@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** The macOS decoder (ImageIO.framework through the IDE's JNA) itself; see HeifBackendContractTest for the backend API. */
 @EnabledOnOs(OS.MAC)
@@ -557,11 +558,14 @@ class HeicDecoderTest {
   /**
    * Serialized, one decode at a time is in its native part, for every kind of decode: full size, scaled by ImageIO,
    * alpha-weighted (drawn in strips) and embedded thumbnails; only the Java side (copying the pixels) runs in parallel.
-   * Not serialized, the same decodes do overlap (so the test can tell).
+   * Not serialized, the same decodes do overlap (so the test can tell); not on Intel Macs, where concurrent decodes are
+   * what crashed the JVM.
    */
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   void serializedNativeDecodesNeverOverlap(boolean serialized) throws Exception {
+    assumeTrue(serialized || !HeicDecoder.serializeByDefault(System.getProperty("os.arch"), null),
+               "unserialized concurrent decodes are not run on Intel Macs");
     AtomicInteger inside = new AtomicInteger();
     AtomicInteger maxInside = new AtomicInteger();
     AtomicInteger copies = new AtomicInteger();
