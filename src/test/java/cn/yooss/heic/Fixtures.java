@@ -97,6 +97,24 @@ public final class Fixtures {
     return n == 0 ? 0 : (double) sum / n;
   }
 
+  /**
+   * {@code data} with its {@code ispe} box of {@code width x height} changed to {@code newWidth x newHeight}: a file that
+   * declares another size than its coded image (a malformed file; libheif's decode limit).
+   */
+  public static byte[] withIspe(byte[] data, int width, int height, int newWidth, int newHeight) {
+    byte[] copy = data.clone();
+    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(copy); // big-endian
+    for (int i = 4; i + 16 <= copy.length; i++) {
+      if (copy[i] == 'i' && copy[i + 1] == 's' && copy[i + 2] == 'p' && copy[i + 3] == 'e' && buffer.getInt(i - 4) == 20
+          && buffer.getInt(i + 8) == width && buffer.getInt(i + 12) == height) {
+        buffer.putInt(i + 8, newWidth);
+        buffer.putInt(i + 12, newHeight);
+        return copy;
+      }
+    }
+    throw new IllegalArgumentException("no ispe " + width + "x" + height);
+  }
+
   public static boolean isMac() {
     return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
   }

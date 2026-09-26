@@ -23,11 +23,12 @@ import java.util.Set;
  * Algorithm (see README): {@code CFDataCreate} -> {@code CGImageSourceCreateWithData(ShouldCache=false)} ->
  * primary image -> properties -> {@code CGImageSourceCreateThumbnailAtIndex(FromImageAlways, WithTransform,
  * ThumbnailMaxPixelSize, ShouldCacheImmediately)} so that the HEIF {@code irot}/{@code imir} and EXIF orientation
- * are applied -> drawn in strips of ~1M pixels, but at most {@link #MAX_DRAWS} of them (cropped with
- * {@code CGImageCreateWithImageInRect}), into an explicit 8-bit sRGB bitmap context -> copied (in ~1M-pixel chunks)
- * into a {@code TYPE_INT_RGB} image, or a non-premultiplied {@code TYPE_INT_ARGB} image when the file has alpha. An
- * image with alpha that is requested smaller is decoded at full size and downscaled alpha-weighted by
- * {@link PlaneConverter} instead of by ImageIO ({@link #isAlphaWeighted}).
+ * are applied -> drawn once into an explicit 8-bit sRGB bitmap context of the image's size (native memory) -> the image
+ * and its source released -> copied (in ~1M-pixel chunks) into a {@code TYPE_INT_RGB} image, or a non-premultiplied
+ * {@code TYPE_INT_ARGB} image when the file has alpha ({@link Session#render}). An image with alpha that is requested
+ * smaller is decoded at full size and downscaled alpha-weighted by {@link PlaneConverter} instead of by ImageIO
+ * ({@link #isAlphaWeighted}), drawn in strips of ~1M pixels, but at most {@link #MAX_DRAWS} of them (cropped with
+ * {@code CGImageCreateWithImageInRect}).
  * <p>
  * The algorithm is written once against {@link MacApi}; the binding is the IDE's JNA ({@link JnaMacApi}), initialized
  * on the first decode. Every call is self-contained (own autorelease pool, every CF object and native buffer released
@@ -174,11 +175,12 @@ public final class HeicDecoder {
   static final int kCGBitmapByteOrder32Little = 2 << 12;
   static final int kCGBlendModeCopy = 17;
   /**
-   * The most strips one decode draws. A cropped view shares the decoded pixels only while ImageIO.framework keeps them
-   * cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), the thumbnail is a
-   * lazy image and every draw runs the whole HEIF decode again: with ~1M-pixel strips, a 64-megapixel image would be
-   * decoded about 64 times (about a minute, not cancellable). Fewer, taller strips cost a larger native scratch buffer
-   * (1/8 of the image: 32 MB at the default 64-megapixel budget), next to ImageIO's cached copy of the whole image.
+   * The most strips one decode draws when it draws in strips (the alpha-weighted downscaling, or {@link Session#render}
+   * when the full-size bitmap cannot be allocated). A cropped view shares the decoded pixels only while ImageIO.framework
+   * keeps them cached; when it cannot (e.g. a malformed file whose {@code ispe} does not match its coded image), the
+   * thumbnail is a lazy image and every draw runs the whole HEIF decode again (about 1.1 s for a 1 kB file that declares
+   * 50362 x 12301, at any output size). Fewer, taller strips cost a larger native scratch buffer (1/8 of the image),
+   * next to ImageIO's cached copy of the whole image.
    */
   static final int MAX_DRAWS = 8;
   /** Largest image with alpha that is downscaled alpha-weighted (the default pixel budget), see {@link #isAlphaWeighted}. */
@@ -233,6 +235,7 @@ public final class HeicDecoder {
     private final ArrayDeque<Long> owned = new ArrayDeque<>();
     private long buffer;
     private long source;
+    private long data;
     private String type;
     private long properties;
     private long count;
@@ -250,8 +253,13 @@ public final class HeicDecoder {
       return ref;
     }
 
+    /** Releases an {@linkplain #own owned} object now instead of on {@link #close()}. */
+    private void releaseNow(long ref) {
+      if (ref != 0 && owned.removeFirstOccurrence(ref)) api.cfRelease(ref);
+    }
+
     void open(byte[] bytes) throws IOException {
-      long data = own(api.cfDataCreate(bytes));
+      data = own(api.cfDataCreate(bytes));
       if (data == 0) throw new IOException("CFDataCreate failed");
 
       long options = dictionary(k.kCGImageSourceShouldCache, Boolean.FALSE);
@@ -321,8 +329,58 @@ public final class HeicDecoder {
       return image;
     }
 
-    /** Draws {@code image} into sRGB 8-bit strips and copies them into a new {@link BufferedImage}. */
+    /**
+     * Draws {@code image} once into an sRGB 8-bit bitmap of its size (native memory), releases the image, its source and
+     * the data (ImageIO.framework's decoded copy), and only then copies the bitmap into a new {@link BufferedImage}, in
+     * chunks of about {@code stripPixels} pixels.
+     * <p>
+     * One draw, because a draw of an image that ImageIO.framework could not cache (a malformed file) decodes the whole
+     * image again: drawn in eight strips, a 1 kB file declaring 50362 x 12301 took 8 s to decode (about a minute when
+     * the IDE was busy), drawn once 1 s, at any output size. For ordinary images the time is the same (48 MP: 230 ms,
+     * 134 MP: 490 ms on an M4 Pro), and the peak memory of the process is lower than with strips, because ImageIO's
+     * copy is freed before the Java image is allocated (48 MP: 680 instead of 725 MB, 134 MP: 1.76 instead of 1.90 GB).
+     * If the bitmap cannot be allocated, the image is drawn in strips instead ({@link #renderStrips}).
+     */
     BufferedImage render(long image, boolean alpha, int stripPixels) throws IOException {
+      long imageWidth = api.cgImageGetWidth(image), imageHeight = api.cgImageGetHeight(image);
+      if (imageWidth <= 0 || imageHeight <= 0 || imageWidth * imageHeight > PixelPipeline.MAX_IMAGE_PIXELS) {
+        throw new IOException("Invalid decoded image size " + imageWidth + "x" + imageHeight);
+      }
+      int width = (int) imageWidth;
+      int height = (int) imageHeight;
+      long bytesPerRow = 4L * width;
+      buffer = api.malloc(bytesPerRow * height);
+      if (buffer == 0) return renderStrips(image, alpha, stripPixels);
+
+      long colorSpace = own(api.cgColorSpaceCreateWithName(k.kCGColorSpaceSRGB));
+      if (colorSpace == 0) throw new IOException("Cannot create the sRGB color space");
+      // Little-endian 32-bit BGRA == int 0xAARRGGBB, i.e. the TYPE_INT_ARGB_PRE / TYPE_INT_RGB layouts.
+      int bitmapInfo = (alpha ? kCGImageAlphaPremultipliedFirst : kCGImageAlphaNoneSkipFirst) | kCGBitmapByteOrder32Little;
+      long context = own(api.cgBitmapContextCreate(buffer, width, height, 8, bytesPerRow, colorSpace, bitmapInfo));
+      if (context == 0) throw new IOException("Cannot create a " + width + "x" + height + " bitmap context");
+      api.cgContextSetBlendMode(context, kCGBlendModeCopy); // overwrite, never blend with stale pixels
+      api.cgContextDrawImage(context, 0, 0, width, height, image);
+      releaseNow(image);
+      releaseNow(source);
+      releaseNow(properties);
+      releaseNow(data);
+
+      BufferedImage out = PixelPipeline.newImage(width, height, alpha);
+      int copyRows = PixelPipeline.stripRows(width, height, stripPixels);
+      int[] pixels = new int[width * copyRows];
+      for (int y0 = 0; y0 < height; y0 += copyRows) {
+        int n = Math.min(copyRows, height - y0);
+        api.readInts(buffer + y0 * bytesPerRow, pixels, width * n);
+        PixelPipeline.writeArgbRows(out, y0, n, pixels, alpha); // un-premultiplies images with alpha
+      }
+      return out;
+    }
+
+    /**
+     * {@link #render} with a strip-sized bitmap: draws {@code image} into sRGB 8-bit strips (at most {@link #MAX_DRAWS})
+     * and copies them into a new {@link BufferedImage}.
+     */
+    BufferedImage renderStrips(long image, boolean alpha, int stripPixels) throws IOException {
       BufferedImage out = PixelPipeline.newImage(api.cgImageGetWidth(image), api.cgImageGetHeight(image), alpha);
       int width = out.getWidth();
       int height = out.getHeight();
