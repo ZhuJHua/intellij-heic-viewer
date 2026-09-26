@@ -54,7 +54,7 @@ body:
     id: os
     attributes:
       label: Operating system, version and CPU architecture
-      description: On Linux, also the distribution and how libheif was installed (package names, Flatpak, custom path).
+      description: On Linux, also the distribution and how libheif was installed (package names, Flatpak).
       placeholder: macOS 26.0 Apple silicon / Windows 11 24H2 x64 / Ubuntu 24.04 arm64
     validations:
       required: true
