@@ -182,6 +182,47 @@ class HeifRemediesTest {
     }
   }
 
+  /**
+   * A Flatpak IDE's command ({@code flatpak install ... codecs-extra}) is run on the host: its own explanation (the
+   * runtime's extension, not the distribution's packages) and texts that say where to run it, in both languages.
+   */
+  @Test
+  void flatpakCommandsRunOnTheHost() throws IOException {
+    String command = "flatpak install flathub org.freedesktop.Platform.codecs-extra//25.08-extra";
+    HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
+                                                 .withInstallCommand(command).withInstallUrl(HeifRemedies.LINUX_HELP_URL));
+    assertNotNull(remedy);
+    assertTrue(remedy.isHostCommand());
+    assertTrue(HeifRemedies.isHostCommand(command));
+    assertEquals("backend.status.LINUX_HEVC_PLUGIN_MISSING.flatpak", remedy.explanationKey());
+    assertEquals(List.of(Action.copyCommand(command), Action.checkAgain(), Action.learnMore(HeifRemedies.LINUX_HELP_URL)),
+                 remedy.actions());
+    for (String bundle : BUNDLES) {
+      Properties texts = properties(bundle);
+      for (String key : List.of(remedy.explanationKey(), "backend.status.LINUX_LIBHEIF_MISSING.flatpak",
+                                "remedy.command.label" + HeifRemedy.HOST_SUFFIX, "remedy.banner.command" + HeifRemedy.HOST_SUFFIX,
+                                "remedy.command.copied" + HeifRemedy.HOST_SUFFIX)) {
+        assertText(texts, bundle, key);
+      }
+      String explanation = texts.getProperty(remedy.explanationKey());
+      assertTrue(explanation.contains("Flatpak") && explanation.contains("codecs-extra"), bundle + ": " + explanation);
+      assertFalse(explanation.contains("libde265") || explanation.contains("distribution") || explanation.contains("发行版"),
+                  bundle + ": not the distribution's packages: " + explanation);
+      String banner = texts.getProperty("remedy.banner.command" + HeifRemedy.HOST_SUFFIX);
+      assertTrue(banner.contains("{0}") && banner.contains("{1}") && !banner.contains("'"), bundle + ": " + banner);
+      assertTrue(texts.getProperty("remedy.command.copied" + HeifRemedy.HOST_SUFFIX).contains("{1}"), bundle);
+      assertFalse(texts.getProperty("remedy.command.copied" + HeifRemedy.HOST_SUFFIX).contains("'"), bundle + ": MessageFormat");
+    }
+    assertTrue(properties(BUNDLES.get(0)).getProperty("remedy.banner.command" + HeifRemedy.HOST_SUFFIX).contains("On the host"));
+
+    HeifRemedy distribution = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
+                                                       .withInstallCommand("sudo apt install libheif-plugin-libde265"));
+    assertNotNull(distribution);
+    assertFalse(distribution.isHostCommand());
+    assertEquals(Reason.LINUX_HEVC_PLUGIN_MISSING.bundleKey(), distribution.explanationKey());
+    assertFalse(HeifRemedies.forReason(Reason.LINUX_HEVC_PLUGIN_MISSING).isHostCommand());
+  }
+
   /** The README sections the remedies link to exist (GitHub's heading anchors); the tests run in the project directory. */
   @Test
   void readmeSectionsExist() throws IOException {

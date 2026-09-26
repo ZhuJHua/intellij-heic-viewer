@@ -93,7 +93,8 @@ final class RemedyActions {
   /** A short confirmation below the clicked link: what was copied and what to do next. */
   private static void showCopied(@Nullable Component anchor, @NotNull String command) {
     if (!(anchor instanceof JComponent) || !anchor.isShowing()) return;
-    String text = HeicBundle.message("remedy.command.copied", "<code>" + StringUtil.escapeXmlEntities(command) + "</code>",
+    String key = HeifRemedies.isHostCommand(command) ? "remedy.command.copied" + HeifRemedy.HOST_SUFFIX : "remedy.command.copied";
+    String text = HeicBundle.message(key, "<code>" + StringUtil.escapeXmlEntities(command) + "</code>",
                                      HeicBundle.message("remedy.action.check.again"));
     Balloon balloon = JBPopupFactory.getInstance().createHtmlTextBalloonBuilder(text, MessageType.INFO, null)
       .setFadeoutTime(COPIED_FADEOUT_MILLIS)

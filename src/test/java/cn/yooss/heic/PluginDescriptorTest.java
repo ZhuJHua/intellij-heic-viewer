@@ -107,6 +107,8 @@ class PluginDescriptorTest {
       keys.add(reason.bundleKey());
       keys.add(HeifRemedy.titleKey(reason));
     }
+    keys.addAll(List.of("remedy.command.label.flatpak", "remedy.banner.command.flatpak", "remedy.command.copied.flatpak",
+                        "backend.status.LINUX_LIBHEIF_MISSING.flatpak", "backend.status.LINUX_HEVC_PLUGIN_MISSING.flatpak"));
     keys.addAll(List.of("notification.group.heic", "remedy.command.label", "remedy.banner.command", "remedy.command.copied",
                         "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
                         "remedy.action.copy.command", "remedy.action.open.settings", "remedy.action.check.again",

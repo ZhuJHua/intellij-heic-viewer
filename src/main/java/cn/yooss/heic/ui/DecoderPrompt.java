@@ -121,7 +121,8 @@ public final class DecoderPrompt {
     StringBuilder content = new StringBuilder(HeicBundle.message(remedy.explanationKey()));
     String command = remedy.command();
     if (command != null) {
-      content.append("<br>").append(HeicBundle.message("remedy.command.label"))
+      content.append("<br>").append(HeicBundle.message(remedy.isHostCommand() ? "remedy.command.label" + HeifRemedy.HOST_SUFFIX
+                                                                              : "remedy.command.label"))
         .append("<br><code>").append(StringUtil.escapeXmlEntities(command)).append("</code>");
     }
     return content.toString();

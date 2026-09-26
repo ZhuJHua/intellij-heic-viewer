@@ -65,6 +65,49 @@ class DecoderTextsTest {
     assertTrue(banner.endsWith("sudo dnf install libheif && echo '<ok>'"), "plain text, as is: " + banner);
   }
 
+  /**
+   * A Flatpak IDE: the banner says to run the command in a terminal on the host and shows the long command abbreviated
+   * in the middle (the tooltip and the balloon have all of it; Copy Command copies all of it), and the explanation names
+   * the runtime's extension rather than the distribution's packages.
+   */
+  @Test
+  void flatpakBannerAndBalloon() {
+    String command = "flatpak install flathub org.freedesktop.Platform.codecs-extra//25.08-extra";
+    HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "no HEVC decoder")
+                                                 .withInstallCommand(command).withInstallUrl(HeifRemedies.LINUX_HELP_URL));
+    assertNotNull(remedy);
+    String banner = HeicDecoderNotificationProvider.text(remedy);
+    assertEquals(cn.yooss.heic.HeicBundle.message(remedy.titleKey())
+                 + ". On the host, run: flatpak install \u2026 codecs-extra//25.08-extra", banner);
+    assertTrue(banner.length() <= HeicDecoderNotificationProvider.MAX_BANNER_TEXT, banner.length() + ": " + banner);
+    assertFalse(banner.contains("distribution"), banner);
+    String content = DecoderPrompt.content(remedy);
+    assertTrue(content.contains("<code>" + command + "</code>"), content);
+    assertTrue(content.contains("codecs-extra") && content.contains("on the host"), content);
+    assertFalse(content.contains("libde265 plugin from your distribution"), content);
+  }
+
+  @Test
+  void longCommandsAreAbbreviatedInTheMiddle() {
+    assertEquals("sudo apt install libheif1 libheif-plugin-libde265",
+                 HeicDecoderNotificationProvider.abbreviate("sudo apt install libheif1 libheif-plugin-libde265", 60),
+                 "short commands are shown as they are");
+    String fedora = "sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
+                    + " && sudo dnf install libheif-freeworld";
+    String shortened = HeicDecoderNotificationProvider.abbreviate(fedora, 60);
+    assertEquals("sudo dnf install \u2026 && sudo dnf install libheif-freeworld", shortened);
+    assertTrue(shortened.length() <= 60);
+    String zypper = "sudo zypper addrepo -cfp 90 https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials/"
+                    + " packman-essentials && sudo zypper --gpg-auto-import-keys refresh packman-essentials"
+                    + " && sudo zypper install --from packman-essentials libheif1 libheif-HEIF";
+    String zypperShort = HeicDecoderNotificationProvider.abbreviate(zypper, 60);
+    assertTrue(zypperShort.startsWith("sudo zypper addrepo") && zypperShort.endsWith("libheif1 libheif-HEIF"), zypperShort);
+    assertTrue(zypperShort.length() <= 60, zypperShort);
+    String noSpaces = "x".repeat(100);
+    String cut = HeicDecoderNotificationProvider.abbreviate(noSpaces, 60);
+    assertTrue(cut.length() <= 60 && cut.contains("\u2026"), cut);
+  }
+
   @Test
   void windowsTextsNameTheExtension() {
     HeifRemedy remedy = HeifRemedies.forStatus(HeifBackendStatus.unavailable(Reason.WINDOWS_HEIF_EXTENSION_MISSING, "no WIC decoder"));

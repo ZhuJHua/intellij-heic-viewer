@@ -24,8 +24,10 @@ import java.util.Locale;
  *   <tr><td>{@code WINDOWS_HEVC_EXTENSION_MISSING}</td><td>Open Microsoft Store (HEVC Video Extensions,
  *   {@value WindowsCodecs#HEVC_PRODUCT_ID}), Check Again, Open Store Page in Browser, Learn More</td></tr>
  *   <tr><td>{@code LINUX_LIBHEIF_MISSING}, {@code LINUX_HEVC_PLUGIN_MISSING}</td><td>Copy Command (the command of the
- *   detected distribution, also shown in the banner), Check Again, Learn More ({@link #LINUX_HELP_URL}); without a
- *   command (an older Flatpak runtime, an unknown distribution): Installation Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
+ *   detected distribution, also shown in the banner; a {@code flatpak} command for a Flatpak IDE is a
+ *   {@linkplain HeifRemedy#isHostCommand() host command}, with its own texts), Check Again, Learn More
+ *   ({@link #LINUX_HELP_URL}); without a command (an older Flatpak runtime, an unknown distribution): Installation
+ *   Instructions ({@link #LINUX_HELP_URL}), Check Again</td></tr>
  *   <tr><td>{@code ERROR}</td><td>Check Again, Report a Problem</td></tr>
  *   <tr><td>{@code UNSUPPORTED_OS}</td><td>Learn More</td></tr>
  * </table>
@@ -91,7 +93,7 @@ public final class HeifRemedies {
           actions.add(Action.openUrl(installPageKey(help), help));
           actions.add(Action.checkAgain());
         }
-        return new HeifRemedy(reason, command, actions);
+        return new HeifRemedy(reason, command, isHostCommand(command), actions);
       }
       case ERROR:
         // Unexpected (on macOS practically impossible: ImageIO.framework is part of the system).
@@ -120,6 +122,15 @@ public final class HeifRemedies {
     if (!webUrl.equalsIgnoreCase(primary)) actions.add(Action.openUrl("remedy.action.open.store.web", webUrl));
     actions.add(Action.learnMore(WINDOWS_HELP_URL));
     return new HeifRemedy(reason, command, actions);
+  }
+
+  /**
+   * Whether {@code command} is run on the host rather than where the IDE runs: {@code flatpak} commands, which the Linux
+   * backend suggests for an IDE installed as a Flatpak (its runtime's {@code codecs-extra} extension). Inside the
+   * sandbox, including the IDE's own terminal, {@code flatpak install} is not available.
+   */
+  public static boolean isHostCommand(@Nullable String command) {
+    return command != null && command.startsWith("flatpak ");
   }
 
   /** Label of an install page: the Store app for {@code ms-windows-store:} links, otherwise a web page. */

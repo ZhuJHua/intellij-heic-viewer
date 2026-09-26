@@ -123,12 +123,21 @@ public final class HeifRemedy {
 
   private final HeifBackendStatus.Reason reason;
   private final @Nullable String command;
+  private final boolean hostCommand;
   private final List<Action> actions;
 
   HeifRemedy(@NotNull HeifBackendStatus.Reason reason, @Nullable String command, @NotNull List<Action> actions) {
+    this(reason, command, false, actions);
+  }
+
+  /** @param hostCommand whether {@code command} must run on the host, outside the IDE's Flatpak sandbox */
+  HeifRemedy(@NotNull HeifBackendStatus.Reason reason, @Nullable String command, boolean hostCommand,
+             @NotNull List<Action> actions) {
     this.reason = Objects.requireNonNull(reason, "reason");
     if (command != null && !HeifRemedies.isAllowedCommand(command)) throw new IllegalArgumentException("Bad command: " + command);
+    if (hostCommand && command == null) throw new IllegalArgumentException("A host command needs a command");
     this.command = command;
+    this.hostCommand = hostCommand;
     this.actions = Collections.unmodifiableList(new ArrayList<>(actions));
   }
 
@@ -141,9 +150,24 @@ public final class HeifRemedy {
     return titleKey(reason);
   }
 
-  /** Bundle key of the explanation (banner text, notification content): {@link HeifBackendStatus.Reason#bundleKey()}. */
+  /**
+   * Bundle key of the explanation (banner tooltip, notification content): {@link HeifBackendStatus.Reason#bundleKey()},
+   * with {@value #HOST_SUFFIX} for a {@linkplain #isHostCommand() host command} (the Flatpak runtime's extension instead of
+   * the distribution's packages).
+   */
   public @NotNull String explanationKey() {
-    return reason.bundleKey();
+    return hostCommand ? reason.bundleKey() + HOST_SUFFIX : reason.bundleKey();
+  }
+
+  /** Suffix of the bundle keys of the texts for a {@linkplain #isHostCommand() host command}. */
+  public static final String HOST_SUFFIX = ".flatpak";
+
+  /**
+   * Whether {@link #command()} must be run in a terminal on the host: the IDE runs as a Flatpak, whose own terminal is
+   * inside the sandbox, and the command installs an extension of its Flatpak runtime.
+   */
+  public boolean isHostCommand() {
+    return hostCommand;
   }
 
   /**
@@ -177,16 +201,18 @@ public final class HeifRemedy {
     if (this == o) return true;
     if (!(o instanceof HeifRemedy)) return false;
     HeifRemedy other = (HeifRemedy) o;
-    return reason == other.reason && Objects.equals(command, other.command) && actions.equals(other.actions);
+    return reason == other.reason && Objects.equals(command, other.command) && hostCommand == other.hostCommand
+           && actions.equals(other.actions);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(reason, command, actions);
+    return Objects.hash(reason, command, hostCommand, actions);
   }
 
   @Override
   public String toString() {
-    return "HeifRemedy(" + reason + (command != null ? ", command " + command : "") + ", " + actions + ")";
+    return "HeifRemedy(" + reason + (command != null ? (hostCommand ? ", host command " : ", command ") + command : "") + ", "
+           + actions + ")";
   }
 }

@@ -106,16 +106,57 @@ public final class HeicDecoderNotificationProvider implements EditorNotification
 
   /**
    * The banner text: the short title and, where copying it is the remedy (the first action, i.e. the package command on
-   * Linux), the command that installs the missing component. Plain text, so that the label ends with "..." when the
-   * editor is narrow; the explanation and the command are its tooltip (and the content of the balloons). On Windows the
-   * Microsoft Store comes first, and the winget command is only in the tooltip, the balloons and "More".
+   * Linux), the command that installs the missing component, {@linkplain #abbreviate abbreviated} in the middle when it
+   * is long (Copy Command next to it copies all of it). Plain text, so that the label ends with "..." when the editor is
+   * narrow; the explanation and the whole command are its tooltip (and the content of the balloons). A Flatpak IDE's
+   * command is run in a terminal on the host ({@link HeifRemedy#isHostCommand()}). On Windows the Microsoft Store comes
+   * first, and the winget command is only in the tooltip, the balloons and "More".
    */
   static @NotNull String text(@NotNull HeifRemedy remedy) {
     String title = HeicBundle.message(remedy.titleKey());
     String command = remedy.command();
     boolean commandFirst = command != null && !remedy.actions().isEmpty()
                            && remedy.actions().get(0).type() == HeifRemedy.ActionType.COPY_COMMAND;
-    return commandFirst ? HeicBundle.message("remedy.banner.command", title, command) : title;
+    if (!commandFirst) return title;
+    String key = remedy.isHostCommand() ? "remedy.banner.command" + HeifRemedy.HOST_SUFFIX : "remedy.banner.command";
+    int room = Math.max(MIN_BANNER_COMMAND, MAX_BANNER_TEXT - HeicBundle.message(key, title, "").length());
+    return HeicBundle.message(key, title, abbreviate(command, room));
+  }
+
+  /**
+   * The banner text is kept to about this many characters (with the command abbreviated): about what a banner of an
+   * editor in a 1500-pixel window shows before its links.
+   */
+  static final int MAX_BANNER_TEXT = 108;
+  /** A command is abbreviated to no fewer characters than this, however long the title. */
+  static final int MIN_BANNER_COMMAND = 40;
+
+  /**
+   * {@code command} if it has at most {@code max} characters, otherwise its first words and its end, joined by
+   * {@code " … "}, in at most {@code max} characters: e.g. {@code flatpak install flathub … codecs-extra//25.08-extra}.
+   * The start keeps whole words (at most half of {@code max}); the end starts at a word if one fits, else after a dot or
+   * a slash, else anywhere.
+   */
+  static @NotNull String abbreviate(@NotNull String command, int max) {
+    if (command.length() <= max) return command;
+    String separator = " \u2026 ";
+    int head = 0;
+    for (int space = command.indexOf(' '); space > 0 && space <= max / 2; space = command.indexOf(' ', space + 1)) head = space;
+    if (head == 0) head = max / 2;
+    String start = command.substring(0, head).trim();
+    int from = Math.max(head + 1, command.length() - (max - start.length() - separator.length()));
+    int cut = boundary(command, from, " ");
+    if (cut < 0) cut = boundary(command, from, "./");
+    String end = command.substring(cut < 0 ? from : cut).trim();
+    return end.isEmpty() ? start + separator.trim() : start + separator + end;
+  }
+
+  /** The first index at or after {@code from} that follows one of {@code separators} (and is not the end), or -1. */
+  private static int boundary(String text, int from, String separators) {
+    for (int i = from; i < text.length(); i++) {
+      if (separators.indexOf(text.charAt(i - 1)) >= 0) return i;
+    }
+    return -1;
   }
 
   private static EditorNotificationPanel.Status panelStatus(HeifBackendStatus.Reason reason) {

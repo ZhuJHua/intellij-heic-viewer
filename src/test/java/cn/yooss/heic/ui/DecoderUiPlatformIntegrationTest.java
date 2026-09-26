@@ -186,6 +186,9 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test")
         .withInstallCommand("sudo apt install libheif-plugin-libde265").withInstallUrl(HeifRemedies.LINUX_HELP_URL),
       HeifBackendStatus.unavailable(Reason.LINUX_LIBHEIF_MISSING, "test: Flatpak").withInstallUrl(HeifRemedies.LINUX_HELP_URL),
+      HeifBackendStatus.unavailable(Reason.LINUX_HEVC_PLUGIN_MISSING, "test: Flatpak 25.08")
+        .withInstallCommand("flatpak install flathub org.freedesktop.Platform.codecs-extra//25.08-extra")
+        .withInstallUrl(HeifRemedies.LINUX_HELP_URL),
       HeifBackendStatus.unavailable(Reason.ERROR, "test"),
       HeifBackendStatus.unavailable(Reason.UNSUPPORTED_OS, "test"),
     };
@@ -207,8 +210,16 @@ public class DecoderUiPlatformIntegrationTest extends BasePlatformTestCase {
       String title = HeicBundle.message(remedy.titleKey());
       List<HeifRemedy.Action> actions = remedy.actions();
       boolean commandFirst = actions.get(0).type() == HeifRemedy.ActionType.COPY_COMMAND;
-      assertEquals(status.toString(), commandFirst ? HeicBundle.message("remedy.banner.command", title, remedy.command()) : title,
-                   panel.getText());
+      assertEquals(status.toString(), HeicDecoderNotificationProvider.text(remedy), panel.getText());
+      assertTrue(panel.getText(), panel.getText().startsWith(title));
+      if (commandFirst) {
+        assertTrue(panel.getToolTipText(), panel.getToolTipText().contains(remedy.command()));
+        if (!remedy.isHostCommand()) assertTrue(panel.getText(), panel.getText().endsWith(remedy.command())); // short enough
+      }
+      if (remedy.isHostCommand()) {
+        assertTrue(panel.getText(), panel.getText().contains("On the host") && panel.getText().contains("\u2026"));
+        assertFalse(panel.getToolTipText(), panel.getToolTipText().contains("distribution"));
+      }
       int links = actions.size() <= HeicDecoderNotificationProvider.MAX_LINKS ? actions.size() : HeicDecoderNotificationProvider.MAX_LINKS - 1;
       for (int i = 0; i < actions.size(); i++) {
         HyperlinkLabel link = panel.findLabelByName(HeicBundle.message(actions.get(i).textKey()));
