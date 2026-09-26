@@ -531,7 +531,9 @@ plugin jar, JUnit and the IDE's `util-8.jar`, which contains JNA). Tests that ne
 framework, `BasePlatformTestCase`) and therefore run only in `test`: `HeicPlatformIntegrationTest` (the HEIC extensions
 are Image files once plugin.xml is loaded, and the IDE's `IfsUtil` decodes a HEIC file through the reader) and
 `DecoderUiPlatformIntegrationTest` (banner, notifications, *Check Again* and the check on activation, with a fake
-backend).
+backend). On Intel Macs the test tasks take turns instead of running in parallel (a shared build service): the decoder tests
+of three test JVMs at once made ImageIO's GPU work fail on the GitHub Intel runner, and a JVM crashed in VideoToolbox
+even with the decodes of each JVM serialized (see the macOS decoder above).
 
 ### Project structure
 
