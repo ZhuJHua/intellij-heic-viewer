@@ -1,5 +1,9 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeifBackendStatus;
+import cn.yooss.heic.backend.HeifRemedy;
+import cn.yooss.heic.ui.DecoderPrompt;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -16,20 +20,18 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Keeps the plugin descriptors, the Java constants and the message bundles consistent: a mismatch would not fail the
- * build, but silently break dynamic loading (plugin id), settings (ids, texts) or the macOS-only part.
+ * Keeps the plugin descriptor, the Java constants and the message bundles consistent: the plugin id of the dynamic
+ * plugin listener, the file type, the registered classes and the texts.
  */
 class PluginDescriptorTest {
-  private static final String MACOS_CONFIG = "heic-viewer-macos.xml";
-
   @Test
   void pluginIdMatchesTheConstantUsedByTheDynamicPluginListener() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");
@@ -38,72 +40,143 @@ class PluginDescriptorTest {
     assertEquals("HEIC Viewer", text(plugin, "name"));
   }
 
+  /** Everything is declared in plugin.xml and loads on every OS: no OS dependency and no optional config files. */
   @Test
-  void everythingIsContributedThroughTheOptionalMacOsDependency() throws Exception {
+  void noOsDependencyAndNoOptionalConfigFiles() throws Exception {
     Document plugin = parse("META-INF/plugin.xml");
-    List<Element> optional = new ArrayList<>();
+    List<String> dependencies = new ArrayList<>();
     for (Element depends : elements(plugin, "depends")) {
-      if ("true".equals(depends.getAttribute("optional"))) optional.add(depends);
+      dependencies.add(depends.getTextContent().trim());
+      assertEquals("", depends.getAttribute("optional"), "no optional dependencies: " + depends.getTextContent());
+      assertEquals("", depends.getAttribute("config-file"), "no config files: " + depends.getTextContent());
     }
-    assertEquals(1, optional.size(), "exactly one optional dependency");
-    assertEquals("com.intellij.modules.os.mac", optional.getFirst().getTextContent().trim());
-    assertEquals(MACOS_CONFIG, optional.getFirst().getAttribute("config-file"));
-    assertEquals(0, plugin.getElementsByTagName("extensions").getLength(), "extensions belong into " + MACOS_CONFIG);
-    assertEquals(0, plugin.getElementsByTagName("applicationListeners").getLength(), "listeners belong into " + MACOS_CONFIG);
+    assertEquals(List.of("com.intellij.modules.platform", "com.intellij.platform.images"), dependencies);
+    assertEquals(1, plugin.getElementsByTagName("extensions").getLength());
+    assertEquals(1, plugin.getElementsByTagName("applicationListeners").getLength());
   }
 
   @Test
   void fileTypeExtensionsMatchTheReaderSuffixes() throws Exception {
-    List<Element> fileTypes = elements(parse("META-INF/" + MACOS_CONFIG), "fileType");
+    List<Element> fileTypes = elements(parse("META-INF/plugin.xml"), "fileType");
     assertEquals(1, fileTypes.size());
-    assertEquals("Image", fileTypes.getFirst().getAttribute("name"));
-    assertEquals(String.join(";", HeicImageReaderSpi.SUFFIXES), fileTypes.getFirst().getAttribute("extensions"));
+    assertEquals("Image", fileTypes.get(0).getAttribute("name"));
+    assertEquals("", fileTypes.get(0).getAttribute("implementationClass"), "merged into the platform's Image file type");
+    assertEquals(String.join(";", HeicImageReaderSpi.SUFFIXES), fileTypes.get(0).getAttribute("extensions"));
   }
 
+  /** The plugin adds no settings, no icons and no editors of its own. */
   @Test
-  void advancedSettingsMatchTheConstantsAndHaveTextsInEveryBundle() throws Exception {
-    List<Element> settings = elements(parse("META-INF/" + MACOS_CONFIG), "advancedSetting");
-    Set<String> ids = new TreeSet<>();
-    for (Element setting : settings) {
-      ids.add(setting.getAttribute("id"));
-      assertEquals("messages.HeicBundle", setting.getAttribute("bundle"));
-      assertEquals("group.advanced.settings.heic", setting.getAttribute("groupKey"));
+  void noSettingsIconsOrEditors() throws Exception {
+    Document plugin = parse("META-INF/plugin.xml");
+    for (String tag : List.of("advancedSetting", "applicationConfigurable", "projectConfigurable", "fileIconProvider",
+                              "iconProvider", "action", "actions")) {
+      assertEquals(0, elements(plugin, tag).size(), tag);
     }
-    assertEquals(new TreeSet<>(Set.of(HeicSettings.MAX_MEGAPIXELS, HeicSettings.PROJECT_VIEW_THUMBNAILS)), ids);
+  }
 
+  /**
+   * Every backend status reason and every text of the decoder UI exists in English and Chinese, and the bundles hold no
+   * other texts (the remedies of each reason are checked by HeifRemediesTest).
+   */
+  @Test
+  void decoderStatusTextsExistInEveryBundle() throws Exception {
+    List<String> keys = new ArrayList<>();
+    for (HeifBackendStatus.Reason reason : HeifBackendStatus.Reason.values()) {
+      keys.add(reason.bundleKey());
+      keys.add(HeifRemedy.titleKey(reason));
+    }
+    keys.addAll(List.of("remedy.command.label.flatpak", "remedy.banner.command.flatpak", "remedy.command.copied.flatpak",
+                        "backend.status.LINUX_LIBHEIF_MISSING.flatpak", "backend.status.LINUX_HEVC_PLUGIN_MISSING.flatpak"));
+    keys.addAll(List.of("notification.group.heic", "remedy.command.label", "remedy.banner.command", "remedy.command.copied",
+                        "remedy.action.open.store", "remedy.action.open.store.web", "remedy.action.open.install.page",
+                        "remedy.action.copy.command", "remedy.action.check.again", "remedy.action.learn.more",
+                        "remedy.action.more",
+                        "remedy.check.available.title", "remedy.check.available.content", "remedy.check.missing.title",
+                        "remedy.check.missing.restart"));
     for (String bundle : List.of("messages/HeicBundle.properties", "messages/HeicBundle_zh_CN.properties")) {
       Properties texts = properties(bundle);
-      assertEquals("HEIC Viewer", texts.getProperty("group.advanced.settings.heic"), bundle);
-      for (String id : ids) {
-        assertTrue(id.startsWith("heic.viewer."), id);
-        assertNotNull(texts.getProperty("advanced.setting." + id), bundle + ": " + id);
-        assertNotNull(texts.getProperty("advanced.setting." + id + ".description"), bundle + ": " + id);
+      for (String key : keys) {
+        String text = texts.getProperty(key);
+        assertNotNull(text, bundle + ": " + key);
+        assertFalse(text.trim().isEmpty(), bundle + ": " + key);
       }
-      assertEquals(properties("messages/HeicBundle.properties").stringPropertyNames(), texts.stringPropertyNames(), bundle);
+      assertEquals(new TreeSet<>(keys), new TreeSet<>(texts.stringPropertyNames()), bundle + ": no other texts");
     }
+    // The success balloon quotes the image viewer's own error text, as the IDE shows it in that language (the Chinese
+    // language pack's ImagesBundle: error.broken.image.file.format = "<b>图像未加载</b>").
+    assertTrue(properties("messages/HeicBundle.properties").getProperty("remedy.check.available.content").contains("\"Image not loaded\""));
+    String zh = properties("messages/HeicBundle_zh_CN.properties").getProperty("remedy.check.available.content");
+    assertTrue(zh.contains("“图像未加载”") && !zh.contains("Image not loaded"), zh);
+    List<Element> groups = elements(parse("META-INF/plugin.xml"), "notificationGroup");
+    assertEquals(1, groups.size());
+    assertEquals(DecoderPrompt.NOTIFICATION_GROUP, groups.get(0).getAttribute("id"));
+    assertEquals("notification.group.heic", groups.get(0).getAttribute("key"));
+    assertEquals("messages.HeicBundle", groups.get(0).getAttribute("bundle"));
+    assertEquals("BALLOON", groups.get(0).getAttribute("displayType"), "not sticky: once per session, not in the way");
+  }
+
+  /**
+   * The decoder UI: the editor banner (the listener asks for it when a HEIC file is opened) and the diff hook, all
+   * dynamic extension points and declarative listeners.
+   */
+  @Test
+  void decoderUiIsRegistered() throws Exception {
+    Document plugin = parse("META-INF/plugin.xml");
+    List<String> banners = new ArrayList<>();
+    for (Element banner : elements(plugin, "editorNotificationProvider")) banners.add(banner.getAttribute("implementation"));
+    assertEquals(List.of("cn.yooss.heic.ui.HeicDecoderNotificationProvider"), banners);
+    List<Element> diff = elements(plugin, "diff.DiffExtension");
+    assertEquals(1, diff.size());
+    assertEquals("cn.yooss.heic.ui.HeicDiffExtension", diff.get(0).getAttribute("implementation"));
+    List<Element> projectListeners = elements(plugin, "projectListeners");
+    assertEquals(1, projectListeners.size());
+    NodeList opened = projectListeners.get(0).getElementsByTagName("listener");
+    assertEquals(1, opened.getLength());
+    assertEquals("cn.yooss.heic.ui.HeicFileOpenedListener", ((Element) opened.item(0)).getAttribute("class"));
+    assertEquals("com.intellij.openapi.fileEditor.FileEditorManagerListener", ((Element) opened.item(0)).getAttribute("topic"));
+  }
+
+  /** Loads the listener and extension classes, whose IDE supertypes are Java 21 bytecode in the IDE compiled against. */
+  @Test
+  @Tag("platform")
+  void referencedClassesExist() throws Exception {
+    List<String> classes = new ArrayList<>();
+    for (String name : implementationClasses(parse("META-INF/plugin.xml"))) {
+      classes.add(name);
+      Class.forName(name, false, getClass().getClassLoader());
+    }
+    assertEquals(6, classes.size(), classes::toString);
   }
 
   @Test
-  void referencedClassesExist() throws Exception {
-    Document config = parse("META-INF/" + MACOS_CONFIG);
-    List<String> classes = new ArrayList<>();
-    for (Element listener : elements(config, "listener")) classes.add(listener.getAttribute("class"));
-    for (Element provider : elements(config, "fileIconProvider")) classes.add(provider.getAttribute("implementation"));
-    for (Element provider : elements(config, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
+  void referencedClassesArePluginClasses() throws Exception {
+    List<String> classes = implementationClasses(parse("META-INF/plugin.xml"));
     assertEquals(6, classes.size(), classes::toString);
     for (String name : classes) {
       assertTrue(name.startsWith("cn.yooss.heic."), name);
-      Class.forName(name, false, getClass().getClassLoader());
+      assertNotNull(getClass().getClassLoader().getResource(name.replace('.', '/') + ".class"), name);
     }
+  }
+
+  private static List<String> implementationClasses(Document plugin) {
+    List<String> classes = new ArrayList<>();
+    for (Element listener : elements(plugin, "listener")) classes.add(listener.getAttribute("class"));
+    for (Element provider : elements(plugin, "fileEditorProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element provider : elements(plugin, "editorNotificationProvider")) classes.add(provider.getAttribute("implementation"));
+    for (Element extension : elements(plugin, "diff.DiffExtension")) classes.add(extension.getAttribute("implementation"));
+    for (Element group : elements(plugin, "notificationGroup")) {
+      if (!group.getAttribute("implementation").isEmpty()) classes.add(group.getAttribute("implementation"));
+    }
+    return classes;
   }
 
   /** The reader registration hook only runs for Image files (the file type the HEIC extensions are merged into). */
   @Test
   void readerRegistrarIsAskedForImageFilesOnly() throws Exception {
-    List<Element> providers = elements(parse("META-INF/" + MACOS_CONFIG), "fileEditorProvider");
+    List<Element> providers = elements(parse("META-INF/plugin.xml"), "fileEditorProvider");
     assertEquals(1, providers.size());
-    assertEquals(HeicReaderRegistrar.class.getName(), providers.getFirst().getAttribute("implementation"));
-    assertEquals("Image", providers.getFirst().getAttribute("fileType"));
+    assertEquals("cn.yooss.heic.HeicReaderRegistrar", providers.get(0).getAttribute("implementation"));
+    assertEquals("Image", providers.get(0).getAttribute("fileType"));
   }
 
   private static Document parse(String resource) throws Exception {
@@ -126,12 +199,13 @@ class PluginDescriptorTest {
     ClassLoader loader = PluginDescriptorTest.class.getClassLoader();
     URL url;
     if (resource.equals("META-INF/plugin.xml")) {
-      // The IDE's own jars on the test classpath contain META-INF/plugin.xml files as well: take ours, next to the
-      // (uniquely named) macOS config file.
-      URL config = loader.getResource("META-INF/" + MACOS_CONFIG);
-      assertNotNull(config, MACOS_CONFIG);
-      String location = config.toString(); // file:... or jar:file:...!/META-INF/heic-viewer-macos.xml
-      url = URI.create(location.substring(0, location.length() - MACOS_CONFIG.length()) + "plugin.xml").toURL();
+      // The IDE's own jars on the test class path contain META-INF/plugin.xml files as well: take ours, from the
+      // resource root that holds our (uniquely named) message bundle.
+      String bundle = "messages/HeicBundle.properties";
+      URL anchor = loader.getResource(bundle);
+      assertNotNull(anchor, bundle);
+      String location = anchor.toString(); // file:... or jar:file:...!/messages/HeicBundle.properties
+      url = URI.create(location.substring(0, location.length() - bundle.length()) + resource).toURL();
     }
     else {
       url = loader.getResource(resource);
@@ -143,7 +217,7 @@ class PluginDescriptorTest {
   private static String text(Document document, String tag) {
     List<Element> found = elements(document, tag);
     assertEquals(1, found.size(), tag);
-    return found.getFirst().getTextContent().trim();
+    return found.get(0).getTextContent().trim();
   }
 
   private static List<Element> elements(Document document, String tag) {

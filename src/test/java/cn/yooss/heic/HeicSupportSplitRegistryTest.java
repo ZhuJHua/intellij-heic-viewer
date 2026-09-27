@@ -1,8 +1,7 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.HeifBackends;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -13,11 +12,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
@@ -28,15 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Regression test for the "IfsUtil returns null for every HEIC file although the reader is registered" incident
- * (Android Studio 2026.2 canary, one cold start): {@code IIORegistry.getDefaultInstance()} is not thread-safe, and when
- * two threads call it for the first time at once, ImageIO can keep a registry that {@code getDefaultInstance()} no
- * longer returns. A reader registered through {@code getDefaultInstance()} is then invisible to ImageIO.
+ * The reader reaches ImageIO when ImageIO keeps a registry that {@code IIORegistry.getDefaultInstance()} does not return
+ * (two threads calling it for the first time at once): a reader registered through {@code getDefaultInstance()} only
+ * would be invisible to ImageIO.
  * <p>
  * The race needs a JVM in which ImageIO has not been initialized yet, so it runs in a child JVM ({@link Child}),
- * which forces the interleaving deterministically.
+ * which forces the interleaving deterministically. Runs on every OS; the image is only decoded where the system decoder is
+ * available.
  */
-@EnabledOnOs(OS.MAC)
 class HeicSupportSplitRegistryTest {
   @Test
   void readerReachesImageIOEvenIfImageIOUsesAnotherRegistry() throws Exception {
@@ -45,12 +40,17 @@ class HeicSupportSplitRegistryTest {
     String context = "child JVM output:\n" + child.output;
     System.out.println(context);
 
-    assertEquals("true", r.get("split"), "the race was reproduced: ImageIO does not use getDefaultInstance()\n" + context);
+    assertEquals("true", r.get("split"), "the split registry was set up: ImageIO does not use getDefaultInstance()\n" + context);
     assertEquals("false", r.get("probeVisible"), "a reader registered through getDefaultInstance() only is invisible to ImageIO\n" + context);
 
     assertEquals("true", r.get("registered"), context);
     assertEquals(HeicImageReader.class.getName(), r.get("readerForHeic"), "what IfsUtil gets for a HEIC file\n" + context);
-    assertEquals("600x400", r.get("decoded"), context);
+    if (Boolean.parseBoolean(r.get("decoderAvailable"))) {
+      assertEquals("600x400", r.get("decoded"), context);
+    }
+    else {
+      assertTrue(r.get("decoded").startsWith("IOException"), "fails like any HEIC file without a system decoder\n" + context);
+    }
     assertEquals("1", r.get("inDefault"), "still registered in getDefaultInstance() as well\n" + context);
     assertEquals("true", r.get("visibleToImageIO"), context);
     assertEquals("true", r.get("warnedAboutSplit"), "the split is logged\n" + context);
@@ -61,38 +61,44 @@ class HeicSupportSplitRegistryTest {
     assertEquals(HeicImageReader.class.getName(), r.get("readerAfterReload"), context);
   }
 
-  private record Result(Map<String, String> values, String output) {
+  private static Result runChild() throws IOException, InterruptedException {
+    ChildJvm.Result result = ChildJvm.run(Child.class, 120);
+    assertEquals(0, result.exitCode, result.output);
+    return new Result(result.values(), result.output);
   }
 
-  private static Result runChild() throws IOException, InterruptedException {
-    String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-    ProcessBuilder builder = new ProcessBuilder(
-        java, "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true",
-        "-cp", System.getProperty("java.class.path"), Child.class.getName());
-    builder.redirectErrorStream(true);
-    Process process = builder.start();
-    process.getOutputStream().close();
-    byte[] out = process.getInputStream().readAllBytes();
-    assertTrue(process.waitFor(60, TimeUnit.SECONDS), "child JVM timed out");
-    String output = new String(out, StandardCharsets.UTF_8);
-    assertEquals(0, process.exitValue(), output);
-    Map<String, String> values = new HashMap<>();
-    for (String line : output.split("\n")) {
-      if (!line.startsWith("RESULT ")) continue;
-      int eq = line.indexOf('=');
-      values.put(line.substring("RESULT ".length(), eq), line.substring(eq + 1).trim());
+  private static final class Result {
+    final Map<String, String> values;
+    final String output;
+
+    Result(Map<String, String> values, String output) {
+      this.values = values;
+      this.output = output;
     }
-    return new Result(values, output);
   }
 
   /** Runs in a fresh JVM. */
   public static final class Child {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+      int exitCode = 1;
+      try {
+        run();
+        exitCode = 0;
+      }
+      catch (Throwable t) {
+        t.printStackTrace(System.out);
+      }
+      finally {
+        System.exit(exitCode);
+      }
+    }
+
+    private static void run() throws Exception {
       try (LogCapture log = new LogCapture()) { // before HeicSupport is initialized: it keeps its logger
         boolean split = forceSplitRegistry();
         out("split", split);
 
-        // What the plugin did before the fix (and what the IDE's own WebP/SVG registrars still do).
+        // A reader registered through getDefaultInstance() only.
         ProbeSpi probe = new ProbeSpi();
         IIORegistry.getDefaultInstance().registerServiceProvider(probe, ImageReaderSpi.class);
         out("probeVisible", ImageIO.getImageReadersByFormatName(ProbeSpi.FORMAT).hasNext());
@@ -100,8 +106,14 @@ class HeicSupportSplitRegistryTest {
 
         out("registered", HeicSupport.register());
         out("readerForHeic", readerFor("rgb_sips.heic"));
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")));
-        out("decoded", image == null ? "null" : image.getWidth() + "x" + image.getHeight());
+        out("decoderAvailable", HeifBackends.current().status().isAvailable());
+        try {
+          BufferedImage image = ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")));
+          out("decoded", image == null ? "null" : image.getWidth() + "x" + image.getHeight());
+        }
+        catch (IOException e) {
+          out("decoded", "IOException: " + e.getMessage());
+        }
         out("inDefault", countInDefault());
         out("visibleToImageIO", HeicSupport.isVisibleToImageIO());
         out("warnedAboutSplit", log.warnings().stream().anyMatch(w -> w.startsWith("ImageIO does not use IIORegistry.getDefaultInstance()")));
@@ -115,15 +127,14 @@ class HeicSupportSplitRegistryTest {
         out("readerAfterReload", readerFor("rgb_sips.heic"));
         HeicSupport.unregister();
       }
-      System.exit(0);
     }
 
     /**
-     * Replays the startup race deterministically: thread A initializes ImageIO, which calls getDefaultInstance(),
-     * finds no registry and builds one; before A stores it, thread B calls getDefaultInstance(), also finds none and
-     * builds a second one; A stores its registry (ImageIO keeps it), then B stores its own (getDefaultInstance()
-     * returns it from now on). Both threads are held inside {@code new IIORegistry()} through their context class
-     * loader, which the constructor asks for META-INF/services files.
+     * Creates two registries deterministically: thread A initializes ImageIO, which calls getDefaultInstance(), finds
+     * no registry and builds one; before A stores it, thread B calls getDefaultInstance(), also finds none and builds a
+     * second one; A stores its registry (ImageIO keeps it), then B stores its own (getDefaultInstance() returns it from
+     * now on). Both threads are held inside {@code new IIORegistry()} through their context class loader, which the
+     * constructor asks for META-INF/services files.
      */
     static boolean forceSplitRegistry() throws Exception {
       Gate imageIoGate = new Gate();
@@ -199,7 +210,7 @@ class HeicSupportSplitRegistryTest {
     }
   }
 
-  /** Stand-in for a reader registered the way the plugin used to (only through getDefaultInstance()). */
+  /** A reader that is registered only through getDefaultInstance(). */
   private static final class ProbeSpi extends ImageReaderSpi {
     static final String FORMAT = "split-registry-probe";
 

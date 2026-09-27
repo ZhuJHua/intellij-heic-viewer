@@ -2,6 +2,7 @@ package cn.yooss.heic;
 
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.util.Condition;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -10,11 +11,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** Needs the IDE's Application interface (Java 21 bytecode in 261). */
+@Tag("platform")
 class HeicFileTypeMappingRepairTest {
   /**
-   * The repair waits in the EDT queue while a modal dialog (Settings | Plugins) is open. It must expire as soon as
-   * beforePluginUnload has deregistered the reader, so that DynamicPlugins purges it instead of it pinning the plugin
-   * class loader.
+   * A repair queued on the EDT (e.g. behind a modal dialog) expires once the application is disposed or the reader is
+   * deregistered on plugin unload, so that the platform drops it and it does not pin the plugin class loader.
    */
   @Test
   void queuedRepairExpiresWhenTheReaderIsDeregistered() {

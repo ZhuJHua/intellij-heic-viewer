@@ -7,16 +7,14 @@ import javax.imageio.ImageReader;
 import javax.imageio.spi.IIORegistry;
 import javax.imageio.spi.ImageReaderSpi;
 import javax.imageio.spi.ServiceRegistry;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URI;
+import java.io.IOException;
 import java.net.URL;
-import java.net.URLConnection;
-import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -24,6 +22,7 @@ import java.util.Locale;
 import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 /**
  * Registers the single {@link HeicImageReaderSpi} instance in the process-wide {@link IIORegistry} and removes it
@@ -34,12 +33,9 @@ import java.util.TreeSet;
  * uninstall without restart). Never touches native code: the decoder is loaded lazily on the first HEIC image.
  * <p>
  * <b>Split registry.</b> {@code ImageIO} (and therefore the IDE's {@code IfsUtil}) only searches the registry it
- * captured in its static initializer. {@link IIORegistry#getDefaultInstance()} is not thread-safe: when two threads
- * call it for the first time at once, each creates a registry, and ImageIO can end up with one that
- * {@code getDefaultInstance()} no longer returns (reproduced on Android Studio 2026.2 / JBR 25, where the splash screen
- * initializes ImageIO while the platform's {@code ImageReaderWriterSpiRegistrar} registers its readers). A reader
- * registered through {@code getDefaultInstance()} is then invisible to ImageIO for the whole session. Registration
- * therefore checks what ImageIO sees and, in that case, also registers a second instance into ImageIO's registry.
+ * captured in its static initializer, which can differ from {@link IIORegistry#getDefaultInstance()} because that
+ * method is not thread-safe. Registration therefore checks what ImageIO sees and, if needed, also registers a second
+ * instance into ImageIO's registry.
  */
 public final class HeicSupport {
   public static final String PLUGIN_ID = "cn.yooss.heic-viewer";
@@ -57,16 +53,15 @@ public final class HeicSupport {
   private HeicSupport() {
   }
 
-  /** Registers the reader if it is not registered yet. Returns {@code true} if the reader is registered afterwards. */
+  /**
+   * Registers the reader if it is not registered yet, on every OS: whether the system decoder can be used is decided
+   * by the backend when an image is read ({@link cn.yooss.heic.backend.HeifBackend#status()}). Returns {@code true} if
+   * the reader is registered afterwards ({@code false} only after {@link #shutDown()}).
+   */
   public static synchronized boolean register() {
     if (registered != null) return true;
     if (shutDown) return false; // this class loader is being unloaded: a new registration would pin it
-    if (!HeicImageReaderSpi.isSupportedPlatform()) {
-      LOG.info("HEIC Viewer is not available: requires macOS and Java 22+ (os.name=" + System.getProperty("os.name")
-               + ", java=" + Runtime.version() + ")");
-      return false;
-    }
-    register(new HeicImageReaderSpi(HeicSettings::decodeLimits));
+    register(new HeicImageReaderSpi());
     return true;
   }
 
@@ -78,8 +73,19 @@ public final class HeicSupport {
     registered = spi;
     registeredIn = registry;
     List<String> others = preferOverOtherHeifReaders(registry, spi);
-    LOG.info("HEIC ImageReaderSpi registered" + (others.isEmpty() ? "" : "; preferred over " + others));
+    LOG.info("HEIC ImageReaderSpi registered (decoder: " + decoderName(spi) + ", " + System.getProperty("os.name") + " "
+             + System.getProperty("os.arch") + ", Java " + System.getProperty("java.version") + ")"
+             + (others.isEmpty() ? "" : "; preferred over " + others));
     makeVisibleToImageIO(registry);
+  }
+
+  private static String decoderName(HeicImageReaderSpi spi) {
+    try {
+      return spi.backend().displayName();
+    }
+    catch (RuntimeException | LinkageError e) {
+      return "unknown (" + e + ")";
+    }
   }
 
   /** Deregisters the reader (idempotent), from ImageIO's own registry as well if it had to be added there. */
@@ -120,7 +126,7 @@ public final class HeicSupport {
 
   /**
    * Makes sure ImageIO sees the reader (see the class comment). In the normal case ImageIO's registry is
-   * {@code defaultRegistry} and this only looks. Never throws: at worst HEIC images do not load, as before.
+   * {@code defaultRegistry} and this only looks. Never throws: at worst HEIC images do not load.
    */
   private static void makeVisibleToImageIO(IIORegistry defaultRegistry) {
     try {
@@ -179,49 +185,48 @@ public final class HeicSupport {
    * The instance is created with the public no-argument constructor; it records its registry when registered.
    */
   private static HeicImageReaderSpi registerThroughImageIO() {
+    Path directory = null;
     Thread thread = Thread.currentThread();
     ClassLoader previous = thread.getContextClassLoader();
-    thread.setContextClassLoader(new OnlyOurProvider(HeicImageReaderSpi.class.getClassLoader()));
     try {
+      // The service file is a real file behind a plain file: URL.
+      directory = Files.createTempDirectory("heic-viewer-spi");
+      Path serviceFile = directory.resolve(OnlyOurProvider.SERVICE_FILE);
+      Files.createDirectories(serviceFile.getParent());
+      Files.write(serviceFile, (HeicImageReaderSpi.class.getName() + "\n").getBytes(StandardCharsets.UTF_8));
+      thread.setContextClassLoader(new OnlyOurProvider(HeicImageReaderSpi.class.getClassLoader(), serviceFile.toUri().toURL()));
       ImageIO.scanForPlugins();
+    }
+    catch (IOException e) {
+      LOG.warn("Cannot write the service file for ImageIO.scanForPlugins()", e);
+      return null;
     }
     finally {
       thread.setContextClassLoader(previous);
+      deleteRecursively(directory);
     }
     HeicImageReaderSpi copy = providerSeenByImageIO();
     return copy == registered ? null : copy;
   }
 
+  private static void deleteRecursively(Path directory) {
+    if (directory == null) return;
+    try (Stream<Path> files = Files.walk(directory)) {
+      files.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+    }
+    catch (IOException | RuntimeException e) {
+      LOG.debug("Cannot delete " + directory, e);
+    }
+  }
+
   /** Loads classes from the plugin; its only resource is a service file naming {@link HeicImageReaderSpi}. */
   private static final class OnlyOurProvider extends ClassLoader {
-    private static final String SERVICE_FILE = "META-INF/services/" + ImageReaderSpi.class.getName();
+    static final String SERVICE_FILE = "META-INF/services/" + ImageReaderSpi.class.getName();
     private final URL serviceFile;
 
-    OnlyOurProvider(ClassLoader parent) {
+    OnlyOurProvider(ClassLoader parent, URL serviceFile) {
       super(parent);
-      byte[] content = (HeicImageReaderSpi.class.getName() + "\n").getBytes(StandardCharsets.UTF_8);
-      URLStreamHandler inMemory = new URLStreamHandler() {
-        @Override
-        protected URLConnection openConnection(URL url) {
-          return new URLConnection(url) {
-            @Override
-            public void connect() {
-              connected = true;
-            }
-
-            @Override
-            public InputStream getInputStream() {
-              return new ByteArrayInputStream(content);
-            }
-          };
-        }
-      };
-      try {
-        serviceFile = URL.of(URI.create("heic-viewer:/" + SERVICE_FILE), inMemory);
-      }
-      catch (MalformedURLException e) {
-        throw new IllegalStateException(e);
-      }
+      this.serviceFile = serviceFile;
     }
 
     @Override

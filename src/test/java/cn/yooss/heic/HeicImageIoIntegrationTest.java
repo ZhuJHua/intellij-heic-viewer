@@ -3,8 +3,7 @@ package cn.yooss.heic;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -35,11 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The real reader (macOS ImageIO.framework) driven through {@code javax.imageio} exactly like the IDE does:
- * {@code org.intellij.images.vfs.IfsUtil} (editor, diff) and {@code org.intellij.images.util.ImageInfoReader}
- * (image-info index, completion, documentation popup).
+ * The real reader with the system decoder of this OS ({@code HeifBackends.current()}) driven through
+ * {@code javax.imageio} exactly like the IDE does: {@code org.intellij.images.vfs.IfsUtil} (editor, diff) and
+ * {@code org.intellij.images.util.ImageInfoReader} (image-info index, completion, documentation popup). Skipped where
+ * no system decoder is available (HeifBackendContractTest checks the expected status).
  */
-@EnabledOnOs(OS.MAC)
+@EnabledIf("cn.yooss.heic.SystemDecoder#isAvailable")
 class HeicImageIoIntegrationTest {
   private static HeicImageReaderSpi spi;
   private static Map<String, String> readersBeforeRegistration;
@@ -236,32 +236,22 @@ class HeicImageIoIntegrationTest {
     assertEquals("white", Fixtures.colorName(white.getRGB(75, 50)));
   }
 
-  @Test
-  void pixelBudgetDownscales() throws IOException {
-    HeicImageReaderSpi small = new HeicImageReaderSpi(() -> new DecodeLimits(10_000, 16384));
-    ImageReader reader = small.createReaderInstance();
-    try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("exif6_apple.heic")))) {
+  /** Every image is decoded at full size, like the IDE's viewer decodes PNG and JPEG. */
+  @ParameterizedTest
+  @ValueSource(strings = {"rgb_sips.heic", "alpha_sips.heic", "rgb16_sips.heic", "exif6_apple.heic", "grid_libheif.heic",
+                          "bands_2000x1200.heic", "bands_exif6.heic", "icc_wide.heic", "quadrants_4096x3072.heic"})
+  void imagesDecodeAtFullSize(String name) throws IOException {
+    ImageReader reader = spi.createReaderInstance();
+    try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes(name)))) {
       reader.setInput(iis, true, true);
-      assertEquals(400, reader.getWidth(0), "getWidth reports the real size");
       BufferedImage image = reader.read(0, reader.getDefaultReadParam());
-      assertEquals(122, image.getHeight(), "longest side floor(600 * sqrt(10000 / 240000))");
-      assertTrue(Math.abs(image.getWidth() - 81) <= 1, "aspect ratio kept: " + image.getWidth());
-      assertTrue((long) image.getWidth() * image.getHeight() <= 10_000 + 122);
-      assertEquals("blue", Fixtures.colorName(image.getRGB(image.getWidth() / 4, image.getHeight() / 4)));
+      assertEquals(reader.getWidth(0) + "x" + reader.getHeight(0), image.getWidth() + "x" + image.getHeight());
+      if (name.startsWith("quadrants")) {
+        assertEquals("4096x3072 TL=red TR=green BL=blue BR=white marker=TL", Fixtures.layout(image));
+      }
     }
     finally {
       reader.dispose();
-    }
-
-    HeicImageReaderSpi maxSide = new HeicImageReaderSpi(() -> new DecodeLimits(Long.MAX_VALUE, 300));
-    ImageReader sideReader = maxSide.createReaderInstance();
-    try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("bands_2000x1200.heic")))) {
-      sideReader.setInput(iis, true, true);
-      BufferedImage image = sideReader.read(0, null);
-      assertEquals("300x180", image.getWidth() + "x" + image.getHeight());
-    }
-    finally {
-      sideReader.dispose();
     }
   }
 

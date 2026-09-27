@@ -1,6 +1,7 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import java.util.Properties
 
 plugins {
@@ -12,12 +13,11 @@ plugins {
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
-// Optional machine-specific settings (see README.md, "Development"): a Gradle property (-P..., ~/.gradle/gradle.properties)
-// wins over the git-ignored local.properties in the project root; a blank value disables the setting.
-//   platformLocalPath   installed IDE to compile against, run (runIde) and verify with, instead of downloading
-//                       platformType/platformVersion; e.g. /Applications/Android Studio.app
-//   platformCanaryPath  optional second installed IDE, used by runIdeCanary and (with platformLocalPath) verifyPlugin
-//   jetbrainsSignDir    directory with chain.crt + private_encrypted.pem for local signing (default ~/.jetbrains-sign)
+// Optional machine-specific settings (see README.md, "Development"): a Gradle property wins over the git-ignored
+// local.properties; a blank value disables the setting.
+//   platformLocalPath   installed IDE to compile against, run and verify with, instead of platformType/platformVersion
+//   platformCanaryPath  optional second installed IDE for runIdeCanary and (with platformLocalPath) verifyPlugin
+//   jetbrainsSignDir    directory with chain.crt + private_encrypted.pem for signing (default ~/.jetbrains-sign)
 val localProperties = Properties().apply {
     providers.fileContents(layout.projectDirectory.file("local.properties")).asText.orNull?.let { load(it.reader()) }
 }
@@ -40,18 +40,17 @@ val platformCanaryPath: File? = localSetting("platformCanaryPath")?.let { path -
 
 // Set the JVM language level used to build the project.
 java {
-    // FFM (java.lang.foreign) is final since Java 22; every supported IDE (since-build 261.26222) runs on JBR 25.
-    // Gradle finds JDK 25 among the installed JDKs (including the JDK Gradle itself runs on) or downloads it (foojay).
+    // JDK 25 toolchain; the classes are compiled with --release 17 (below).
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    options.release = 22
+    // Java 17 bytecode and API for main and test classes: IDEs 2024.1.x run on JBR 17.
+    options.release = 17
     options.encoding = "UTF-8"
-    // "restricted" = calls to restricted FFM methods, which is the whole point of the mac package.
-    options.compilerArgs.addAll(listOf("-Xlint:all,-restricted,-options,-processing,-serial"))
+    options.compilerArgs.addAll(listOf("-Xlint:all,-options,-processing,-serial"))
 }
 
 // Configure project's dependencies
@@ -69,14 +68,17 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
+    // JUnit 4 for the light-IDE tests (*PlatformIntegrationTest).
+    testImplementation(libs.junit4)
+    testRuntimeOnly(libs.junit.vintage.engine)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         if (platformLocalPath != null) {
-            // Local development: the installed IDE, no download.
+            // The installed IDE at platformLocalPath.
             local(platformLocalPath.path)
         } else {
-            // CI and fresh clones: downloaded (and cached) by Gradle.
+            // platformType/platformVersion, downloaded by Gradle.
             create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         }
 
@@ -88,12 +90,13 @@ dependencies {
 
         // Module Dependencies. Uses `platformBundledModules` property from the gradle.properties file for bundled IntelliJ Platform modules.
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
+
+        testFramework(TestFrameworkType.Platform)
     }
 }
 
-// Signing: the CERTIFICATE_CHAIN / PRIVATE_KEY / PRIVATE_KEY_PASSWORD environment variables (CI, see release.yml).
-// Local signing: when those two are not set, chain.crt + private_encrypted.pem from jetbrainsSignDir are used, with the
-// password from PRIVATE_KEY_PASSWORD. Without either, signPlugin is skipped and nothing else is affected.
+// Signing uses the CERTIFICATE_CHAIN / PRIVATE_KEY / PRIVATE_KEY_PASSWORD environment variables or, when the first two
+// are not set, chain.crt + private_encrypted.pem from jetbrainsSignDir. Without either, signPlugin is skipped.
 val certificateChainEnv = providers.environmentVariable("CERTIFICATE_CHAIN").filter { it.isNotBlank() }
 val privateKeyEnv = providers.environmentVariable("PRIVATE_KEY").filter { it.isNotBlank() }
 val localSigningFiles: Pair<File, File>? =
@@ -107,7 +110,7 @@ val localSigningFiles: Pair<File, File>? =
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
 intellijPlatform {
-    // No Configurable of its own (the settings live in Advanced Settings): nothing to index.
+    // The plugin has no settings: nothing to index.
     buildSearchableOptions = false
 
     pluginConfiguration {
@@ -166,8 +169,7 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Do not report the OS module (com.intellij.modules.os.mac) as missing: Android Studio's product-info.json does not
-        // declare the OS aliases, and the dependency is optional anyway.
+        // Checks the IDE modules of every OS and architecture: the plugin runs on macOS, Windows and Linux.
         freeArgs = listOf("-ignore-os-arch")
 
         ides {
@@ -175,7 +177,7 @@ intellijPlatform {
                 local(platformLocalPath)
                 platformCanaryPath?.let { local(it) }
             } else {
-                // `pluginVerificationIdes` in gradle.properties (explained there).
+                // pluginVerificationIdes from gradle.properties.
                 create(providers.gradleProperty("pluginVerificationIdes").map { ides ->
                     ides.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                 })
@@ -194,7 +196,7 @@ changelog {
 intellijPlatformTesting {
     runIde {
         if (platformCanaryPath != null) {
-            // ./gradlew runIdeCanary : a second installed IDE, e.g. an Android Studio canary (build 262)
+            // ./gradlew runIdeCanary: the plugin in the IDE at platformCanaryPath.
             register("runIdeCanary") {
                 localPath = platformCanaryPath
             }
@@ -221,22 +223,105 @@ tasks {
         }
     }
 
-    // verifyPluginSignature reads signPlugin's output (build/distributions/*-signed.zip) but the IntelliJ Platform Gradle
-    // Plugin does not declare the dependency, so Gradle 9 rejects `./gradlew signPlugin verifyPluginSignature`.
+    // verifyPluginSignature reads signPlugin's output (build/distributions/*-signed.zip).
     verifyPluginSignature {
         dependsOn(signPlugin)
     }
 
     test {
-        useJUnitPlatform()
-        // The decoder uses java.lang.foreign; the IDE itself runs with the same flag.
-        jvmArgs("--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true")
+        // JDK 25: IDEs 2026.1.3+, Android Studio Quail 3+.
         javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
-        testLogging {
-            events("failed", "skipped")
-            exceptionFormat = TestExceptionFormat.FULL
-        }
+        systemProperty("heic.test.javaVersion", 25)
+        jvmArgs("--enable-native-access=ALL-UNNAMED") // JNA loads its JNI library (Java 22+ warns otherwise)
     }
+}
+
+// Tests load JNA's native library from <IDE>/lib/jna/<aarch64|amd64> with the JNA options of the IDE launcher.
+// -PjnaNativeDir=<directory with jnidispatch> is used when the IDE has no directory for this architecture.
+val platformDir: Provider<File> = providers.provider { intellijPlatform.platformPath.toFile() }
+val jnaNativeDirFallback: Provider<String> = providers.gradleProperty("jnaNativeDir")
+val jnaNativeDir: Provider<String> = platformDir.map { platform ->
+    val jna = platform.resolve("lib/jna")
+    val arch = System.getProperty("os.arch").lowercase()
+    val preferred = if (arch == "aarch64" || arch == "arm64") "aarch64" else "amd64"
+    // Only the directory of this architecture.
+    jna.resolve(preferred).takeIf { it.isDirectory }?.absolutePath
+        ?: jnaNativeDirFallback.orNull?.takeIf { File(it).isDirectory }?.let { File(it).absolutePath }
+        ?: ""
+}
+
+/** JVM arguments that make JNA load its native library from the IDE, if the IDE has one for this architecture. */
+class JnaNativeArgs(@get:Input val nativeDir: Provider<String>) : CommandLineArgumentProvider {
+    override fun asArguments(): Iterable<String> = nativeDir.get().takeIf { it.isNotEmpty() }
+        ?.let { listOf("-Djna.boot.library.path=$it", "-Djna.nosys=true", "-Djna.noclasspath=true") }
+        ?: emptyList()
+}
+
+/** Tells BytecodeLevelTest which jar to scan: the plugin jar that goes into the distribution. */
+class PluginJarArg(@get:InputFile @get:PathSensitive(PathSensitivity.NONE) val jar: Provider<RegularFile>) : CommandLineArgumentProvider {
+    override fun asArguments(): Iterable<String> = listOf("-Dheic.test.pluginJar=${jar.get().asFile.absolutePath}")
+}
+
+val pluginJar: Provider<RegularFile> = tasks.named<AbstractArchiveTask>("composedJar").flatMap { it.archiveFile }
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    jvmArgumentProviders.add(PluginJarArg(pluginJar))
+    // As the IDE launcher does; JnaLibraries needs java.lang opened.
+    jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
+    jvmArgumentProviders.add(JnaNativeArgs(jnaNativeDir))
+    // The status HeifBackendContractTest expects of the system decoder (e.g. "available" on macOS).
+    providers.environmentVariable("HEIC_EXPECT_BACKEND").orNull?.let { systemProperty("heic.test.expectBackend", it) }
+    // The libheif the tests of the Linux backend use on any OS (default: the system's on Linux, Homebrew's on macOS).
+    providers.environmentVariable("HEIC_TEST_LIBHEIF").orNull?.let { systemProperty("heic.test.libheif", it) }
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = TestExceptionFormat.FULL
+    }
+}
+
+// The unit tests on the JDKs of the supported IDEs, as plain Test tasks with the class path of `test`; unlike `test`,
+// they also run on CPU architectures the IDE compiled against has no build for.
+fun registerTestOn(taskName: String, javaVersion: Int) = tasks.register<Test>(taskName) {
+    group = "verification"
+    description = "Runs the unit tests on JDK $javaVersion."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    // Read from the task itself: a value mapped from the task provider would make this task depend on `test`.
+    classpath = tasks.test.get().classpath
+    dependsOn("prepareTestSandbox") // the class path contains the plugin as installed in the test sandbox
+    javaLauncher = project.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    systemProperty("heic.test.javaVersion", javaVersion)
+    if (javaVersion >= 22) jvmArgs("--enable-native-access=ALL-UNNAMED")
+    // Light-IDE tests (BasePlatformTestCase) need the IDE test environment that only `test` sets up.
+    filter { excludeTestsMatching("cn.yooss.heic.*PlatformIntegrationTest") }
+    shouldRunAfter(tasks.test)
+}
+// JBR 25: IDEs 2026.1.3+, Android Studio Quail 3+.
+registerTestOn("testJdk25", 25)
+// JBR 21: IDEs 2024.2 - 2025.3 and 2026.1 - 2026.1.2, Android Studio Ladybug - Quail 2.
+val testJdk21 = registerTestOn("testJdk21", 21)
+// JBR 17: IDEs 2024.1.x, Android Studio Koala.
+val testJdk17 = registerTestOn("testJdk17", 17)
+testJdk17.configure {
+    // The plugin jar, JUnit and util-8.jar (JNA, Logger), the only platform jar that loads on JDK 17. Tests that need
+    // other platform classes are tagged "platform".
+    classpath = sourceSets.test.get().output + files(pluginJar) +
+        configurations.testRuntimeClasspath.get().filter { it.name.matches(Regex("(junit-|opentest4j|apiguardian).*")) } +
+        files(platformDir.map { it.resolve("lib/util-8.jar") })
+    useJUnitPlatform { excludeTags("platform") }
+    // Test classes that cannot be loaded without the other platform classes.
+    filter { excludeTestsMatching("cn.yooss.heic.HeicReaderRegistrarTest") }
+}
+tasks.check { dependsOn(testJdk21, testJdk17) }
+
+// On Intel Macs the test JVMs run one at a time: ImageIO's GPU conversion there is unreliable while processes decode
+// in parallel.
+abstract class IntelMacDecoderTests : BuildService<BuildServiceParameters.None>
+if (System.getProperty("os.name").lowercase().startsWith("mac") && System.getProperty("os.arch") in setOf("x86_64", "amd64")) {
+    val oneTestJvm = gradle.sharedServices.registerIfAbsent("intelMacDecoderTests", IntelMacDecoderTests::class) {
+        maxParallelUsages = 1
+    }
+    tasks.withType<Test>().configureEach { usesService(oneTestJvm) }
 }
 
 if (platformCanaryPath == null) {

@@ -2,8 +2,6 @@ package cn.yooss.heic;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -26,8 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Registration in the process-wide IIORegistry, as done by the application/dynamic-plugin listeners. */
-@EnabledOnOs(OS.MAC)
+/**
+ * Registration in the process-wide IIORegistry, as done by the application/dynamic-plugin listeners. Runs on every OS:
+ * the reader is registered everywhere, and finding it for a HEIC file only sniffs bytes (no decoding).
+ */
 class HeicSupportTest {
   private final List<ImageReaderSpi> extra = new ArrayList<>();
 
@@ -57,11 +57,6 @@ class HeicSupportTest {
   }
 
   @Test
-  void settingsFallBackToDefaultsOutsideTheIde() {
-    assertEquals(DecodeLimits.DEFAULT, HeicSettings.decodeLimits());
-  }
-
-  @Test
   void ourReaderWinsOverAnotherHeifReader() throws IOException {
     OtherHeifReaderSpi other = new OtherHeifReaderSpi();
     IIORegistry.getDefaultInstance().registerServiceProvider(other, ImageReaderSpi.class);
@@ -87,9 +82,8 @@ class HeicSupportTest {
   }
 
   /**
-   * After beforePluginUnload nothing may put the reader back (e.g. the diff tool hook while the platform flushes the
-   * event queue before removing the extensions): it would pin the class loader being unloaded. Runs in a separate
-   * "plugin class loader" because the flag is permanent for a class loader.
+   * After {@code shutDown} (beforePluginUnload) {@code register} does nothing, so the class loader being unloaded is
+   * not pinned. Runs in a separate "plugin class loader" because the flag is permanent for a class loader.
    */
   @Test
   void noRegistrationAfterShutDown() throws Exception {

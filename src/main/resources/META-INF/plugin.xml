@@ -9,12 +9,37 @@
 
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.platform.images</depends>
-  <!-- Everything this plugin contributes lives in heic-viewer-macos.xml and is only loaded on macOS: the decoder
-       needs the system's ImageIO.framework, and on other systems .heic must not be mapped to the Image file type
-       without a reader. (An optional dependency rather than a mandatory one because Android Studio's
-       product-info.json does not declare the com.intellij.modules.os.mac alias, so Plugin Verifier cannot resolve
-       it; the IDE itself provides it at runtime on macOS.) -->
-  <depends optional="true" config-file="heic-viewer-macos.xml">com.intellij.modules.os.mac</depends>
+  <!-- No OS dependency: the plugin loads on macOS, Windows and Linux; cn.yooss.heic.backend.HeifBackends picks the
+       operating system's own decoder at runtime. -->
 
   <resource-bundle>messages.HeicBundle</resource-bundle>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Adds the extensions to the built-in "Image" file type. -->
+    <fileType name="Image" extensions="heic;heif;hif;heics"/>
+
+    <!-- Registers the javax.imageio reader in the command-line diff and merge starters, which never fire
+         appFrameCreated. accept() always returns false: it never provides an editor. -->
+    <fileEditorProvider implementation="cn.yooss.heic.HeicReaderRegistrar" fileType="Image"/>
+
+    <!-- While the system decoder is missing: a banner above HEIC image editors and, for the diff viewer, one balloon
+         per session, with the remedy. -->
+    <editorNotificationProvider implementation="cn.yooss.heic.ui.HeicDecoderNotificationProvider"/>
+    <diff.DiffExtension implementation="cn.yooss.heic.ui.HeicDiffExtension"/>
+    <notificationGroup id="HEIC Viewer" displayType="BALLOON" bundle="messages.HeicBundle"
+                       key="notification.group.heic"/>
+  </extensions>
+
+  <applicationListeners>
+    <!-- Registration of the javax.imageio reader at IDE start and on dynamic load; deregistration before unload. -->
+    <listener class="cn.yooss.heic.HeicAppLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
+    <listener class="cn.yooss.heic.HeicDynamicPluginListener" topic="com.intellij.ide.plugins.DynamicPluginListener"/>
+  </applicationListeners>
+
+  <projectListeners>
+    <!-- Asks for the banner of an opened HEIC image editor while the decoder is missing (the platform collects banners
+         by itself for text editors only). -->
+    <listener class="cn.yooss.heic.ui.HeicFileOpenedListener"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
 </idea-plugin>

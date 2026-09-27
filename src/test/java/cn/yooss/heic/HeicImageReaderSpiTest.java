@@ -1,6 +1,8 @@
 package cn.yooss.heic;
 
-import cn.yooss.heic.mac.HeicDecoder;
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifBackendStatus;
+import cn.yooss.heic.backend.HeifImageInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -71,7 +73,7 @@ class HeicImageReaderSpiTest {
   @ParameterizedTest
   @ValueSource(strings = {"rgb_sips.heic", "alpha_libheif.heic", "rgb16_sips.heic", "grid_libheif.heic", "seq.heics", "header_only.heic"})
   void sniffsHeifAndRestoresTheStreamPosition(String name) throws IOException {
-    HeicImageReaderSpi spi = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, FailingBackend.linkage());
+    HeicImageReaderSpi spi = new HeicImageReaderSpi(FailingBackend.linkage());
     try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes(name)))) {
       assertTrue(spi.canDecodeInput(stream));
       assertEquals(0, stream.getStreamPosition());
@@ -81,7 +83,7 @@ class HeicImageReaderSpiTest {
   @ParameterizedTest
   @ValueSource(strings = {"rgb.png", "alpha.png", "rgb.avif", "alpha.avif", "rgb_sips.avif", "garbage.heic"})
   void rejectsOtherFormats(String name) throws IOException {
-    HeicImageReaderSpi spi = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, FailingBackend.linkage());
+    HeicImageReaderSpi spi = new HeicImageReaderSpi(FailingBackend.linkage());
     try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes(name)))) {
       assertFalse(spi.canDecodeInput(stream));
       assertEquals(0, stream.getStreamPosition());
@@ -166,7 +168,7 @@ class HeicImageReaderSpiTest {
   @ValueSource(strings = {"linkage", "initializer", "runtime", "io"})
   void brokenNativeLayerDoesNotBreakOtherFormats(String failure) throws IOException {
     FailingBackend backend = FailingBackend.of(failure);
-    register(new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, backend));
+    register(new HeicImageReaderSpi(backend));
 
     BufferedImage png = ImageIO.read(new ByteArrayInputStream(Fixtures.bytes("rgb.png")));
     assertNotNull(png);
@@ -180,32 +182,60 @@ class HeicImageReaderSpiTest {
     if (!failure.equals("io")) assertNotNull(error.getCause(), "native failures are wrapped: " + error);
   }
 
+  /** The reader asks the decoder for the full resolution, whatever the size of the image. */
   @Test
-  void readerUsesTheLimitsSupplier() throws IOException {
+  void readerDecodesAtFullResolution() throws IOException {
+    for (int[] size : new int[][]{{600, 400}, {20000, 15000}, {46340, 46340}}) {
+      List<Integer> requested = new ArrayList<>();
+      HeicImageReaderSpi spi = new HeicImageReaderSpi(new FakeBackend(size[0], size[1], false) {
+        @Override
+        public BufferedImage decode(byte[] data, int maxPixelSize) {
+          requested.add(maxPixelSize);
+          return super.decode(data, 60); // a small stand-in for the decoded image
+        }
+      });
+      read(spi, null);
+      assertEquals(List.of(0), requested, size[0] + "x" + size[1]);
+    }
+  }
+
+  /**
+   * An image whose pixels do not fit a Java {@code int[]} fails with an IOException before anything is decoded, while
+   * its size can still be read; a subsampled read that fits is decoded.
+   */
+  @Test
+  void imageLargerThanAnIntArrayFailsWithIOException() throws IOException {
     List<Integer> requested = new ArrayList<>();
-    HeicBackend recording = new FakeBackend(600, 400, false) {
+    HeicImageReaderSpi spi = new HeicImageReaderSpi(new FakeBackend(46341, 46341, false) {
       @Override
       public BufferedImage decode(byte[] data, int maxPixelSize) {
         requested.add(maxPixelSize);
-        return super.decode(data, maxPixelSize);
+        return super.decode(data, 60);
       }
-    };
-    HeicImageReaderSpi spi = new HeicImageReaderSpi(() -> new DecodeLimits(10_000, 16384), recording);
-    BufferedImage image = read(spi, null);
-    assertEquals(List.of(122), requested);
-    assertEquals(122, Math.max(image.getWidth(), image.getHeight()));
+    });
+    IOException e = assertThrows(IOException.class, () -> read(spi, null));
+    assertTrue(e.getMessage().contains("46341x46341"), e.getMessage());
+    assertEquals(List.of(), requested, "nothing decoded");
 
-    requested.clear();
-    Supplier<DecodeLimits> throwing = () -> {
-      throw new IllegalStateException("settings unavailable");
-    };
-    read(new HeicImageReaderSpi(throwing, recording), null);
-    assertEquals(List.of(0), requested, "falls back to the default budget, which fits 600x400");
+    ImageReader reader = spi.createReaderInstance();
+    try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")))) {
+      reader.setInput(stream, true, true);
+      assertEquals(46341, reader.getWidth(0));
+      assertEquals(46341, reader.getHeight(0));
+    }
+    finally {
+      reader.dispose();
+    }
+
+    ImageReadParam half = new ImageReadParam();
+    half.setSourceSubsampling(2, 2, 0, 0);
+    read(spi, half);
+    assertEquals(List.of(23171), requested);
   }
 
   @Test
   void subsamplingAndRegionWithFakeBackend() throws IOException {
-    HeicImageReaderSpi spi = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, new FakeBackend(600, 400, false));
+    HeicImageReaderSpi spi = new HeicImageReaderSpi(new FakeBackend(600, 400, false));
 
     ImageReadParam half = new ImageReadParam();
     half.setSourceSubsampling(2, 2, 0, 0);
@@ -233,8 +263,8 @@ class HeicImageReaderSpiTest {
     assertEquals(32, pixelSize(new FakeBackend(10, 10, true)));
   }
 
-  private static int pixelSize(HeicBackend backend) throws IOException {
-    ImageReader reader = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, backend).createReaderInstance();
+  private static int pixelSize(HeifBackend backend) throws IOException {
+    ImageReader reader = new HeicImageReaderSpi(backend).createReaderInstance();
     try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")))) {
       reader.setInput(stream, true);
       return reader.getImageTypes(0).next().getColorModel().getPixelSize();
@@ -246,7 +276,7 @@ class HeicImageReaderSpiTest {
 
   @Test
   void indexChecks() throws IOException {
-    ImageReader reader = new HeicImageReaderSpi(() -> DecodeLimits.DEFAULT, new FakeBackend(10, 10, false)).createReaderInstance();
+    ImageReader reader = new HeicImageReaderSpi(new FakeBackend(10, 10, false)).createReaderInstance();
     assertThrows(IllegalStateException.class, () -> reader.getWidth(0), "no input");
     try (ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(Fixtures.bytes("rgb_sips.heic")))) {
       reader.setInput(stream);
@@ -285,8 +315,31 @@ class HeicImageReaderSpiTest {
     return out.toByteArray();
   }
 
-  /** Renders the 600x400 quadrant layout at the size the reader asks for, like ImageIO.framework would. */
-  static class FakeBackend implements HeicBackend {
+  /** A backend without native code. */
+  abstract static class TestBackend implements HeifBackend {
+    @Override
+    public String id() {
+      return "test";
+    }
+
+    @Override
+    public String displayName() {
+      return "test backend";
+    }
+
+    @Override
+    public HeifBackendStatus status() {
+      return HeifBackendStatus.available("test");
+    }
+
+    @Override
+    public HeifBackendStatus recheckStatus() {
+      return status();
+    }
+  }
+
+  /** Renders the 600x400 quadrant layout at the size the reader asks for, like a system decoder would. */
+  static class FakeBackend extends TestBackend {
     private final int width, height;
     private final boolean alpha;
 
@@ -297,8 +350,8 @@ class HeicImageReaderSpiTest {
     }
 
     @Override
-    public HeicDecoder.Info readInfo(byte[] data) {
-      return new HeicDecoder.Info("public.heic", 1, 0, width, height, 1, 8, alpha);
+    public HeifImageInfo readInfo(byte[] data) {
+      return new HeifImageInfo(width, height, 1, alpha);
     }
 
     @Override
@@ -322,7 +375,7 @@ class HeicImageReaderSpiTest {
     }
   }
 
-  static final class FailingBackend implements HeicBackend {
+  static final class FailingBackend extends TestBackend {
     private final Supplier<Throwable> failure;
     int calls;
 
@@ -345,7 +398,7 @@ class HeicImageReaderSpiTest {
     }
 
     @Override
-    public HeicDecoder.Info readInfo(byte[] data) throws IOException {
+    public HeifImageInfo readInfo(byte[] data) throws IOException {
       throw fail();
     }
 

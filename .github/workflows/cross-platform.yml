@@ -1,0 +1,350 @@
+# Builds the plugin and runs the unit tests on macOS, Linux and Windows on JDK 25, 21 and 17, with and without the
+# system HEIF decoder. HEIC_EXPECT_BACKEND is the decoder status HeifBackendContractTest requires in each job:
+# "available" or a HeifBackendStatus.Reason (e.g. LINUX_LIBHEIF_MISSING).
+# Also runs the Linux install commands the plugin suggests in containers of several distributions, and Plugin Verifier.
+#
+# Triggered by pushes to dev/** branches, by pull requests to main and manually.
+
+name: Cross-platform
+
+on:
+  push:
+    branches: [ 'dev/**' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-latest
+            expect: available
+          - name: macOS x86_64
+            os: macos-15-intel
+            expect: available
+          # libheif with its codecs as plugins, with and without the HEVC plugin (libheif-plugin-libde265).
+          - name: Linux x64, libheif
+            os: ubuntu-24.04
+            libheif: install
+            expect: available
+          - name: Linux x64, libheif without HEVC
+            os: ubuntu-24.04
+            libheif: no-hevc
+            expect: LINUX_HEVC_PLUGIN_MISSING
+          - name: Linux x64, no libheif
+            os: ubuntu-24.04
+            libheif: remove
+            expect: LINUX_LIBHEIF_MISSING
+          # libheif 1.12 with libde265 linked in.
+          - name: Linux x64, libheif 1.12
+            os: ubuntu-22.04
+            libheif: install
+            expect: available
+          # Android Studio has no Linux arm64 build: IntelliJ IDEA instead.
+          - name: Linux arm64, libheif
+            os: ubuntu-24.04-arm
+            libheif: install
+            platform: -PplatformType=IU -PplatformVersion=2026.1.5
+            expect: available
+          - name: Windows x64
+            os: windows-latest
+            expect: WINDOWS_HEIF_EXTENSION_MISSING
+          # Tries to install the extensions; the expected status follows what is installed.
+          - name: Windows x64, HEIF Image Extension
+            os: windows-latest
+            codecs: try-install
+            expect: WINDOWS_HEIF_EXTENSION_MISSING
+          # Android Studio has no Windows arm64 build: IntelliJ IDEA instead, with JNA's arm64 library from the JNA
+          # release of the IDE's version (jna-natives).
+          - name: Windows arm64
+            os: windows-11-arm
+            platform: -PplatformType=IU -PplatformVersion=2026.1.5
+            jna-natives: '5.17.0'
+            expect: available
+    env:
+      HEIC_EXPECT_BACKEND: ${{ matrix.expect }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      # The libheif states of the Linux jobs, installed with the commands the plugin suggests (LibheifRemedy).
+      - name: Install libheif
+        if: ${{ matrix.libheif == 'install' }}
+        run: |
+          sudo apt-get update
+          # Ubuntu 23.10+ has the HEVC decoder in a plugin package.
+          if apt-cache show libheif-plugin-libde265 > /dev/null 2>&1; then plugin=libheif-plugin-libde265; fi
+          sudo apt-get install -y --no-install-recommends libheif1 $plugin
+          dpkg -l 'libheif*' | grep ^ii
+          ls /usr/lib/*/libheif/plugins 2> /dev/null || true
+
+      - name: Install libheif without HEVC decoder
+        if: ${{ matrix.libheif == 'no-hevc' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get purge -y 'libheif*' || true
+          sudo apt-get install -y --no-install-recommends libheif1
+          dpkg -l 'libheif*' | grep ^ii
+          ls /usr/lib/*/libheif/plugins
+          if ls /usr/lib/*/libheif/plugins | grep -E 'libde265|ffmpegdec'; then echo "::error::an HEVC plugin is installed"; exit 1; fi
+
+      - name: Remove libheif
+        if: ${{ matrix.libheif == 'remove' }}
+        run: |
+          sudo apt-get purge -y 'libheif*' || true
+          if ldconfig -p | grep libheif; then echo "::error::libheif is still installed"; exit 1; fi
+
+      - name: Windows codec packages
+        if: ${{ runner.os == 'Windows' }}
+        shell: powershell
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture | Format-List
+          Get-AppxPackage -AllUsers | Where-Object { $_.Name -match 'HEIF|HEVC' } |
+            Select-Object Name, Version, Architecture | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+
+      # Installs the HEIF Image Extension and the HEVC Video Extensions from Device Manufacturer with winget where
+      # possible, and sets the status the tests expect.
+      - name: Try to install the HEIF and HEVC extensions
+        if: ${{ matrix.codecs == 'try-install' }}
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          if (-not $winget) { Write-Host "winget is not available here: HEIC is not decoded"; exit 0 }
+          foreach ($id in '9PMMSR1CGPWG', '9N4WGH0Z6VHQ') {
+            winget install --id $id --source msstore --accept-package-agreements --accept-source-agreements --disable-interactivity --silent
+            Write-Host "winget install $id exited with $LASTEXITCODE"
+          }
+          $heif = Get-AppxPackage -AllUsers *HEIFImageExtension*
+          $hevc = Get-AppxPackage -AllUsers *HEVCVideoExtension*
+          $expect = if ($heif -and $hevc) { 'available' } elseif ($heif) { 'WINDOWS_HEVC_EXTENSION_MISSING' } else { '' }
+          Write-Host "HEIF Image Extension: $([bool]$heif), HEVC Video Extension: $([bool]$hevc) -> expected status: $expect"
+          if ($expect) { "HEIC_EXPECT_INSTALLED=$expect" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii }
+
+      - name: JNA native library for ${{ runner.arch }}
+        if: ${{ matrix.jna-natives }}
+        env:
+          JNA_VERSION: ${{ matrix.jna-natives }}
+          # sha256 of https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar
+          JNA_SHA256: b3a9408e7c51e08ef0e3bfcc08f443f6ec0f6191ba8cd7c18d53d2b22e5bdbc0
+        run: |
+          dir="$(cygpath -u "$RUNNER_TEMP")/jna-natives"
+          mkdir -p "$dir"
+          curl -sSfL -o "$dir/jna.jar" "https://repo1.maven.org/maven2/net/java/dev/jna/jna/$JNA_VERSION/jna-$JNA_VERSION.jar"
+          echo "$JNA_SHA256  $dir/jna.jar" | sha256sum -c -
+          unzip -j -o "$dir/jna.jar" 'com/sun/jna/win32-aarch64/jnidispatch.dll' -d "$dir/win32-aarch64"
+          ls -l "$dir/win32-aarch64"
+          # Forward slashes: the value is expanded unquoted into the bash command line of the build step.
+          echo "JNA_NATIVE_DIR_ARG=-PjnaNativeDir=$(cygpath -m "$dir/win32-aarch64")" >> "$GITHUB_ENV"
+
+      # JDK 25 runs Gradle and compiles (--release 17); the test tasks use JDK 25, 21 and 17 as Gradle toolchains.
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: |
+            17
+            21
+            25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # The downloaded IDE, per OS, architecture, platform override and gradle.properties; setup-gradle may set
+      # GRADLE_USER_HOME.
+      - name: Cache IDE
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/com.google.android.studio
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/idea
+          key: ide-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('gradle.properties') }}
+
+      # testJdk25 also runs on architectures the IDE has no build for.
+      - name: Build and test
+        env:
+          HEIC_EXPECT_BACKEND: ${{ env.HEIC_EXPECT_INSTALLED || matrix.expect }}
+        run: >
+          ./gradlew buildPlugin testJdk25 testJdk21 testJdk17 --continue ${{ matrix.platform }} ${{ env.JNA_NATIVE_DIR_ARG }}
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
+
+      # The light-IDE tests (*PlatformIntegrationTest) need `test`, which runs only where the IDE has a build for the
+      # job's architecture.
+      - name: Light-IDE tests
+        if: ${{ !cancelled() && !matrix.platform }}
+        env:
+          HEIC_EXPECT_BACKEND: ${{ env.HEIC_EXPECT_INSTALLED || matrix.expect }}
+        run: >
+          ./gradlew test --tests 'cn.yooss.heic.*PlatformIntegrationTest'
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_${{ runner.arch }},JAVA_HOME_21_${{ runner.arch }},JAVA_HOME_25_${{ runner.arch }}
+
+      # Lists the IDE's JNA native directories and JNA version.
+      - name: Show the IDE's JNA native directories
+        if: ${{ always() }}
+        run: |
+          home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          if command -v cygpath > /dev/null; then home="$(cygpath -u "$home")"; fi
+          find "$home/caches" -type d -path '*lib/jna/*' -prune 2>/dev/null | head -20 || true
+          # The JNA version in util-8.jar (jna-natives must match it).
+          for jar in $(find "$home/caches" -name util-8.jar -path '*/lib/*' 2>/dev/null | head -3); do
+            echo "$jar: JNA $(unzip -p "$jar" com/sun/jna/Version.class | grep -a -o -E '[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')"
+          done || true
+
+      - name: Upload test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.os }}-${{ matrix.libheif || matrix.codecs || 'default' }}
+          path: |
+            build/reports/tests
+            build/test-results
+          if-no-files-found: ignore
+
+  # The install commands the plugin suggests on Linux (LibheifRemedy), run in containers of the distributions with the
+  # classes built here, JNA and a JDK (.github/scripts/linux-install-check.sh).
+  install-classes:
+    name: Linux install commands (build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Cache IDE
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/com.google.android.studio
+            ${{ env.GRADLE_USER_HOME || '~/.gradle' }}/caches/modules-2/files-2.1/idea
+          key: ide-${{ runner.os }}-${{ runner.arch }}--${{ hashFiles('gradle.properties') }}
+
+      - name: Build classes
+        run: |
+          ./gradlew testClasses
+          mkdir -p out/classes out/resources
+          cp -r build/classes/java/main build/classes/java/test out/classes/
+          cp -r build/resources/main build/resources/test out/resources/
+          # JNA of IntelliJ 2024.1, with its native part
+          curl -fsSL -o out/jna.jar https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.14.0/jna-5.14.0.jar
+
+      - name: Upload classes
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-install-classes
+          path: out
+
+  install:
+    name: Linux install commands (${{ matrix.image }})
+    needs: install-classes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # libheif 1.6 decodes no images with transparency or 10 bits per channel.
+          - image: ubuntu:20.04
+            prepare: apt-get update
+            known: alpha_sips.heic,alpha_libheif.heic,rgb16_sips.heic,ten_bit.heic
+          - image: ubuntu:22.04
+            prepare: apt-get update
+          - image: ubuntu:24.04
+            prepare: apt-get update
+          - image: debian:12
+            prepare: apt-get update
+          - image: debian:13
+            prepare: apt-get update
+          - image: fedora:latest
+          - image: almalinux:9
+          - image: opensuse/tumbleweed
+          - image: opensuse/leap:15.6
+          - image: archlinux:latest
+          - image: alpine:3.22
+            mode: alpine
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Download classes
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-install-classes
+          path: w
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Run the suggested install command
+        run: >
+          docker run --rm -e PREPARE="${{ matrix.prepare }}" -e KNOWN="${{ matrix.known }}"
+          -v "$PWD/w:/w:ro" -v "$JAVA_HOME:/jdk:ro" -v "$PWD/.github/scripts:/scripts:ro"
+          ${{ matrix.image }} sh /scripts/linux-install-check.sh ${{ matrix.mode || 'java' }}
+
+  verify:
+    name: Verify plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+
+      # Frees disk space for the IDEs in pluginVerificationIdes.
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          large-packages: false
+
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Run Plugin Verification tasks
+        run: ./gradlew verifyPlugin
+
+      - name: Collect Plugin Verifier Result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginVerifier-result
+          path: ${{ github.workspace }}/build/reports/pluginVerifier

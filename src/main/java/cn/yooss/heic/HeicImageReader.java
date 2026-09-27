@@ -1,6 +1,8 @@
 package cn.yooss.heic;
 
-import cn.yooss.heic.mac.HeicDecoder;
+import cn.yooss.heic.backend.HeifBackend;
+import cn.yooss.heic.backend.HeifImageInfo;
+import cn.yooss.heic.backend.PixelPipeline;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -16,31 +18,30 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.function.Supplier;
+import java.util.Locale;
 
 /**
- * Reads the primary image of a HEIC/HEIF file through {@link HeicBackend} (macOS ImageIO.framework).
+ * Reads the primary image of a HEIC/HEIF file through a {@link HeifBackend} (the system decoder of the running OS).
  * <ul>
  *   <li>The whole stream is read into memory first ({@code stream.length()} may be -1: the IDE disables the
  *   ImageIO disk cache).</li>
  *   <li>{@link #getWidth}/{@link #getHeight} report the display size (orientation applied) from the file's
  *   properties, without decoding pixels.</li>
- *   <li>{@link #read} honours source subsampling (mapped to a smaller decode size), the source region (cropped
- *   after decoding) and the {@link DecodeLimits pixel budget}; destination settings are ignored.</li>
+ *   <li>{@link #read} decodes at full resolution; source subsampling is mapped to a smaller decode size and the source
+ *   region is cropped after decoding; destination settings are ignored. An image whose pixels do not fit a Java
+ *   {@code int[]} fails with an {@link IOException}.</li>
  *   <li>Opaque images are returned as {@code TYPE_INT_RGB}, images with alpha as non-premultiplied
  *   {@code TYPE_INT_ARGB}.</li>
  *   <li>Any failure of the native layer, including {@link LinkageError}s, is reported as {@link IOException}.</li>
  * </ul>
  */
 final class HeicImageReader extends ImageReader {
-  private final Supplier<DecodeLimits> limits;
-  private final HeicBackend backend;
+  private final HeifBackend backend;
   private byte[] data;
-  private HeicDecoder.Info info;
+  private HeifImageInfo info;
 
-  HeicImageReader(HeicImageReaderSpi provider, Supplier<DecodeLimits> limits, HeicBackend backend) {
+  HeicImageReader(HeicImageReaderSpi provider, HeifBackend backend) {
     super(provider);
-    this.limits = limits;
     this.backend = backend;
   }
 
@@ -70,8 +71,7 @@ final class HeicImageReader extends ImageReader {
   @Override
   public Iterator<ImageTypeSpecifier> getImageTypes(int imageIndex) throws IOException {
     int type = info(imageIndex).hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
-    // The constructor form keeps the image's own color model: 24 bits per pixel for TYPE_INT_RGB (the IDE shows
-    // this number), whereas createFromBufferedImageType/createFromRenderedImage report 32.
+    // Keeps the image's own color model: 24 bits per pixel for TYPE_INT_RGB, which the IDE shows.
     return List.of(new ImageTypeSpecifier(new BufferedImage(1, 1, type))).iterator();
   }
 
@@ -87,7 +87,7 @@ final class HeicImageReader extends ImageReader {
 
   @Override
   public BufferedImage read(int imageIndex, ImageReadParam param) throws IOException {
-    HeicDecoder.Info info = info(imageIndex);
+    HeifImageInfo info = info(imageIndex);
     int width = info.width();
     int height = info.height();
 
@@ -95,16 +95,20 @@ final class HeicImageReader extends ImageReader {
     int xSub = param == null ? 1 : Math.max(1, param.getSourceXSubsampling());
     int ySub = param == null ? 1 : Math.max(1, param.getSourceYSubsampling());
 
-    // Decode as small as possible: subsampling needs at most 1/min(sub) of the resolution, the budget may demand less.
+    // Full resolution, or what subsampling needs (1/min(sub) of it).
     int fullSide = Math.max(width, height);
-    int subsampledSide = ceilDiv(fullSide, Math.min(xSub, ySub));
-    int budgetSide = currentLimits().maxPixelSizeFor(width, height);
-    int decodeSide = Math.min(subsampledSide, budgetSide > 0 ? budgetSide : Integer.MAX_VALUE);
+    int requestedSide = ceilDiv(fullSide, Math.min(xSub, ySub));
+    int side = requestedSide >= fullSide ? 0 : requestedSide;
+    int[] size = PixelPipeline.targetSize(width, height, side);
+    if ((long) size[0] * size[1] > PixelPipeline.MAX_IMAGE_PIXELS) {
+      throw new IOException(String.format(Locale.ROOT, "HEIC image of %dx%d is too large to decode", size[0], size[1]));
+    }
+    byte[] encoded = bytes();
 
     processImageStarted(imageIndex);
     BufferedImage decoded;
     try {
-      decoded = backend.decode(bytes(), decodeSide >= fullSide ? 0 : decodeSide);
+      decoded = backend.decode(encoded, side);
     }
     catch (IOException e) {
       throw e;
@@ -127,14 +131,14 @@ final class HeicImageReader extends ImageReader {
 
   /**
    * Maps the requested source region/subsampling (in full-resolution display coordinates) onto the decoded image,
-   * which may be smaller than the full resolution because of subsampling or the pixel budget.
+   * which is smaller than the full resolution for subsampling.
    */
   static BufferedImage cropAndScale(BufferedImage decoded, int width, int height, Rectangle region, int xSub, int ySub) {
     double kx = (double) decoded.getWidth() / width;
     double ky = (double) decoded.getHeight() / height;
 
     // Target size: exact ImageIO semantics (ceil(region / subsampling)) when the decoded image has enough resolution
-    // for the requested subsampling (allowing for ImageIO.framework rounding by one pixel), else the decoded scale.
+    // for the requested subsampling (allowing for the decoder rounding by one pixel), else the decoded scale.
     boolean xExact = decoded.getWidth() >= ceilDiv(width, xSub) - 1;
     boolean yExact = decoded.getHeight() >= ceilDiv(height, ySub) - 1;
     int targetW = xExact ? ceilDiv(region.width, xSub) : Math.max(1, (int) Math.round(region.width * kx));
@@ -167,17 +171,7 @@ final class HeicImageReader extends ImageReader {
     return out;
   }
 
-  private DecodeLimits currentLimits() {
-    try {
-      DecodeLimits current = limits.get();
-      return current != null ? current : DecodeLimits.DEFAULT;
-    }
-    catch (RuntimeException | LinkageError e) {
-      return DecodeLimits.DEFAULT;
-    }
-  }
-
-  private HeicDecoder.Info info(int imageIndex) throws IOException {
+  private HeifImageInfo info(int imageIndex) throws IOException {
     checkIndex(imageIndex);
     if (info == null) {
       try {

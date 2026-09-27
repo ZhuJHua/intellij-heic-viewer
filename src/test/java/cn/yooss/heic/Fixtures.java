@@ -1,6 +1,11 @@
 package cn.yooss.heic;
 
+import cn.yooss.heic.backend.PixelPipeline;
+
 import javax.imageio.ImageIO;
+import java.awt.AlphaComposite;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -95,6 +100,61 @@ public final class Fixtures {
       }
     }
     return n == 0 ? 0 : (double) sum / n;
+  }
+
+  /**
+   * {@code image} scaled down so that its longer side is {@code maxPixelSize} (aspect ratio kept, each side at least 1
+   * pixel): bilinear halving steps, then one bilinear step to the exact size. The Java reference for a decoder's scaler.
+   */
+  public static BufferedImage downscale(BufferedImage image, int maxPixelSize) {
+    int w = image.getWidth(), h = image.getHeight();
+    int[] target = PixelPipeline.targetSize(w, h, maxPixelSize);
+    int targetW = target[0], targetH = target[1];
+    if (targetW == w && targetH == h) return image;
+    int type = image.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+    BufferedImage current = image;
+    int cw = w, ch = h;
+    while (cw >= 2 * targetW && ch >= 2 * targetH) {
+      cw /= 2;
+      ch /= 2;
+      current = draw(current, cw, ch, type);
+    }
+    if (cw != targetW || ch != targetH || current == image) current = draw(current, targetW, targetH, type);
+    return current;
+  }
+
+  private static BufferedImage draw(BufferedImage source, int width, int height, int type) {
+    BufferedImage result = new BufferedImage(width, height, type);
+    Graphics2D g = result.createGraphics();
+    try {
+      g.setComposite(AlphaComposite.Src);
+      g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+      g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+      g.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+      g.drawImage(source, 0, 0, width, height, null);
+    }
+    finally {
+      g.dispose();
+    }
+    return result;
+  }
+
+  /**
+   * {@code data} with its {@code ispe} box of {@code width x height} changed to {@code newWidth x newHeight}: a file that
+   * declares another size than its coded image (a malformed file; libheif's decode limit).
+   */
+  public static byte[] withIspe(byte[] data, int width, int height, int newWidth, int newHeight) {
+    byte[] copy = data.clone();
+    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(copy); // big-endian
+    for (int i = 4; i + 16 <= copy.length; i++) {
+      if (copy[i] == 'i' && copy[i + 1] == 's' && copy[i + 2] == 'p' && copy[i + 3] == 'e' && buffer.getInt(i - 4) == 20
+          && buffer.getInt(i + 8) == width && buffer.getInt(i + 12) == height) {
+        buffer.putInt(i + 8, newWidth);
+        buffer.putInt(i + 12, newHeight);
+        return copy;
+      }
+    }
+    throw new IllegalArgumentException("no ispe " + width + "x" + height);
   }
 
   public static boolean isMac() {

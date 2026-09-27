@@ -5,16 +5,33 @@
  *   rgb16.png  512x256 16-bit RGB gradient (source of the 10-bit HEIC fixtures)
  * Run: java Gen.java <outputDir>
  *
- * The HEIC/HEIF/AVIF fixtures were encoded from these PNGs on macOS 26:
+ * The HEIC/HEIF/AVIF fixtures are encoded from these PNGs on macOS:
  *   sips -s format heic ...                  -> rgb_sips.heic, alpha_sips.heic, rgb16_sips.heic (10-bit, brand heix),
  *                                               seq.heics (public.heics), rgb_sips.avif
  *   heif-enc (libheif 1.23.5, Homebrew)      -> rgb_libheif.heic, rot90_irot.heic (irot), fliph_imir.heic (imir),
  *                                               grid_libheif.heic (5x4 grid of 128 px tiles), multi.heic (2 images),
- *                                               ten_bit.heic, alpha_libheif.heic, rgb.avif, alpha.avif
+ *                                               ten_bit.heic, alpha_libheif.heic, rgb.avif, alpha.avif,
+ *                                               thumb_irot.heic (heif-enc -q 90 -t 96 --rotate-cw 90 rgb.png: irot and
+ *                                               an embedded 64x96 thumbnail)
  *   writeorient.swift (CGImageDestination)   -> exif3/5/6_apple.heic (Apple writes irot/imir plus EXIF orientation)
  *   header_only.heic                          = the first 64 bytes of rgb_sips.heic (ftyp + a cut meta box)
  *   garbage.heic                              = plain text
  * GenBands.java produces bands.png; bands_2000x1200.heic = sips -s format heic, bands_exif6.heic = writeorient ... 6.
+ * quadrants_4096x3072.heic (12.6 MP, 12 kB) = sips -s format heic of
+ *   magick -size 4096x3072 xc:white -fill red -draw "rectangle 0,0 2047,1535" -fill '#00ff00'
+ *     -draw "rectangle 2048,0 4095,1535" -fill blue -draw "rectangle 0,1536 2047,3071" -fill black
+ *     -draw "rectangle 0,0 272,272" PNG24:quadrants.png
+ *   (the layout of rgb.png: TL red, TR green, BL blue, BR white, black marker top-left; an 8-bit 8x6 grid of 512 px tiles).
+ * GenIcc.java produces the ICC profile and PNG of icc_wide.heic (colors in a wide-gamut space, embedded ICC profile).
+ *
+ * Color fixtures of the Windows decoder tests in src/test/resources/cn/yooss/heic/win (heif-enc 1.23.5, macOS sips):
+ *   heif-enc -q 90 --matrix_coefficients=1 rgb.png   -> rgb_bt709.heic   (single image, BT.709 matrix)
+ *   heif-enc -q 90 --full_range_flag=0 rgb.png       -> rgb_limited.heic (single image, BT.601 limited range)
+ *   heif-enc -q 90 -p chroma=444 rgb.png             -> rgb_444.heic     (single image, 4:4:4)
+ *   smooth.png: 320x240, smooth sine/cosine gradients in R, G and B with eight saturated patches, for transfer-curve
+ *   errors that the quadrant fixtures cannot show;
+ *   sips -s format heic smooth.png                   -> smooth_sips.heic (single image, nclx 2/2/6/full as macOS writes)
+ *   heif-enc -q 80 --cut-tiles 128 --transfer_characteristic=1 smooth.png -> smooth_grid_tc1.heic (grid, BT.709 curve)
  */
 import java.awt.*;
 import java.awt.image.*;
