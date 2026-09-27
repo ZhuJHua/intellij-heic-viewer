@@ -30,7 +30,7 @@ jobs:
 
       # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Set up the Java environment for the next steps
       - name: Setup Java
@@ -63,7 +63,7 @@ jobs:
 
       # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Set up the Java environment for the next steps: JDK 25 for Gradle, 17 and 21 for testJdk17 / testJdk21
       - name: Setup Java
@@ -111,7 +111,7 @@ jobs:
 
       # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Set up the Java environment for the next steps
       - name: Setup Java
@@ -151,7 +151,7 @@ jobs:
 
       # Check out the current repository
       - name: Fetch Sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Set up the Java environment for the next steps
       - name: Setup Java
