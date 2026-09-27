@@ -17,8 +17,6 @@ The images are decoded by the operating system:
 - **Windows 10 and 11**: the *HEIF Image Extension* and the *HEVC Video Extensions* from the Microsoft Store.
 - **Linux**: libheif with its HEVC decoder (libde265).
 
-If something is missing, a banner above the image says what to install.
-
 [Source code and issue tracker](https://github.com/ZhuJHua/intellij-heic-viewer)
 <!-- Plugin description end -->
 

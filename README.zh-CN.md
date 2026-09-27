@@ -17,8 +17,6 @@
   Extensions）。
 - **Linux**：libheif 及其 HEVC 解码器（libde265）。
 
-缺少组件时，图片上方的横幅会说明需要安装什么。
-
 ## 截图
 
 ![自带图片查看器中的 HEIC 图片](.github/readme/viewer.png)
