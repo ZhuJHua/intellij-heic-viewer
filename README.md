@@ -9,7 +9,7 @@ English | [简体中文](README.zh-CN.md)
 
 <!-- Plugin description -->
 Adds the HEIC/HEIF image format to IntelliJ-based IDEs. Files with the extensions `.heic`, `.heif`, `.hif` and `.heics`
-open in the built-in image viewer and in the VCS image diff, just like PNG and JPEG.
+open in the built-in image viewer, just like PNG and JPEG.
 
 The images are decoded by the operating system:
 
@@ -26,7 +26,7 @@ If something is missing, a banner above the image says what to install.
 
 ![HEIC image in the built-in image viewer](.github/readme/viewer.png)
 
-![VCS image diff of a HEIC file](.github/readme/diff.png)
+![Image diff of a HEIC file](.github/readme/diff.png)
 
 ## Requirements
 

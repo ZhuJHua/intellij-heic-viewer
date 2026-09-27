@@ -7,8 +7,8 @@
 
 [English](README.md) | 简体中文
 
-为基于 IntelliJ 的 IDE 增加 HEIC/HEIF 图片格式。扩展名为 `.heic`、`.heif`、`.hif`、`.heics` 的文件会在自带的图片查看器和
-版本控制（VCS）图片对比中打开，和 PNG、JPEG 一样。
+为基于 IntelliJ 的 IDE 增加 HEIC/HEIF 图片格式。扩展名为 `.heic`、`.heif`、`.hif`、`.heics` 的文件会在自带的图片查看器中打开，
+和 PNG、JPEG 一样。
 
 图片由操作系统解码：
 
@@ -23,7 +23,7 @@
 
 ![自带图片查看器中的 HEIC 图片](.github/readme/viewer.png)
 
-![HEIC 文件的 VCS 图片对比](.github/readme/diff.png)
+![HEIC 文件的图片对比](.github/readme/diff.png)
 
 ## 环境要求
 
