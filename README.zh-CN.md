@@ -10,13 +10,6 @@
 为基于 IntelliJ 的 IDE 增加 HEIC/HEIF 图片格式。扩展名为 `.heic`、`.heif`、`.hif`、`.heics` 的文件会在自带的图片查看器中打开，
 和 PNG、JPEG 一样。
 
-图片由操作系统解码：
-
-- **macOS**：无需安装。
-- **Windows 10 和 11**：Microsoft Store 中的 *HEIF 图像扩展*（HEIF Image Extension）和 *HEVC 视频扩展*（HEVC Video
-  Extensions）。
-- **Linux**：libheif 及其 HEVC 解码器（libde265）。
-
 ## 截图
 
 ![自带图片查看器中的 HEIC 图片](.github/readme/viewer.png)
