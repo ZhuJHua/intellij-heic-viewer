@@ -9,7 +9,7 @@ English | [简体中文](README.zh-CN.md)
 
 <!-- Plugin description -->
 Adds the HEIC/HEIF image format to IntelliJ-based IDEs. Files with the extensions `.heic`, `.heif`, `.hif` and `.heics`
-open in the built-in image viewer, just like PNG and JPEG.
+open in the built-in image viewer.
 <!-- Plugin description end -->
 
 ## Screenshots
