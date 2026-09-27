@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
 - Windows and Linux support.
@@ -14,5 +16,6 @@
 
 - HEIC and HEIF images open in the built-in image viewer (macOS).
 
-[Unreleased]: https://github.com/ZhuJHua/intellij-heic-viewer/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/ZhuJHua/intellij-heic-viewer/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/ZhuJHua/intellij-heic-viewer/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/ZhuJHua/intellij-heic-viewer/commits/0.1.0
