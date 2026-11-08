@@ -18,6 +18,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
+      attestations: write
     steps:
 
       # Check out the current repository
@@ -59,6 +61,25 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
         run: ./gradlew publishPlugin
+
+      # Record build provenance for the release zips and for every file inside them, so that an installed or downloaded
+      # copy can be checked with `gh attestation verify` (README, "Verifying a copy"). JetBrains Marketplace adds its
+      # own signature to the zip but leaves the files inside it unchanged, so those files are what a user checks.
+      - name: List Attestation Subjects
+        run: |
+          rm -rf build/attestation
+          mkdir -p build/attestation/unpacked
+          for zip in build/distributions/*.zip; do
+            unzip -q "$zip" -d "build/attestation/unpacked/$(basename "$zip" .zip)"
+          done
+          find build/distributions build/attestation/unpacked -type f -print0 \
+            | xargs -0 shasum -a 256 > build/attestation/checksums.txt
+          cat build/attestation/checksums.txt
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: build/attestation/checksums.txt
 
       # Upload an artifact as a release asset
       - name: Upload Release Asset
