@@ -68,6 +68,23 @@ After installing, click *Check Again* in the banner above the image.
   [GitHub Releases](https://github.com/ZhuJHua/intellij-heic-viewer/releases/latest), then <kbd>Settings</kbd> >
   <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install Plugin from Disk...</kbd>.
 
+### Verifying a copy
+
+Releases after 0.2.0 carry [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations):
+GitHub records that every file in the release zip was built by this repository's `release.yml` workflow from the
+release tag. With the [GitHub CLI](https://cli.github.com), check every file of an installed copy; a file that was
+not built here fails the check:
+
+```bash
+cd "$HOME/Library/Application Support/JetBrains/<IDE>/plugins/heic-viewer"   # the IDE's plugins directory
+find . -type f -print0 | xargs -0 -n1 gh attestation verify \
+  --repo ZhuJHua/intellij-heic-viewer \
+  --signer-workflow ZhuJHua/intellij-heic-viewer/.github/workflows/release.yml
+```
+
+The same works on the files of a downloaded zip after unpacking it. JetBrains Marketplace adds its own signature to
+the zip, so check the files inside it rather than the zip itself.
+
 ## Development
 
 The build needs JDK 25, and JDK 21 and 17 for `testJdk21` and `testJdk17`; Gradle uses installed JDKs or downloads
