@@ -155,7 +155,7 @@ jobs:
 
       # JDK 25 runs Gradle and compiles (--release 17); the test tasks use JDK 25, 21 and 17 as Gradle toolchains.
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: |
@@ -228,7 +228,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 25
@@ -301,7 +301,7 @@ jobs:
           path: w
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 17
@@ -329,7 +329,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: zulu
           java-version: 25
