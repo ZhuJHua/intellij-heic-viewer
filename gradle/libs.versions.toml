@@ -5,7 +5,7 @@ junit4 = "4.13.2"
 
 # plugins
 changelog = "2.5.0"
-intelliJPlatform = "2.19.0"
+intelliJPlatform = "2.20.1"
 
 [libraries]
 junit-bom = { group = "org.junit", name = "junit-bom", version.ref = "junit" }
